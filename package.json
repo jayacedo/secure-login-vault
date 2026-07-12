@@ -1,0 +1,67 @@
+{
+  "name": "secure-login-vault",
+  "version": "1.0.0",
+  "description": "Offline-first Windows desktop credential vault built with Electron.",
+  "main": "src/main.js",
+  "author": "Secure Login Vault",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/services/vaultStore.js && node --check src/services/sqliteVault.js && node --check src/renderer/app.js && node --check scripts/auth-smoke-test.js",
+    "test:auth": "node scripts/auth-smoke-test.js",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.secureloginvault.app",
+    "productName": "Secure Login Vault",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "!database/**/*",
+      "!release/**/*",
+      "!docs/**/*",
+      "!scripts/**/*",
+      "!**/*.db",
+      "!**/*.sqlite"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "icon": "assets/icon.ico",
+    "copyright": "Copyright \u00a9 2026 Secure Login Vault"
+  },
+  "devDependencies": {
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "sql.js": "^1.14.1"
+  },
+  "copyright": "Copyright \u00a9 2026 Secure Login Vault"
+}

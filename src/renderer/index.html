@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
+    <title>Secure Login Vault</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell" id="app-shell" aria-labelledby="app-title">
+      <section class="vault-panel auth-layout">
+        <div class="intro-column">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+          </div>
+          <div class="intro-copy">
+            <p class="eyebrow">Offline credential vault</p>
+            <h1 id="app-title">Secure Login Vault</h1>
+            <p>
+              Protect local credentials behind a master password before the vault workspace opens.
+            </p>
+          </div>
+
+        </div>
+
+        <div class="auth-card" id="auth-card" aria-live="polite">
+          <div class="auth-loading">Checking vault status...</div>
+        </div>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

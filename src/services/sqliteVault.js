@@ -1,0 +1,1328 @@
+const crypto = require("crypto");
+const fs = require("fs/promises");
+const path = require("path");
+const initSqlJs = require("sql.js");
+
+let sqlitePromise;
+
+function loadSqlite() {
+  if (!sqlitePromise) {
+    sqlitePromise = initSqlJs({
+      locateFile: (fileName) => path.join(path.dirname(require.resolve("sql.js")), fileName)
+    });
+  }
+
+  return sqlitePromise;
+}
+
+async function createEncryptedVaultFile(filePath, key, createdAt) {
+  const databaseBytes = await createInitialDatabase(createdAt);
+  const encryptedDatabase = encryptBuffer(databaseBytes, key);
+  const payload = {
+    format: "secure-login-vault-encrypted-sqlite",
+    version: 1,
+    createdAt,
+    updatedAt: createdAt,
+    sqlite: {
+      userVersion: 1
+    },
+    encryption: {
+      algorithm: "aes-256-gcm",
+      ...encryptedDatabase
+    }
+  };
+
+  await writeJsonAtomic(filePath, payload);
+}
+
+async function verifyEncryptedVaultFile(filePath, key) {
+  try {
+    await fs.access(filePath);
+  } catch {
+    throw createPublicError("Encrypted vault database is missing.");
+  }
+
+  const payload = JSON.parse(await fs.readFile(filePath, "utf8"));
+
+  if (!isValidEncryptedDatabase(payload)) {
+    throw createPublicError("Encrypted vault database is invalid.");
+  }
+
+  const databaseBytes = decryptBuffer(payload.encryption, key);
+  const SQL = await loadSqlite();
+  const db = new SQL.Database(databaseBytes);
+
+  try {
+    const result = db.exec("SELECT value FROM vault_meta WHERE key = 'schema_version' LIMIT 1;");
+    const schemaVersion = result[0] && result[0].values[0] && result[0].values[0][0];
+
+    if (schemaVersion !== "1") {
+      throw createPublicError("Vault database schema is not recognized.");
+    }
+  } finally {
+    db.close();
+  }
+
+  return true;
+}
+
+async function readDashboardData(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const activeGroup = getActiveGroupFilterValue(db);
+    const groupClause = activeGroup ? `WHERE cr.group_name = @activeGroup COLLATE NOCASE` : "";
+    const groupParams = activeGroup ? { "@activeGroup": activeGroup } : {};
+
+    const categoryRows = queryAll(
+      db,
+      `
+        SELECT
+          c.name,
+          COUNT(cr.id) AS credential_count
+        FROM categories c
+        LEFT JOIN credentials cr ON cr.category = c.name ${activeGroup ? "AND cr.group_name = @activeGroup COLLATE NOCASE" : ""}
+        GROUP BY c.id, c.name
+        ORDER BY c.name COLLATE NOCASE;
+      `,
+      groupParams
+    );
+    const totals = queryOne(
+      db,
+      `
+        SELECT
+          COUNT(*) AS total_count,
+          COALESCE(SUM(CASE WHEN favorite = 1 THEN 1 ELSE 0 END), 0) AS favorite_count
+        FROM credentials cr
+        ${groupClause};
+      `,
+      groupParams
+    );
+    const credentials = queryAll(
+      db,
+      `
+        SELECT
+          id,
+          website_name,
+          website_url,
+          category,
+          username,
+          email,
+          favorite,
+          group_name,
+          created_at,
+          updated_at
+        FROM credentials cr
+        ${groupClause}
+        ORDER BY favorite DESC, updated_at DESC, website_name COLLATE NOCASE
+        LIMIT 100;
+      `,
+      groupParams
+    );
+
+    return {
+      summary: {
+        totalCredentials: Number(totals.total_count || 0),
+        favoriteCredentials: Number(totals.favorite_count || 0),
+        categories: categoryRows.length
+      },
+      categories: [
+        {
+          name: "All Items",
+          count: Number(totals.total_count || 0),
+          type: "all"
+        },
+        {
+          name: "Favorites",
+          count: Number(totals.favorite_count || 0),
+          type: "favorites"
+        },
+        ...categoryRows.map((row) => ({
+          name: row.name,
+          count: Number(row.credential_count || 0),
+          type: "category"
+        }))
+      ],
+      credentials: credentials.map((row) => ({
+        id: row.id,
+        websiteName: row.website_name,
+        websiteUrl: row.website_url || "",
+        category: row.category || "Other",
+        username: row.username || "",
+        email: row.email || "",
+        favorite: row.favorite === 1,
+        groupName: row.group_name || "",
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      })),
+      activeGroup
+    };
+  });
+}
+
+// ─── Phase 5: Credential CRUD ────────────────────────────────────────────────
+
+async function getCredentials(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const activeGroup = getActiveGroupFilterValue(db);
+    let sql = `SELECT id, website_name, website_url, category, username, password,
+              email, notes, tags, favorite, group_name, created_at, updated_at
+       FROM credentials`;
+    const params = [];
+    if (activeGroup) {
+      sql += ` WHERE group_name = ? COLLATE NOCASE`;
+      params.push(activeGroup);
+    }
+    sql += ` ORDER BY favorite DESC, updated_at DESC, website_name COLLATE NOCASE`;
+    return queryAll(db, sql, params).map(normalizeCredential);
+  });
+}
+
+async function getCredentialById(filePath, key, id) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const row = queryOne(db, `SELECT * FROM credentials WHERE id = ?`, [id]);
+    if (!row || !row.id) throw createPublicError("Credential not found.");
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase()) {
+      throw createPublicError("Credential not found.");
+    }
+    return normalizeCredential(row);
+  });
+}
+
+async function addCredential(filePath, key, data) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    validateCredentialData(data);
+    const now = new Date().toISOString();
+    const activeGroup = getActiveGroupFilterValue(db);
+    // When locked to a group, newly created credentials default into that
+    // group so they don't silently fall outside the current lock and stay
+    // invisible to the person who just created them.
+    const groupName = normalizeGroupValue(data.groupName) || activeGroup || "";
+    const stmt = db.prepare(
+      `INSERT INTO credentials
+        (website_name, website_url, category, username, password, email, notes, tags, favorite, group_name, qr_code, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run([
+      data.websiteName.trim(),
+      (data.websiteUrl || "").trim(),
+      data.category || "Other",
+      (data.username || "").trim(),
+      data.password,
+      (data.email || "").trim(),
+      (data.notes || "").trim(),
+      normalizeTags(data.tags),
+      data.favorite ? 1 : 0,
+      groupName || null,
+      data.qrCode || null,
+      now,
+      now
+    ]);
+    stmt.free();
+    const result = queryOne(db, "SELECT last_insert_rowid() AS id");
+    return { id: Number(result.id), createdAt: now };
+  });
+}
+
+async function updateCredential(filePath, key, id, data) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    validateCredentialData(data);
+    const existing = queryOne(db, "SELECT id FROM credentials WHERE id = ?", [id]);
+    if (!existing || !existing.id) throw createPublicError("Credential not found.");
+    const now = new Date().toISOString();
+    const stmt = db.prepare(
+      `UPDATE credentials SET
+        website_name = ?, website_url = ?, category = ?, username = ?,
+        password = ?, email = ?, notes = ?, tags = ?, favorite = ?, group_name = ?, qr_code = ?, updated_at = ?
+       WHERE id = ?`
+    );
+    stmt.run([
+      data.websiteName.trim(),
+      (data.websiteUrl || "").trim(),
+      data.category || "Other",
+      (data.username || "").trim(),
+      data.password,
+      (data.email || "").trim(),
+      (data.notes || "").trim(),
+      normalizeTags(data.tags),
+      data.favorite ? 1 : 0,
+      normalizeGroupValue(data.groupName) || null,
+      data.qrCode || null,
+      now,
+      id
+    ]);
+    stmt.free();
+    return { updatedAt: now };
+  });
+}
+
+async function deleteCredential(filePath, key, id) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const existing = queryOne(db, "SELECT id FROM credentials WHERE id = ?", [id]);
+    if (!existing || !existing.id) throw createPublicError("Credential not found.");
+    const stmt = db.prepare("DELETE FROM credentials WHERE id = ?");
+    stmt.run([id]);
+    stmt.free();
+    return { deleted: true };
+  });
+}
+
+async function toggleFavorite(filePath, key, id) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT favorite FROM credentials WHERE id = ?", [id]);
+    if (!row || row.favorite === undefined) throw createPublicError("Credential not found.");
+    const newValue = row.favorite === 1 ? 0 : 1;
+    const stmt = db.prepare("UPDATE credentials SET favorite = ?, updated_at = ? WHERE id = ?");
+    stmt.run([newValue, new Date().toISOString(), id]);
+    stmt.free();
+    return { favorite: newValue === 1 };
+  });
+}
+
+// ─── Client Vault CRUD ────────────────────────────────────────────────────────
+//
+// A "client" is a WordPress developer's customer record — WP admin, hosting,
+// FTP/SFTP, database, and domain/SSL details grouped under one entity, plus
+// notes. It is intentionally independent from "groups" above (see the rename
+// note in ensureSchemaUpgrades) — the two are unrelated concepts.
+
+const CLIENT_COLUMNS = "id, name, domain, category, favorite, " +
+  "admin_url, admin_username, admin_password, " +
+  "hosting_provider, hosting_url, hosting_username, hosting_password, " +
+  "ftp_host, ftp_port, ftp_username, ftp_password, " +
+  "db_host, db_name, db_username, db_password, phpmyadmin_url, " +
+  "registrar, domain_expiry, ssl_expiry, notes, created_at, updated_at";
+
+// Columns written by add/update, in a fixed order shared with clientDataToParams
+// below — kept as a list (rather than hand-repeating 24 "?" placeholders) so the
+// column list and its values can never silently drift out of sync.
+const CLIENT_WRITE_COLUMNS = [
+  "name", "domain", "category", "favorite",
+  "admin_url", "admin_username", "admin_password",
+  "hosting_provider", "hosting_url", "hosting_username", "hosting_password",
+  "ftp_host", "ftp_port", "ftp_username", "ftp_password",
+  "db_host", "db_name", "db_username", "db_password", "phpmyadmin_url",
+  "registrar", "domain_expiry", "ssl_expiry", "notes", "qr_code"
+];
+
+function clientDataToParams(data) {
+  return [
+    data.name.trim(),
+    (data.domain || "").trim(),
+    (data.category || "").trim(),
+    data.favorite ? 1 : 0,
+    (data.adminUrl || "").trim(),
+    (data.adminUsername || "").trim(),
+    data.adminPassword || "",
+    (data.hostingProvider || "").trim(),
+    (data.hostingUrl || "").trim(),
+    (data.hostingUsername || "").trim(),
+    data.hostingPassword || "",
+    (data.ftpHost || "").trim(),
+    (data.ftpPort || "").trim(),
+    (data.ftpUsername || "").trim(),
+    data.ftpPassword || "",
+    (data.dbHost || "").trim(),
+    (data.dbName || "").trim(),
+    (data.dbUsername || "").trim(),
+    data.dbPassword || "",
+    (data.phpMyAdminUrl || "").trim(),
+    (data.registrar || "").trim(),
+    (data.domainExpiry || "").trim(),
+    (data.sslExpiry || "").trim(),
+    (data.notes || "").trim(),
+    data.qrCode || null
+  ];
+}
+
+function normalizeClient(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    domain: row.domain || "",
+    category: row.category || "",
+    favorite: row.favorite === 1,
+    adminUrl: row.admin_url || "",
+    adminUsername: row.admin_username || "",
+    adminPassword: row.admin_password || "",
+    hostingProvider: row.hosting_provider || "",
+    hostingUrl: row.hosting_url || "",
+    hostingUsername: row.hosting_username || "",
+    hostingPassword: row.hosting_password || "",
+    ftpHost: row.ftp_host || "",
+    ftpPort: row.ftp_port || "",
+    ftpUsername: row.ftp_username || "",
+    ftpPassword: row.ftp_password || "",
+    dbHost: row.db_host || "",
+    dbName: row.db_name || "",
+    dbUsername: row.db_username || "",
+    dbPassword: row.db_password || "",
+    phpMyAdminUrl: row.phpmyadmin_url || "",
+    registrar: row.registrar || "",
+    domainExpiry: row.domain_expiry || "",
+    sslExpiry: row.ssl_expiry || "",
+    notes: row.notes || "",
+    qrCode: row.qr_code || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function validateClientData(data) {
+  if (!data.name || !data.name.trim()) {
+    throw createPublicError("Client name is required.");
+  }
+}
+
+async function getClients(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    return queryAll(
+      db,
+      `SELECT ${CLIENT_COLUMNS} FROM clients ORDER BY favorite DESC, updated_at DESC, name COLLATE NOCASE`
+    ).map(normalizeClient);
+  });
+}
+
+async function getClientById(filePath, key, id) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    // Includes qr_code, unlike the list/search queries above/below — the QR
+    // image is only needed when opening a single client for editing, not
+    // when pulling every client into the grid.
+    const row = queryOne(db, `SELECT ${CLIENT_COLUMNS}, qr_code FROM clients WHERE id = ?`, [id]);
+    if (!row || !row.id) throw createPublicError("Client not found.");
+    return normalizeClient(row);
+  });
+}
+
+async function addClient(filePath, key, data) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    validateClientData(data);
+    const now = new Date().toISOString();
+    const stmt = db.prepare(
+      `INSERT INTO clients (${CLIENT_WRITE_COLUMNS.join(", ")}, created_at, updated_at)
+       VALUES (${CLIENT_WRITE_COLUMNS.map(() => "?").join(", ")}, ?, ?)`
+    );
+    stmt.run([...clientDataToParams(data), now, now]);
+    stmt.free();
+    const result = queryOne(db, "SELECT last_insert_rowid() AS id");
+    return { id: Number(result.id), createdAt: now };
+  });
+}
+
+async function updateClient(filePath, key, id, data) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    validateClientData(data);
+    const existing = queryOne(db, "SELECT id FROM clients WHERE id = ?", [id]);
+    if (!existing || !existing.id) throw createPublicError("Client not found.");
+    const now = new Date().toISOString();
+    const stmt = db.prepare(
+      `UPDATE clients SET ${CLIENT_WRITE_COLUMNS.map((c) => `${c} = ?`).join(", ")}, updated_at = ?
+       WHERE id = ?`
+    );
+    stmt.run([...clientDataToParams(data), now, id]);
+    stmt.free();
+    return { updatedAt: now };
+  });
+}
+
+async function deleteClient(filePath, key, id) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const existing = queryOne(db, "SELECT id FROM clients WHERE id = ?", [id]);
+    if (!existing || !existing.id) throw createPublicError("Client not found.");
+    const stmt = db.prepare("DELETE FROM clients WHERE id = ?");
+    stmt.run([id]);
+    stmt.free();
+    return { deleted: true };
+  });
+}
+
+async function toggleClientFavorite(filePath, key, id) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT favorite FROM clients WHERE id = ?", [id]);
+    if (!row || row.favorite === undefined) throw createPublicError("Client not found.");
+    const newValue = row.favorite === 1 ? 0 : 1;
+    const stmt = db.prepare("UPDATE clients SET favorite = ?, updated_at = ? WHERE id = ?");
+    stmt.run([newValue, new Date().toISOString(), id]);
+    stmt.free();
+    return { favorite: newValue === 1 };
+  });
+}
+
+async function searchClients(filePath, key, { query = "", onlyFavorites = false } = {}) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const term = `%${query.trim()}%`;
+    const hasQuery = query.trim().length > 0;
+
+    let sql = `SELECT ${CLIENT_COLUMNS} FROM clients WHERE 1=1`;
+    const params = [];
+
+    if (hasQuery) {
+      sql += `
+        AND (
+          name LIKE ? COLLATE NOCASE OR
+          domain LIKE ? COLLATE NOCASE OR
+          hosting_provider LIKE ? COLLATE NOCASE
+        )
+      `;
+      params.push(term, term, term);
+    }
+
+    if (onlyFavorites) {
+      sql += ` AND favorite = 1`;
+    }
+
+    sql += ` ORDER BY favorite DESC, updated_at DESC, name COLLATE NOCASE`;
+
+    return queryAll(db, sql, params).map(normalizeClient);
+  });
+}
+
+async function getCategories(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const builtIn = queryAll(
+      db,
+      "SELECT name FROM categories ORDER BY name COLLATE NOCASE"
+    ).map((r) => r.name);
+    const custom = queryAll(
+      db,
+      `SELECT DISTINCT category AS name FROM credentials
+       WHERE category IS NOT NULL AND category != ''`
+    )
+      .map((r) => r.name)
+      .filter((n) => !builtIn.includes(n));
+    return [...builtIn, ...custom];
+  });
+}
+
+// ─── Category management: add / rename / delete ──────────────────────────────
+
+async function getCategoryUsage(filePath, key) {
+  // Returns every managed category (from the categories table) along with
+  // how many credentials currently reference it, so the renderer can decide
+  // whether a delete needs a reassignment step.
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const rows = queryAll(
+      db,
+      `
+        SELECT c.id, c.name, COUNT(cr.id) AS credential_count
+        FROM categories c
+        LEFT JOIN credentials cr ON cr.category = c.name COLLATE NOCASE
+        GROUP BY c.id, c.name
+        ORDER BY c.name COLLATE NOCASE;
+      `
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      credentialCount: Number(row.credential_count || 0)
+    }));
+  });
+}
+
+async function addCategory(filePath, key, name) {
+  const trimmed = normalizeCategoryName(name);
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const existing = queryOne(
+      db,
+      "SELECT id FROM categories WHERE name = ? COLLATE NOCASE",
+      [trimmed]
+    );
+    if (existing.id !== undefined) {
+      throw createPublicError(`Category "${trimmed}" already exists.`);
+    }
+
+    const stmt = db.prepare("INSERT INTO categories (name, created_at) VALUES (?, ?);");
+    stmt.run([trimmed, new Date().toISOString()]);
+    stmt.free();
+
+    return { name: trimmed };
+  });
+}
+
+async function renameCategory(filePath, key, currentName, newName) {
+  const from = normalizeCategoryName(currentName);
+  const to = normalizeCategoryName(newName);
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE", [from]);
+    if (row.id === undefined) {
+      throw createPublicError(`Category "${from}" was not found.`);
+    }
+
+    if (to.toLowerCase() !== from.toLowerCase()) {
+      const clash = queryOne(
+        db,
+        "SELECT id FROM categories WHERE name = ? COLLATE NOCASE AND id != ?",
+        [to, row.id]
+      );
+      if (clash.id !== undefined) {
+        throw createPublicError(`Category "${to}" already exists.`);
+      }
+    }
+
+    const updateCategory = db.prepare("UPDATE categories SET name = ? WHERE id = ?;");
+    updateCategory.run([to, row.id]);
+    updateCategory.free();
+
+    // Cascade the rename onto every credential currently filed under the old name.
+    const updateCredentials = db.prepare(
+      "UPDATE credentials SET category = ?, updated_at = ? WHERE category = ? COLLATE NOCASE;"
+    );
+    updateCredentials.run([to, new Date().toISOString(), row.name]);
+    updateCredentials.free();
+
+    return { name: to };
+  });
+}
+
+async function deleteCategory(filePath, key, name, reassignToName) {
+  const target = normalizeCategoryName(name);
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE", [target]);
+    if (row.id === undefined) {
+      throw createPublicError(`Category "${target}" was not found.`);
+    }
+
+    const remainingCount = queryOne(db, "SELECT COUNT(*) AS total FROM categories").total;
+    if (Number(remainingCount) <= 1) {
+      throw createPublicError("At least one category must remain.");
+    }
+
+    const usage = queryOne(
+      db,
+      "SELECT COUNT(*) AS total FROM credentials WHERE category = ? COLLATE NOCASE",
+      [row.name]
+    );
+    const inUse = Number(usage.total || 0) > 0;
+
+    if (inUse) {
+      if (!reassignToName) {
+        throw createPublicError(
+          `"${row.name}" is used by ${usage.total} credential${usage.total === 1 ? "" : "s"}. Choose a category to reassign them to.`
+        );
+      }
+
+      const reassignTo = normalizeCategoryName(reassignToName);
+      if (reassignTo.toLowerCase() === row.name.toLowerCase()) {
+        throw createPublicError("Choose a different category to reassign to.");
+      }
+
+      const reassignRow = queryOne(
+        db,
+        "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE",
+        [reassignTo]
+      );
+      if (reassignRow.id === undefined) {
+        throw createPublicError(`Category "${reassignTo}" was not found.`);
+      }
+
+      const moveCredentials = db.prepare(
+        "UPDATE credentials SET category = ?, updated_at = ? WHERE category = ? COLLATE NOCASE;"
+      );
+      moveCredentials.run([reassignRow.name, new Date().toISOString(), row.name]);
+      moveCredentials.free();
+    }
+
+    const deleteStmt = db.prepare("DELETE FROM categories WHERE id = ?;");
+    deleteStmt.run([row.id]);
+    deleteStmt.free();
+
+    return { deleted: true, reassignedCount: inUse ? Number(usage.total || 0) : 0 };
+  });
+}
+
+function normalizeCategoryName(name) {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed) {
+    throw createPublicError("Category name cannot be empty.");
+  }
+  if (trimmed.length > 60) {
+    throw createPublicError("Category name must be 60 characters or fewer.");
+  }
+  return trimmed;
+}
+
+// ─── Phase 6: Live Search ─────────────────────────────────────────────────────
+
+async function searchCredentials(filePath, key, { query = "", onlyFavorites = false, category = null } = {}) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const term = `%${query.trim()}%`;
+    const hasQuery = query.trim().length > 0;
+    const hasCategory = category && category !== "all";
+    const activeGroup = getActiveGroupFilterValue(db);
+
+    let sql = `
+      SELECT id, website_name, website_url, category, username, password,
+             email, notes, tags, favorite, group_name, created_at, updated_at
+      FROM credentials
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (hasQuery) {
+      sql += `
+        AND (
+          website_name LIKE ? COLLATE NOCASE OR
+          website_url  LIKE ? COLLATE NOCASE OR
+          username     LIKE ? COLLATE NOCASE OR
+          email        LIKE ? COLLATE NOCASE OR
+          notes        LIKE ? COLLATE NOCASE OR
+          tags         LIKE ? COLLATE NOCASE OR
+          category     LIKE ? COLLATE NOCASE
+        )
+      `;
+      params.push(term, term, term, term, term, term, term);
+    }
+
+    if (onlyFavorites) {
+      sql += ` AND favorite = 1`;
+    }
+
+    if (hasCategory) {
+      sql += ` AND category = ?`;
+      params.push(category);
+    }
+
+    if (activeGroup) {
+      sql += ` AND group_name = ? COLLATE NOCASE`;
+      params.push(activeGroup);
+    }
+
+    sql += ` ORDER BY favorite DESC, updated_at DESC, website_name COLLATE NOCASE`;
+
+    return queryAll(db, sql, params).map(normalizeCredential);
+  });
+}
+
+// ─── Group management: add / rename / delete / active lock ───────────────────
+//
+// Groups are a separate axis from categories — they answer "whose data is
+// this" rather than "what kind of credential is this". When a group is
+// "active" (locked), every read path in this file (dashboard, list, search,
+// single-credential lookup) filters at the SQL level, so rows for other
+// groups are never pulled out of the encrypted database into memory or
+// rendered into the DOM in the first place.
+
+async function getGroups(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    return queryAll(db, "SELECT name FROM groups ORDER BY name COLLATE NOCASE").map((r) => r.name);
+  });
+}
+
+async function getGroupUsage(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const rows = queryAll(
+      db,
+      `
+        SELECT g.id, g.name, COUNT(cr.id) AS credential_count
+        FROM groups g
+        LEFT JOIN credentials cr ON cr.group_name = g.name COLLATE NOCASE
+        GROUP BY g.id, g.name
+        ORDER BY g.name COLLATE NOCASE;
+      `
+    );
+    const activeGroup = getActiveGroupFilterValue(db);
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      credentialCount: Number(row.credential_count || 0),
+      isActive: activeGroup.toLowerCase() === String(row.name).toLowerCase()
+    }));
+  });
+}
+
+async function addGroup(filePath, key, name) {
+  const trimmed = normalizeGroupName(name);
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const existing = queryOne(db, "SELECT id FROM groups WHERE name = ? COLLATE NOCASE", [trimmed]);
+    if (existing.id !== undefined) {
+      throw createPublicError(`Group "${trimmed}" already exists.`);
+    }
+
+    const stmt = db.prepare("INSERT INTO groups (name, created_at) VALUES (?, ?);");
+    stmt.run([trimmed, new Date().toISOString()]);
+    stmt.free();
+
+    return { name: trimmed };
+  });
+}
+
+async function renameGroup(filePath, key, currentName, newName) {
+  const from = normalizeGroupName(currentName);
+  const to = normalizeGroupName(newName);
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [from]);
+    if (row.id === undefined) {
+      throw createPublicError(`Group "${from}" was not found.`);
+    }
+
+    if (to.toLowerCase() !== from.toLowerCase()) {
+      const clash = queryOne(db, "SELECT id FROM groups WHERE name = ? COLLATE NOCASE AND id != ?", [to, row.id]);
+      if (clash.id !== undefined) {
+        throw createPublicError(`Group "${to}" already exists.`);
+      }
+    }
+
+    const updateGroup = db.prepare("UPDATE groups SET name = ? WHERE id = ?;");
+    updateGroup.run([to, row.id]);
+    updateGroup.free();
+
+    const updateCredentials = db.prepare(
+      "UPDATE credentials SET group_name = ?, updated_at = ? WHERE group_name = ? COLLATE NOCASE;"
+    );
+    updateCredentials.run([to, new Date().toISOString(), row.name]);
+    updateCredentials.free();
+
+    // Keep the active-group lock pointed at the renamed group instead of
+    // silently dropping back to "All" (which would defeat the lock).
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (activeGroup.toLowerCase() === row.name.toLowerCase()) {
+      setActiveGroupValue(db, to);
+    }
+
+    return { name: to };
+  });
+}
+
+async function deleteGroup(filePath, key, name) {
+  const target = normalizeGroupName(name);
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [target]);
+    if (row.id === undefined) {
+      throw createPublicError(`Group "${target}" was not found.`);
+    }
+
+    const usage = queryOne(
+      db,
+      "SELECT COUNT(*) AS total FROM credentials WHERE group_name = ? COLLATE NOCASE",
+      [row.name]
+    );
+
+    // Unlike categories, groups have no mandatory fallback — credentials
+    // simply become unassigned (group_name = NULL) rather than requiring
+    // a reassignment target.
+    const clearCredentials = db.prepare(
+      "UPDATE credentials SET group_name = NULL, updated_at = ? WHERE group_name = ? COLLATE NOCASE;"
+    );
+    clearCredentials.run([new Date().toISOString(), row.name]);
+    clearCredentials.free();
+
+    const deleteStmt = db.prepare("DELETE FROM groups WHERE id = ?;");
+    deleteStmt.run([row.id]);
+    deleteStmt.free();
+
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (activeGroup.toLowerCase() === row.name.toLowerCase()) {
+      setActiveGroupValue(db, "");
+    }
+
+    return { deleted: true, unassignedCount: Number(usage.total || 0) };
+  });
+}
+
+async function getActiveGroup(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => getActiveGroupFilterValue(db));
+}
+
+async function setActiveGroup(filePath, key, name) {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    if (trimmed) {
+      const row = queryOne(db, "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [trimmed]);
+      if (row.id === undefined) {
+        throw createPublicError(`Group "${trimmed}" was not found.`);
+      }
+      setActiveGroupValue(db, row.name);
+      return { activeGroup: row.name };
+    }
+
+    setActiveGroupValue(db, "");
+    return { activeGroup: "" };
+  });
+}
+
+function getActiveGroupFilterValue(db) {
+  const row = queryOne(db, "SELECT value FROM vault_meta WHERE key = 'active_group'");
+  return typeof row.value === "string" ? row.value.trim() : "";
+}
+
+function setActiveGroupValue(db, value) {
+  const stmt = db.prepare(
+    "INSERT INTO vault_meta (key, value) VALUES ('active_group', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
+  );
+  stmt.run([value || ""]);
+  stmt.free();
+}
+
+function normalizeGroupName(name) {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed) {
+    throw createPublicError("Group name cannot be empty.");
+  }
+  if (trimmed.length > 60) {
+    throw createPublicError("Group name must be 60 characters or fewer.");
+  }
+  return trimmed;
+}
+
+function normalizeGroupValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+// ─── Schema upgrades (applied in-memory on every database open) ──────────────
+//
+// There's no formal migration runner here — instead, every time the database
+// is decrypted into memory (read or write path), we make sure newer tables/
+// columns exist before any query touches them. CREATE TABLE/INDEX use
+// IF NOT EXISTS and the column check is explicit, so this is safe to run on
+// every open, including vaults that were created before this feature existed.
+function ensureSchemaUpgrades(db) {
+  const groupsTable = queryAll(
+    db,
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'groups'"
+  );
+  if (groupsTable.length === 0) {
+    db.exec(`
+      CREATE TABLE groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      );
+    `);
+  }
+
+  const columns = queryAll(db, "PRAGMA table_info(credentials)");
+  const hasClientGroupColumn = columns.some((c) => c.name === "client_group");
+  if (!hasClientGroupColumn) {
+    db.exec(`ALTER TABLE credentials ADD COLUMN client_group TEXT;`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_client_group ON credentials (client_group);`);
+  }
+
+  // "client_group" was renamed to the neutral "group_name" once the vault
+  // grew an unrelated "Client Vault" feature, to stop the two concepts from
+  // sharing the word "client". Old vaults keep the original column (harmless,
+  // unused going forward) — its values are copied into the new column once.
+  const hasGroupNameColumn = columns.some((c) => c.name === "group_name");
+  if (!hasGroupNameColumn) {
+    db.exec(`ALTER TABLE credentials ADD COLUMN group_name TEXT;`);
+    db.exec(`UPDATE credentials SET group_name = client_group WHERE client_group IS NOT NULL;`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_group_name ON credentials (group_name);`);
+  }
+
+  const clientsTable = queryAll(
+    db,
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clients'"
+  );
+  if (clientsTable.length === 0) {
+    db.exec(`
+      CREATE TABLE clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        domain TEXT,
+        category TEXT,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        admin_url TEXT,
+        admin_username TEXT,
+        admin_password TEXT,
+        hosting_provider TEXT,
+        hosting_url TEXT,
+        hosting_username TEXT,
+        hosting_password TEXT,
+        ftp_host TEXT,
+        ftp_port TEXT,
+        ftp_username TEXT,
+        ftp_password TEXT,
+        db_host TEXT,
+        db_name TEXT,
+        db_username TEXT,
+        db_password TEXT,
+        phpmyadmin_url TEXT,
+        registrar TEXT,
+        domain_expiry TEXT,
+        ssl_expiry TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_clients_name ON clients (name);
+      CREATE INDEX idx_clients_favorite ON clients (favorite);
+    `);
+  }
+
+  // 2FA QR code image (data URI) — stored as an opaque blob, never decoded/
+  // parsed by this app. Protected by the same whole-database envelope as
+  // everything else, so no separate encryption is needed.
+  const hasCredentialQrColumn = columns.some((c) => c.name === "qr_code");
+  if (!hasCredentialQrColumn) {
+    db.exec(`ALTER TABLE credentials ADD COLUMN qr_code TEXT;`);
+  }
+
+  const clientColumns = queryAll(db, "PRAGMA table_info(clients)");
+  const hasClientQrColumn = clientColumns.some((c) => c.name === "qr_code");
+  if (!hasClientQrColumn) {
+    db.exec(`ALTER TABLE clients ADD COLUMN qr_code TEXT;`);
+  }
+
+  const metaRow = queryOne(db, "SELECT value FROM vault_meta WHERE key = 'active_group'");
+  if (metaRow.value === undefined) {
+    const insertMeta = db.prepare("INSERT OR IGNORE INTO vault_meta (key, value) VALUES ('active_group', '');");
+    insertMeta.run([]);
+    insertMeta.free();
+  }
+}
+
+// ─── Write helper (decrypt → mutate → re-encrypt → save) ─────────────────────
+
+async function withDecryptedDatabaseWrite(filePath, key, operation) {
+  const raw = await fs.readFile(filePath, "utf8");
+  const payload = JSON.parse(raw);
+
+  if (!isValidEncryptedDatabase(payload)) {
+    throw createPublicError("Encrypted vault database is invalid.");
+  }
+
+  const databaseBytes = decryptBuffer(payload.encryption, key);
+  const SQL = await loadSqlite();
+  const db = new SQL.Database(databaseBytes);
+
+  try {
+    ensureSchemaUpgrades(db);
+    const result = operation(db);
+    const updatedBytes = Buffer.from(db.export());
+    const encryptedDatabase = encryptBuffer(updatedBytes, key);
+    const updatedPayload = {
+      ...payload,
+      updatedAt: new Date().toISOString(),
+      encryption: {
+        algorithm: "aes-256-gcm",
+        ...encryptedDatabase
+      }
+    };
+    await writeJsonAtomic(filePath, updatedPayload);
+    return result;
+  } finally {
+    db.close();
+  }
+}
+
+// ─── Phase 10: Re-key the encrypted database with a new key ──────────────────
+
+async function rekeyEncryptedVaultFile(filePath, oldKey, newKey) {
+  const raw = await fs.readFile(filePath, "utf8");
+  const payload = JSON.parse(raw);
+
+  if (!isValidEncryptedDatabase(payload)) {
+    throw createPublicError("Encrypted vault database is invalid.");
+  }
+
+  // Decrypt with the current (old) key
+  const databaseBytes = decryptBuffer(payload.encryption, oldKey);
+
+  // Re-encrypt with the new key
+  const reEncrypted = encryptBuffer(databaseBytes, newKey);
+  const updatedPayload = {
+    ...payload,
+    updatedAt: new Date().toISOString(),
+    encryption: {
+      algorithm: "aes-256-gcm",
+      ...reEncrypted
+    }
+  };
+
+  await writeJsonAtomic(filePath, updatedPayload);
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+async function withDecryptedDatabase(filePath, key, operation) {
+  const payload = JSON.parse(await fs.readFile(filePath, "utf8"));
+
+  if (!isValidEncryptedDatabase(payload)) {
+    throw createPublicError("Encrypted vault database is invalid.");
+  }
+
+  const databaseBytes = decryptBuffer(payload.encryption, key);
+  const SQL = await loadSqlite();
+  const db = new SQL.Database(databaseBytes);
+
+  try {
+    ensureSchemaUpgrades(db);
+    return operation(db);
+  } finally {
+    db.close();
+  }
+}
+
+function normalizeCredential(row) {
+  return {
+    id: row.id,
+    websiteName: row.website_name,
+    websiteUrl: row.website_url || "",
+    category: row.category || "Other",
+    username: row.username || "",
+    password: row.password || "",
+    email: row.email || "",
+    notes: row.notes || "",
+    tags: row.tags || "",
+    favorite: row.favorite === 1,
+    groupName: row.group_name || "",
+    qrCode: row.qr_code || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function normalizeTags(tags) {
+  if (!tags) return "";
+  if (Array.isArray(tags)) return tags.map((t) => t.trim()).filter(Boolean).join(",");
+  return tags
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join(",");
+}
+
+function validateCredentialData(data) {
+  if (!data.websiteName || !data.websiteName.trim()) {
+    throw createPublicError("Website Name is required.");
+  }
+  if (!data.password) {
+    throw createPublicError("Password is required.");
+  }
+}
+
+async function createInitialDatabase(createdAt) {
+  const SQL = await loadSqlite();
+  const db = new SQL.Database();
+
+  try {
+    db.exec(`
+      PRAGMA user_version = 1;
+
+      CREATE TABLE vault_meta (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        website_name TEXT NOT NULL,
+        website_url TEXT,
+        category TEXT,
+        username TEXT,
+        password TEXT NOT NULL,
+        email TEXT,
+        notes TEXT,
+        tags TEXT,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        group_name TEXT,
+        qr_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX idx_credentials_website_name ON credentials (website_name);
+      CREATE INDEX idx_credentials_username ON credentials (username);
+      CREATE INDEX idx_credentials_category ON credentials (category);
+      CREATE INDEX idx_credentials_favorite ON credentials (favorite);
+      CREATE INDEX idx_credentials_group_name ON credentials (group_name);
+
+      CREATE TABLE clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        domain TEXT,
+        category TEXT,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        admin_url TEXT,
+        admin_username TEXT,
+        admin_password TEXT,
+        hosting_provider TEXT,
+        hosting_url TEXT,
+        hosting_username TEXT,
+        hosting_password TEXT,
+        ftp_host TEXT,
+        ftp_port TEXT,
+        ftp_username TEXT,
+        ftp_password TEXT,
+        db_host TEXT,
+        db_name TEXT,
+        db_username TEXT,
+        db_password TEXT,
+        phpmyadmin_url TEXT,
+        registrar TEXT,
+        domain_expiry TEXT,
+        ssl_expiry TEXT,
+        notes TEXT,
+        qr_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX idx_clients_name ON clients (name);
+      CREATE INDEX idx_clients_favorite ON clients (favorite);
+    `);
+
+    const meta = db.prepare("INSERT INTO vault_meta (key, value) VALUES (?, ?);");
+    meta.run(["schema_version", "1"]);
+    meta.run(["created_at", createdAt]);
+    meta.run(["active_group", ""]);
+    meta.free();
+
+    const category = db.prepare("INSERT INTO categories (name, created_at) VALUES (?, ?);");
+    for (const name of getDefaultCategories()) {
+      category.run([name, createdAt]);
+    }
+    category.free();
+
+    return Buffer.from(db.export());
+  } finally {
+    db.close();
+  }
+}
+
+function getDefaultCategories() {
+  return [
+    "WordPress",
+    "Hosting",
+    "Domain",
+    "Email",
+    "FTP",
+    "Database",
+    "API",
+    "Cloudflare",
+    "Social Media",
+    "Development",
+    "Client Portal",
+    "Other"
+  ];
+}
+
+function encryptBuffer(value, key) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  return {
+    iv: iv.toString("base64"),
+    tag: tag.toString("base64"),
+    ciphertext: encrypted.toString("base64")
+  };
+}
+
+function decryptBuffer(payload, key) {
+  try {
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      key,
+      Buffer.from(payload.iv, "base64")
+    );
+
+    decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
+
+    return Buffer.concat([
+      decipher.update(Buffer.from(payload.ciphertext, "base64")),
+      decipher.final()
+    ]);
+  } catch {
+    throw createPublicError("Encrypted vault database could not be decrypted.");
+  }
+}
+
+function queryAll(db, sql, params = []) {
+  const statement = db.prepare(sql);
+
+  try {
+    statement.bind(params);
+    const rows = [];
+
+    while (statement.step()) {
+      rows.push(statement.getAsObject());
+    }
+
+    return rows;
+  } finally {
+    statement.free();
+  }
+}
+
+function queryOne(db, sql, params = []) {
+  return queryAll(db, sql, params)[0] || {};
+}
+
+async function writeJsonAtomic(filePath, value) {
+  const temporaryPath = `${filePath}.tmp`;
+  const json = `${JSON.stringify(value, null, 2)}\n`;
+
+  await fs.writeFile(temporaryPath, json, { encoding: "utf8", flag: "wx" });
+  await fs.rename(temporaryPath, filePath);
+}
+
+function isValidEncryptedDatabase(payload) {
+  return Boolean(
+    payload &&
+      payload.format === "secure-login-vault-encrypted-sqlite" &&
+      payload.version === 1 &&
+      payload.encryption &&
+      payload.encryption.algorithm === "aes-256-gcm" &&
+      typeof payload.encryption.iv === "string" &&
+      typeof payload.encryption.tag === "string" &&
+      typeof payload.encryption.ciphertext === "string"
+  );
+}
+
+function createPublicError(message) {
+  const error = new Error(message);
+  error.isPublic = true;
+  return error;
+}
+
+module.exports = {
+  createEncryptedVaultFile,
+  readDashboardData,
+  verifyEncryptedVaultFile,
+  rekeyEncryptedVaultFile,
+  getCredentials,
+  getCredentialById,
+  addCredential,
+  updateCredential,
+  deleteCredential,
+  toggleFavorite,
+  getCategories,
+  getCategoryUsage,
+  addCategory,
+  renameCategory,
+  deleteCategory,
+  searchCredentials,
+  getGroups,
+  getGroupUsage,
+  addGroup,
+  renameGroup,
+  deleteGroup,
+  getActiveGroup,
+  setActiveGroup,
+  getClients,
+  getClientById,
+  addClient,
+  updateClient,
+  deleteClient,
+  toggleClientFavorite,
+  searchClients
+};
