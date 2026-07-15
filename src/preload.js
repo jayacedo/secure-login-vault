@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
 
   credentials: {
     getAll:         ()          => ipcRenderer.invoke("vault:get-credentials"),
+    getAllForExport: ()         => ipcRenderer.invoke("vault:get-credentials-for-export"),
     getOne:         (id)        => ipcRenderer.invoke("vault:get-credential", id),
     add:            (data)      => ipcRenderer.invoke("vault:add-credential", data),
     update:         (id, d)     => ipcRenderer.invoke("vault:update-credential", id, d),
@@ -79,6 +80,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   branding: {
-    setWindowTitle: (title) => ipcRenderer.invoke("app:set-window-title", title)
+    setWindowTitle: (title) => ipcRenderer.invoke("app:set-window-title", title),
+    setWindowIcon: (dataUri) => ipcRenderer.invoke("app:set-window-icon", dataUri)
   }
 });

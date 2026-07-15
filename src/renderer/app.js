@@ -2104,8 +2104,9 @@ function initTheme() {
 // re-applied on every launch via applyBranding(), called right next to
 // initTheme() so there's no flash of the default brand before it kicks in.
 //
-// Note: this only affects what's drawn inside the window. The OS taskbar/dock
-// icon comes from the packaged .ico/.icns and is fixed at build time.
+// The window/taskbar icon (Windows) also follows the custom logo now, via
+// the branding.setWindowIcon IPC bridge — main.js applies it with
+// BrowserWindow.setIcon() since that can't be done from the renderer.
 
 function getBrandName() {
   return getPref(PREF_BRAND_NAME, DEFAULT_BRAND_NAME);
@@ -2150,6 +2151,12 @@ function applyBranding() {
   // whatever title main.js set at launch.
   if (window.secureLoginVault?.branding?.setWindowTitle) {
     window.secureLoginVault.branding.setWindowTitle(name);
+  }
+
+  // Same idea for the window/taskbar icon — passing "" resets it back to the
+  // packaged default on the main-process side when no custom logo is set.
+  if (window.secureLoginVault?.branding?.setWindowIcon) {
+    window.secureLoginVault.branding.setWindowIcon(getBrandLogo());
   }
 
   // Patch whatever brand name/logo elements already exist on screen (sidebar,
@@ -3761,7 +3768,9 @@ function parseJsonImport(content) {
       email: String(item.email || "").trim(),
       password: String(item.password || ""),
       tags: String(item.tags || "").trim(),
+      groupName: String(item.groupName || item.group_name || item.clientGroup || "").trim(),
       notes: String(item.notes || "").trim(),
+      qrCode: String(item.qrCode || item.qr_code || ""),
       favorite: Boolean(item.favorite)
     }))
     .filter((row) => row.websiteName && row.password);
@@ -3844,6 +3853,7 @@ function mapStandardCsvRow(record) {
     email: record["email"] || "",
     password: record["password"] || "",
     tags: record["tags"] || "",
+    groupName: record["group"] || "",
     notes: record["notes"] || "",
     favorite: ["1", "true", "yes"].includes((record["favorite"] || "").toLowerCase())
   };
@@ -3878,7 +3888,7 @@ async function runExportFlow(formatKind, triggerBtn) {
     return;
   }
 
-  const allRes = await window.secureLoginVault.credentials.getAll();
+  const allRes = await window.secureLoginVault.credentials.getAllForExport();
   if (!allRes.ok) {
     setSettingsStatus(allRes.message, true);
     return;
@@ -3916,6 +3926,8 @@ async function runExportFlow(formatKind, triggerBtn) {
   showToast("Export complete", "info");
 }
 
+// Includes every field (via ...rest), so the qrCode data URI rides along
+// automatically — JSON has no practical size limit for it.
 function buildJsonExport(credentials) {
   const payload = {
     format: "secure-login-vault-export",
@@ -3926,10 +3938,15 @@ function buildJsonExport(credentials) {
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
+// CSV deliberately excludes qrCode (unlike JSON above): a QR data URI can
+// run past Excel/Sheets' per-cell character limit, and would make an
+// already-plain-text CSV export even riskier to casually open. Use JSON
+// (or the encrypted backup) to carry 2FA QR codes between vaults.
+
 function buildCsvExport(credentials) {
   const headers = [
     "Website Name", "Website URL", "Category", "Username",
-    "Email", "Password", "Tags", "Notes", "Favorite"
+    "Email", "Password", "Tags", "Group", "Notes", "Favorite"
   ];
   const lines = [headers.map(csvEscape).join(",")];
 
@@ -3937,7 +3954,7 @@ function buildCsvExport(credentials) {
     lines.push(
       [
         c.websiteName, c.websiteUrl, c.category, c.username,
-        c.email, c.password, c.tags, c.notes, c.favorite ? "true" : "false"
+        c.email, c.password, c.tags, c.groupName, c.notes, c.favorite ? "true" : "false"
       ]
         .map(csvEscape)
         .join(",")

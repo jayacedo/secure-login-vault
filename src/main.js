@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const { createVaultStore } = require("./services/vaultStore");
 
 const isDevelopment = !app.isPackaged;
+const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
 let vaultStore;
 let mainWindow;
 
@@ -16,7 +17,7 @@ function createMainWindow() {
     show: false,
     backgroundColor: "#f6f7fb",
     title: "Secure Login Vault",
-    icon: path.join(__dirname, "..", "assets", "icon.ico"),
+    icon: DEFAULT_ICON_PATH,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -113,6 +114,10 @@ function registerAuthHandlers() {
   // ─── Phase 5: Credential CRUD ───────────────────────────────────────────────
   ipcMain.handle("vault:get-credentials", async () => {
     return handleVaultOperation(() => vaultStore.getAllCredentials());
+  });
+
+  ipcMain.handle("vault:get-credentials-for-export", async () => {
+    return handleVaultOperation(() => vaultStore.getAllCredentialsForExport());
   });
 
   ipcMain.handle("vault:get-credential", async (_event, id) => {
@@ -340,6 +345,26 @@ function registerSettingsHandlers() {
     if (typeof title !== "string" || !title.trim()) return { ok: false };
     if (!mainWindow) return { ok: false };
     mainWindow.setTitle(title.trim().slice(0, 100));
+    return { ok: true };
+  });
+
+  // Lets a custom Logo set in Settings also apply to the window/taskbar icon,
+  // not just the in-page brand mark — BrowserWindow's icon is otherwise fixed
+  // at window-creation time. Renderer-supplied, so validate it's actually
+  // image data before handing it to nativeImage; anything else (including an
+  // empty string, when no custom logo is set) falls back to the packaged icon.
+  ipcMain.handle("app:set-window-icon", async (_event, dataUri) => {
+    if (!mainWindow) return { ok: false };
+
+    if (typeof dataUri === "string" && dataUri.startsWith("data:image/")) {
+      const image = nativeImage.createFromDataURL(dataUri);
+      if (!image.isEmpty()) {
+        mainWindow.setIcon(image);
+        return { ok: true };
+      }
+    }
+
+    mainWindow.setIcon(DEFAULT_ICON_PATH);
     return { ok: true };
   });
 }

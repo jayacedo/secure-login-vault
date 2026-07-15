@@ -176,6 +176,26 @@ async function getCredentials(filePath, key) {
   });
 }
 
+// Same as getCredentials, but also includes qr_code — used only by the
+// export flow. The dashboard list/search deliberately leave qr_code out
+// (it's the one field meaningfully larger than the rest), but a full-fidelity
+// export needs it or a re-imported vault silently loses every saved 2FA QR.
+async function getCredentialsForExport(filePath, key) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const activeGroup = getActiveGroupFilterValue(db);
+    let sql = `SELECT id, website_name, website_url, category, username, password,
+              email, notes, tags, favorite, group_name, qr_code, created_at, updated_at
+       FROM credentials`;
+    const params = [];
+    if (activeGroup) {
+      sql += ` WHERE group_name = ? COLLATE NOCASE`;
+      params.push(activeGroup);
+    }
+    sql += ` ORDER BY favorite DESC, updated_at DESC, website_name COLLATE NOCASE`;
+    return queryAll(db, sql, params).map(normalizeCredential);
+  });
+}
+
 async function getCredentialById(filePath, key, id) {
   return withDecryptedDatabase(filePath, key, (db) => {
     const row = queryOne(db, `SELECT * FROM credentials WHERE id = ?`, [id]);
@@ -1300,6 +1320,7 @@ module.exports = {
   verifyEncryptedVaultFile,
   rekeyEncryptedVaultFile,
   getCredentials,
+  getCredentialsForExport,
   getCredentialById,
   addCredential,
   updateCredential,

@@ -8,6 +8,7 @@ const {
   readDashboardData,
   verifyEncryptedVaultFile,
   getCredentials,
+  getCredentialsForExport,
   getCredentialById,
   addCredential,
   updateCredential,
@@ -192,6 +193,11 @@ function createVaultStore(basePath) {
   async function getAllCredentials() {
     ensureUnlocked();
     return getCredentials(databaseFilePath, sessionKey);
+  }
+
+  async function getAllCredentialsForExport() {
+    ensureUnlocked();
+    return getCredentialsForExport(databaseFilePath, sessionKey);
   }
 
   async function getCredential(id) {
@@ -533,6 +539,7 @@ function createVaultStore(basePath) {
     lockVault,
     unlockVault,
     getAllCredentials,
+    getAllCredentialsForExport,
     getCredential,
     createCredential,
     editCredential,
