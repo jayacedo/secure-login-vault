@@ -3175,3 +3175,42 @@ small.group-badge {
   background: #ffffff;
   object-fit: contain;
 }
+
+/* ─── Import mode choice (Merge vs Replace) ─────────────────────────────────── */
+
+.import-mode-container {
+  width: 460px;
+}
+
+.import-mode-options {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.import-mode-btn {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  text-align: left;
+  width: 100%;
+  min-height: 0;
+  padding: 12px 14px;
+  white-space: normal;
+}
+
+.import-mode-btn strong {
+  font-size: 0.92rem;
+}
+
+.import-mode-btn span {
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.85;
+  line-height: 1.4;
+}
+
+.import-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

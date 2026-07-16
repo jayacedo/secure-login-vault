@@ -8,6 +8,14 @@ const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
 let vaultStore;
 let mainWindow;
 
+// Without a stable AppUserModelID, Windows can group/cache the taskbar
+// button under the underlying electron.exe process instead of this app's
+// own identity, which makes a dynamic setIcon() call (used for the custom
+// branding logo) unreliable to see reflected in the taskbar.
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.securelogin.vault");
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -134,6 +142,10 @@ function registerAuthHandlers() {
 
   ipcMain.handle("vault:delete-credential", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.removeCredential(id));
+  });
+
+  ipcMain.handle("vault:delete-credentials-by-groups", async (_event, groupNames) => {
+    return handleVaultOperation(() => vaultStore.removeCredentialsByGroups(groupNames));
   });
 
   ipcMain.handle("vault:toggle-favorite", async (_event, id) => {

@@ -13,6 +13,7 @@ const {
   addCredential,
   updateCredential,
   deleteCredential,
+  deleteCredentialsByGroups,
   toggleFavorite,
   getCategories,
   getCategoryUsage,
@@ -218,6 +219,11 @@ function createVaultStore(basePath) {
   async function removeCredential(id) {
     ensureUnlocked();
     return deleteCredential(databaseFilePath, sessionKey, Number(id));
+  }
+
+  async function removeCredentialsByGroups(groupNames) {
+    ensureUnlocked();
+    return deleteCredentialsByGroups(databaseFilePath, sessionKey, groupNames);
   }
 
   async function toggleCredentialFavorite(id) {
@@ -544,6 +550,7 @@ function createVaultStore(basePath) {
     createCredential,
     editCredential,
     removeCredential,
+    removeCredentialsByGroups,
     toggleCredentialFavorite,
     getAllCategories,
     getCategoriesWithUsage,

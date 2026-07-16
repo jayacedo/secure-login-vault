@@ -176,23 +176,19 @@ async function getCredentials(filePath, key) {
   });
 }
 
-// Same as getCredentials, but also includes qr_code — used only by the
-// export flow. The dashboard list/search deliberately leave qr_code out
-// (it's the one field meaningfully larger than the rest), but a full-fidelity
-// export needs it or a re-imported vault silently loses every saved 2FA QR.
+// Same as getCredentials, but also includes qr_code and — unlike every other
+// read path in this file — ignores the active-group lock. That lock exists
+// to hide other groups' credentials from casual browsing/screen-sharing; an
+// explicit "Export" action is a deliberate full-vault data-portability step,
+// so silently dropping locked-out groups from the file would be a surprising
+// way to lose data rather than a privacy feature doing its job.
 async function getCredentialsForExport(filePath, key) {
   return withDecryptedDatabase(filePath, key, (db) => {
-    const activeGroup = getActiveGroupFilterValue(db);
-    let sql = `SELECT id, website_name, website_url, category, username, password,
+    const sql = `SELECT id, website_name, website_url, category, username, password,
               email, notes, tags, favorite, group_name, qr_code, created_at, updated_at
-       FROM credentials`;
-    const params = [];
-    if (activeGroup) {
-      sql += ` WHERE group_name = ? COLLATE NOCASE`;
-      params.push(activeGroup);
-    }
-    sql += ` ORDER BY favorite DESC, updated_at DESC, website_name COLLATE NOCASE`;
-    return queryAll(db, sql, params).map(normalizeCredential);
+       FROM credentials
+       ORDER BY favorite DESC, updated_at DESC, website_name COLLATE NOCASE`;
+    return queryAll(db, sql, []).map(normalizeCredential);
   });
 }
 
@@ -217,6 +213,7 @@ async function addCredential(filePath, key, data) {
     // group so they don't silently fall outside the current lock and stay
     // invisible to the person who just created them.
     const groupName = normalizeGroupValue(data.groupName) || activeGroup || "";
+    ensureGroupExists(db, groupName);
     const stmt = db.prepare(
       `INSERT INTO credentials
         (website_name, website_url, category, username, password, email, notes, tags, favorite, group_name, qr_code, created_at, updated_at)
@@ -249,6 +246,7 @@ async function updateCredential(filePath, key, id, data) {
     const existing = queryOne(db, "SELECT id FROM credentials WHERE id = ?", [id]);
     if (!existing || !existing.id) throw createPublicError("Credential not found.");
     const now = new Date().toISOString();
+    ensureGroupExists(db, normalizeGroupValue(data.groupName));
     const stmt = db.prepare(
       `UPDATE credentials SET
         website_name = ?, website_url = ?, category = ?, username = ?,
@@ -283,6 +281,41 @@ async function deleteCredential(filePath, key, id) {
     stmt.run([id]);
     stmt.free();
     return { deleted: true };
+  });
+}
+
+// Backs the "Replace" import mode: deletes every credential belonging to the
+// given group name(s) (an empty string means "no group") before the import's
+// rows are inserted, so re-importing the same group repeatedly doesn't pile
+// up duplicates. Deliberately ignores the active-group lock — same reasoning
+// as getCredentialsForExport, this is an explicit data-management action, not
+// casual browsing the lock is meant to restrict. Any group NOT present in
+// groupNames is left completely untouched.
+async function deleteCredentialsByGroups(filePath, key, groupNames) {
+  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    const names = Array.from(new Set((groupNames || []).map((g) => (g || "").trim())));
+    const namedGroups = names.filter((g) => g !== "");
+    const includeUnassigned = names.includes("");
+
+    const conditions = [];
+    const params = [];
+    if (namedGroups.length > 0) {
+      conditions.push(`group_name COLLATE NOCASE IN (${namedGroups.map(() => "?").join(", ")})`);
+      params.push(...namedGroups);
+    }
+    if (includeUnassigned) {
+      conditions.push(`(group_name IS NULL OR group_name = '')`);
+    }
+    if (conditions.length === 0) {
+      return { deleted: 0 };
+    }
+
+    const whereClause = conditions.join(" OR ");
+    const countRow = queryOne(db, `SELECT COUNT(*) AS total FROM credentials WHERE ${whereClause}`, params);
+    const stmt = db.prepare(`DELETE FROM credentials WHERE ${whereClause}`);
+    stmt.run(params);
+    stmt.free();
+    return { deleted: Number(countRow.total || 0) };
   });
 }
 
@@ -894,6 +927,25 @@ function normalizeGroupValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+// Creates the group if a credential is being tagged with a name that doesn't
+// exist in the groups table yet — a no-op if it already does. Manually adding
+// a credential can never hit the "doesn't exist" branch (the group dropdown
+// there only ever offers real groups), but CSV/JSON import hands over
+// arbitrary group name strings from another vault, and without this those
+// names would tag the credential correctly while staying invisible in the
+// Active Group dropdown and Manage Groups list until someone created them
+// there by hand.
+function ensureGroupExists(db, name) {
+  const trimmed = normalizeGroupValue(name);
+  if (!trimmed) return;
+  const existing = queryOne(db, "SELECT id FROM groups WHERE name = ? COLLATE NOCASE", [trimmed]);
+  if (existing.id === undefined) {
+    const stmt = db.prepare("INSERT INTO groups (name, created_at) VALUES (?, ?);");
+    stmt.run([trimmed, new Date().toISOString()]);
+    stmt.free();
+  }
+}
+
 // ─── Schema upgrades (applied in-memory on every database open) ──────────────
 //
 // There's no formal migration runner here — instead, every time the database
@@ -1325,6 +1377,7 @@ module.exports = {
   addCredential,
   updateCredential,
   deleteCredential,
+  deleteCredentialsByGroups,
   toggleFavorite,
   getCategories,
   getCategoryUsage,

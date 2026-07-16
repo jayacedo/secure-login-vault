@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     add:            (data)      => ipcRenderer.invoke("vault:add-credential", data),
     update:         (id, d)     => ipcRenderer.invoke("vault:update-credential", id, d),
     remove:         (id)        => ipcRenderer.invoke("vault:delete-credential", id),
+    removeByGroups: (groupNames) => ipcRenderer.invoke("vault:delete-credentials-by-groups", groupNames),
     toggleFavorite: (id)        => ipcRenderer.invoke("vault:toggle-favorite", id),
     getCategories:  ()          => ipcRenderer.invoke("vault:get-categories"),
     search:         (options)   => ipcRenderer.invoke("vault:search-credentials", options)

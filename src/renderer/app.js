@@ -3711,9 +3711,87 @@ async function runImportFlow(formatKind, triggerBtn) {
     return;
   }
 
+  await openImportModeModal(rows, triggerBtn);
+}
+
+// Lets the user choose how the parsed rows should land: Merge (add alongside
+// whatever already exists — safe, but re-importing the same file repeatedly
+// piles up duplicates) or Replace (clear out existing credentials in the
+// group(s) this file contains first, then insert — for the "re-sync this
+// group from another device" case). Replace never touches any group that
+// isn't actually present in the file.
+async function openImportModeModal(rows, triggerBtn) {
+  const groupKeys = Array.from(new Set(rows.map((r) => (r.groupName || "").trim())));
+  const groupLabels = groupKeys.map((g) => (g ? g : "Unassigned"));
+
+  const existingRes = await window.secureLoginVault.credentials.getAllForExport();
+  const existing = existingRes.ok ? existingRes.result : [];
+  const existingCount = existing.filter((c) => groupKeys.includes((c.groupName || "").trim())).length;
+
+  const overlay = getOrCreateImportModeOverlay();
+  overlay.innerHTML = `
+    <div class="modal-container import-mode-container" role="dialog" aria-modal="true" aria-labelledby="import-mode-heading">
+      <div class="modal-header">
+        <h2 id="import-mode-heading">Import ${rows.length} Credential${rows.length === 1 ? "" : "s"}</h2>
+        <button class="modal-close-btn" type="button" id="import-mode-close-btn" title="Close">
+          ${renderCloseIcon()}
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">
+          This file contains: <strong>${groupLabels.map(escapeHtml).join(", ")}</strong>.
+          ${existingCount > 0
+            ? `You already have <strong>${existingCount}</strong> credential${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"}.`
+            : `You don't have any existing credentials in ${groupLabels.length === 1 ? "that group" : "those groups"} yet.`}
+        </p>
+        <div class="import-mode-options">
+          <button type="button" class="secondary-button import-mode-btn" id="import-mode-merge-btn">
+            <strong>Merge</strong>
+            <span>Add these ${rows.length} alongside what's already there.</span>
+          </button>
+          <button type="button" class="danger-button import-mode-btn" id="import-mode-replace-btn" ${existingCount === 0 ? "disabled" : ""}>
+            <strong>Replace</strong>
+            <span>Delete the ${existingCount} existing credential${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"} first, then import. Cannot be undone.</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  overlay.classList.add("is-open");
+
+  const close = () => overlay.classList.remove("is-open");
+  overlay.querySelector("#import-mode-close-btn").addEventListener("click", close);
+  overlay.querySelector("#import-mode-merge-btn").addEventListener("click", () => {
+    close();
+    performImport(rows, triggerBtn, { replace: false, groupKeys: [] });
+  });
+  overlay.querySelector("#import-mode-replace-btn").addEventListener("click", () => {
+    close();
+    performImport(rows, triggerBtn, { replace: true, groupKeys });
+  });
+}
+
+function getOrCreateImportModeOverlay() {
+  let overlay = document.querySelector("#import-mode-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "import-mode-overlay";
+    overlay.className = "modal-overlay";
+    document.body.appendChild(overlay);
+  }
+  return overlay;
+}
+
+async function performImport(rows, triggerBtn, { replace, groupKeys }) {
   setSettingsButtonsDisabled(true);
   const originalLabel = triggerBtn.innerHTML;
   triggerBtn.innerHTML = `<span>Importing...</span>`;
+
+  let deleted = 0;
+  if (replace && groupKeys.length > 0) {
+    const delRes = await window.secureLoginVault.credentials.removeByGroups(groupKeys);
+    if (delRes.ok) deleted = delRes.result.deleted;
+  }
 
   let imported = 0;
   let failed = 0;
@@ -3732,9 +3810,10 @@ async function runImportFlow(formatKind, triggerBtn) {
   setSettingsButtonsDisabled(false);
   triggerBtn.innerHTML = originalLabel;
 
+  const deletedNote = replace ? `Replaced ${deleted} existing. ` : "";
   const summary = failed
-    ? `Imported ${imported} of ${rows.length}. ${failed} failed: ${failedNames.slice(0, 5).join(", ")}${failedNames.length > 5 ? "..." : ""}`
-    : `Imported ${imported} credential${imported === 1 ? "" : "s"} successfully.`;
+    ? `${deletedNote}Imported ${imported} of ${rows.length}. ${failed} failed: ${failedNames.slice(0, 5).join(", ")}${failedNames.length > 5 ? "..." : ""}`
+    : `${deletedNote}Imported ${imported} credential${imported === 1 ? "" : "s"} successfully.`;
 
   setSettingsStatus(summary, Boolean(failed));
   showToast(failed ? "Import finished with some errors" : "Import complete", failed ? "error" : "info");
