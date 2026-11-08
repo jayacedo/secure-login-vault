@@ -170,4 +170,85 @@ for (const bad of [
   assert.equal(clock.pending(), 0);
 }
 
+// --- native dialog: background lock is paused while it is open
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 10 });
+  manager.setUnlocked(true);
+  manager.pauseBackground();
+  manager.windowBackgrounded(); // opening the dialog blurs the window
+  clock.advance(60 * SEC);
+  assert.deepEqual(locks, [], "no background lock while a dialog is open");
+  manager.windowForegrounded(); // dialog closed, focus is back
+  manager.resumeBackground();
+  clock.advance(3600 * SEC);
+  assert.deepEqual(locks, [], "returning from the dialog does not lock");
+}
+
+// --- instant lock must not fire when focus returns just after the dialog closes
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 0 });
+  manager.setUnlocked(true);
+  manager.pauseBackground();
+  manager.windowBackgrounded();
+  manager.resumeBackground(); // dialog promise resolves first ...
+  clock.advance(100);
+  manager.windowForegrounded(); // ... focus event arrives a moment later
+  clock.advance(3600 * SEC);
+  assert.deepEqual(locks, [], "late focus event is not treated as leaving");
+}
+
+// --- user left during the dialog: normal background lock applies after it closes
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 10 });
+  manager.setUnlocked(true);
+  manager.pauseBackground();
+  manager.windowBackgrounded();
+  manager.resumeBackground();
+  clock.advance(499);
+  assert.deepEqual(locks, []);
+  clock.advance(1 + 9 * SEC);
+  assert.deepEqual(locks, [], "grace period still applies");
+  clock.advance(1 * SEC);
+  assert.deepEqual(locks, ["background"]);
+}
+
+// --- walking away from an open dialog still locks (pause is time-limited)
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 10 });
+  manager.setUnlocked(true);
+  manager.pauseBackground();
+  manager.windowBackgrounded();
+  clock.advance(5 * 60 * SEC - 1);
+  assert.deepEqual(locks, []);
+  clock.advance(1);
+  assert.deepEqual(locks, [], "grace starts once the pause expires");
+  clock.advance(10 * SEC);
+  assert.deepEqual(locks, ["background"]);
+}
+
+// --- nested pauses and stray resumes
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 0 });
+  manager.setUnlocked(true);
+  manager.resumeBackground(); // no matching pause: ignored
+  manager.pauseBackground();
+  manager.pauseBackground();
+  manager.windowBackgrounded();
+  manager.resumeBackground();
+  clock.advance(60 * SEC);
+  assert.deepEqual(locks, [], "still paused until every dialog has closed");
+  manager.resumeBackground();
+  clock.advance(500);
+  assert.deepEqual(locks, ["background"]);
+}
+
+// --- the inactivity lock is not paused by dialogs
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 300, backgroundGraceSeconds: 10 });
+  manager.setUnlocked(true);
+  manager.pauseBackground();
+  clock.advance(300 * SEC);
+  assert.deepEqual(locks, ["inactivity"]);
+}
+
 console.log("lock-manager tests passed");

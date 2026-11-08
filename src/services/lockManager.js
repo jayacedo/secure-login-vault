@@ -10,6 +10,14 @@ const DEFAULT_POLICY = Object.freeze({
 const MAX_IDLE_SECONDS = 24 * 60 * 60;
 const MAX_BACKGROUND_SECONDS = 60 * 60;
 
+// Native file dialogs take focus from the window, which would look like the
+// user leaving. Background locking is paused while one is open, but only for
+// this long, so walking away from an open dialog still locks the vault.
+const MAX_DIALOG_PAUSE_MS = 5 * 60 * 1000;
+// After a dialog closes, give the window a moment to regain focus before
+// deciding the user really left.
+const DIALOG_RESUME_CHECK_MS = 500;
+
 function isWholeNumberInRange(value, min, max) {
   return Number.isInteger(value) && value >= min && value <= max;
 }
@@ -39,6 +47,10 @@ function createLockManager({ onLock, setTimer = setTimeout, clearTimer = clearTi
   let unlocked = false;
   let idleTimer = null;
   let backgroundTimer = null;
+  let backgrounded = false; // window currently minimized or unfocused
+  let dialogDepth = 0;
+  let dialogCapTimer = null;
+  let resumeCheckTimer = null;
 
   function clearIdle() {
     if (idleTimer !== null) clearTimer(idleTimer);
@@ -50,9 +62,30 @@ function createLockManager({ onLock, setTimer = setTimeout, clearTimer = clearTi
     backgroundTimer = null;
   }
 
+  function clearResumeCheck() {
+    if (resumeCheckTimer !== null) clearTimer(resumeCheckTimer);
+    resumeCheckTimer = null;
+  }
+
+  function clearDialogCap() {
+    if (dialogCapTimer !== null) clearTimer(dialogCapTimer);
+    dialogCapTimer = null;
+  }
+
+  function startBackgroundLock() {
+    clearBackground();
+    if (!unlocked || policy.backgroundGraceSeconds === null) return;
+    if (policy.backgroundGraceSeconds === 0) {
+      lockNow("background");
+    } else {
+      backgroundTimer = setTimer(() => lockNow("background"), policy.backgroundGraceSeconds * 1000);
+    }
+  }
+
   function lockNow(reason) {
     clearIdle();
     clearBackground();
+    clearResumeCheck();
     if (!unlocked) return;
     unlocked = false;
     onLock(reason);
@@ -91,23 +124,51 @@ function createLockManager({ onLock, setTimer = setTimeout, clearTimer = clearTi
     },
 
     windowBackgrounded() {
-      if (!unlocked || policy.backgroundGraceSeconds === null) return;
-      clearBackground();
-      if (policy.backgroundGraceSeconds === 0) {
-        lockNow("background");
-      } else {
-        backgroundTimer = setTimer(() => lockNow("background"), policy.backgroundGraceSeconds * 1000);
-      }
+      backgrounded = true;
+      if (dialogDepth > 0) return; // a native dialog is open; see pauseBackground()
+      startBackgroundLock();
     },
 
     windowForegrounded() {
+      backgrounded = false;
       clearBackground();
+      clearResumeCheck();
+    },
+
+    // Call before opening a native dialog and resumeBackground() after it closes.
+    pauseBackground() {
+      dialogDepth += 1;
+      clearBackground();
+      clearResumeCheck();
+      if (dialogDepth === 1) {
+        dialogCapTimer = setTimer(() => {
+          dialogCapTimer = null;
+          dialogDepth = 0;
+          if (backgrounded) startBackgroundLock();
+        }, MAX_DIALOG_PAUSE_MS);
+      }
+    },
+
+    resumeBackground() {
+      if (dialogDepth === 0) return;
+      dialogDepth -= 1;
+      if (dialogDepth > 0) return;
+      clearDialogCap();
+      // If focus has not come back to the window shortly after the dialog
+      // closed, the user really did leave: apply the normal background lock.
+      resumeCheckTimer = setTimer(() => {
+        resumeCheckTimer = null;
+        if (backgrounded) startBackgroundLock();
+      }, DIALOG_RESUME_CHECK_MS);
     },
 
     dispose() {
       unlocked = false;
+      dialogDepth = 0;
       clearIdle();
       clearBackground();
+      clearResumeCheck();
+      clearDialogCap();
     }
   };
 }

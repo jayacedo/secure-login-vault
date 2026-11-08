@@ -13,6 +13,18 @@ let mainWindow;
 let lockManager;
 const pathGrants = createPathGrants();
 
+// Native dialogs take focus from the window; keep that from triggering the
+// background auto-lock while the user is picking a file (time-limited, see
+// lockManager).
+async function withNativeDialog(openDialog) {
+  lockManager.pauseBackground();
+  try {
+    return await openDialog();
+  } finally {
+    lockManager.resumeBackground();
+  }
+}
+
 function openExternalSafely(url) {
   if (isSafeExternalUrl(url)) {
     shell.openExternal(url);
@@ -244,16 +256,18 @@ function registerImportExportHandlers() {
   // ─── Phase 9: Import ────────────────────────────────────────────────────────
 
   ipcMain.handle("vault:pick-import-file", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Select a file to import",
-      properties: ["openFile"],
-      filters: [
-        { name: "Supported files", extensions: ["csv", "json"] },
-        { name: "CSV", extensions: ["csv"] },
-        { name: "JSON", extensions: ["json"] },
-        { name: "All files", extensions: ["*"] }
-      ]
-    });
+    const result = await withNativeDialog(() =>
+      dialog.showOpenDialog(mainWindow, {
+        title: "Select a file to import",
+        properties: ["openFile"],
+        filters: [
+          { name: "Supported files", extensions: ["csv", "json"] },
+          { name: "CSV", extensions: ["csv"] },
+          { name: "JSON", extensions: ["json"] },
+          { name: "All files", extensions: ["*"] }
+        ]
+      })
+    );
 
     if (result.canceled || !result.filePaths[0]) {
       return { ok: true, result: { canceled: true } };
@@ -281,11 +295,13 @@ function registerImportExportHandlers() {
     };
     const filter = filterMap[format] || { name: "All files", extensions: ["*"] };
 
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: "Choose where to save the export",
-      defaultPath: defaultName,
-      filters: [filter]
-    });
+    const result = await withNativeDialog(() =>
+      dialog.showSaveDialog(mainWindow, {
+        title: "Choose where to save the export",
+        defaultPath: defaultName,
+        filters: [filter]
+      })
+    );
 
     if (result.canceled || !result.filePath) {
       return { ok: true, result: { canceled: true } };
@@ -320,11 +336,13 @@ function registerImportExportHandlers() {
   });
 
   ipcMain.handle("vault:pick-restore-file", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Select an encrypted backup to restore",
-      properties: ["openFile"],
-      filters: [{ name: "Encrypted Backup", extensions: ["slvbackup"] }]
-    });
+    const result = await withNativeDialog(() =>
+      dialog.showOpenDialog(mainWindow, {
+        title: "Select an encrypted backup to restore",
+        properties: ["openFile"],
+        filters: [{ name: "Encrypted Backup", extensions: ["slvbackup"] }]
+      })
+    );
 
     if (result.canceled || !result.filePaths[0]) {
       return { ok: true, result: { canceled: true } };
@@ -421,10 +439,12 @@ function registerSettingsHandlers() {
   });
 
   ipcMain.handle("app:pick-folder", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Select Folder",
-      properties: ["openDirectory", "createDirectory"]
-    });
+    const result = await withNativeDialog(() =>
+      dialog.showOpenDialog(mainWindow, {
+        title: "Select Folder",
+        properties: ["openDirectory", "createDirectory"]
+      })
+    );
     if (result.canceled || !result.filePaths[0]) {
       return { ok: true, result: { canceled: true } };
     }
