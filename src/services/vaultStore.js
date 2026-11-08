@@ -65,6 +65,8 @@ function createVaultStore(basePath) {
 
     return {
       hasVault: hasAuth,
+      // Stored unencrypted on purpose: it must be readable before unlocking.
+      passwordHint: hasAuth ? await readPasswordHint() : "",
       databaseReady: hasDatabase,
       isUnlocked: Boolean(sessionKey),
       phase: "UI Polish",
@@ -75,11 +77,12 @@ function createVaultStore(basePath) {
     };
   }
 
-  async function createVault({ masterPassword, confirmPassword }) {
+  async function createVault({ masterPassword, confirmPassword, hint }) {
     const normalizedPassword = normalizePassword(masterPassword);
     const normalizedConfirmation = normalizePassword(confirmPassword);
 
     validateNewPassword(normalizedPassword, normalizedConfirmation);
+    const passwordHint = normalizePasswordHint(hint, normalizedPassword);
 
     if ((await fileExists(authFilePath)) || (await fileExists(databaseFilePath))) {
       throw createPublicError("Vault already exists. Unlock it with the master password.");
@@ -122,6 +125,7 @@ function createVaultStore(basePath) {
         fileName: DATABASE_FILE_NAME
       }
     };
+    if (passwordHint) authRecord.hint = passwordHint;
 
     await fs.mkdir(vaultDirectory, { recursive: true });
     await createEncryptedVaultFile(databaseFilePath, key, now);
@@ -342,7 +346,7 @@ function createVaultStore(basePath) {
 
   // ─── Phase 10: Change Master Password ──────────────────────────────────────
 
-  async function changeMasterPassword({ currentPassword, newPassword, confirmPassword }) {
+  async function changeMasterPassword({ currentPassword, newPassword, confirmPassword, hint }) {
     ensureUnlocked();
 
     const normalizedCurrent = normalizePassword(currentPassword);
@@ -356,6 +360,9 @@ function createVaultStore(basePath) {
     if (!passwordMatches) throw createPublicError("Current master password is incorrect.");
 
     validateNewPassword(normalizedNew, normalizedConfirm);
+    // The old hint describes the old password, so it is replaced by the one
+    // supplied here (or removed when none is given).
+    const newHint = normalizePasswordHint(hint, normalizedNew);
 
     const now          = new Date().toISOString();
     const passwordHash = await bcrypt.hash(normalizedNew, BCRYPT_ROUNDS);
@@ -380,6 +387,8 @@ function createVaultStore(basePath) {
         vaultCheck: encryptedCheck
       }
     };
+    delete updatedAuthRecord.hint;
+    if (newHint) updatedAuthRecord.hint = newHint;
 
     // Re-key the SQLite database: read with old key, write with new key
     // Two files must change and they cannot be swapped atomically together.
@@ -403,6 +412,27 @@ function createVaultStore(basePath) {
     sessionKey = newKey;
 
     return { changed: true };
+  }
+
+  // Changing only the hint needs the current password: a hint weakens the vault,
+  // so it should not be editable by someone who walked up to an unlocked app.
+  async function setPasswordHint({ currentPassword, hint }) {
+    ensureUnlocked();
+
+    const normalizedCurrent = normalizePassword(currentPassword);
+    if (!normalizedCurrent) throw createPublicError("Enter your current master password.");
+
+    const authRecord = await readAuthRecord();
+    const passwordMatches = await bcrypt.compare(normalizedCurrent, authRecord.passwordHash);
+    if (!passwordMatches) throw createPublicError("Current master password is incorrect.");
+
+    const newHint = normalizePasswordHint(hint, normalizedCurrent);
+    const updated = { ...authRecord, updatedAt: new Date().toISOString() };
+    delete updated.hint;
+    if (newHint) updated.hint = newHint;
+
+    await writeJsonAtomic(authFilePath, updated);
+    return { hint: newHint };
   }
 
   // ─── Phase 9: Encrypted Backup & Restore ───────────────────────────────────
@@ -500,6 +530,15 @@ function createVaultStore(basePath) {
   }
 
   // ─── Internal helpers ───────────────────────────────────────────────────────
+
+  async function readPasswordHint() {
+    try {
+      const record = JSON.parse(await fs.readFile(authFilePath, "utf8"));
+      return typeof record.hint === "string" ? record.hint : "";
+    } catch {
+      return "";
+    }
+  }
 
   async function readAuthRecord() {
     if (!(await fileExists(authFilePath))) {
@@ -614,7 +653,8 @@ function createVaultStore(basePath) {
     searchVaultClients,
     createEncryptedBackup,
     restoreEncryptedBackup,
-    changeMasterPassword
+    changeMasterPassword,
+    setPasswordHint
   };
 }
 
@@ -638,6 +678,27 @@ function validateNewPassword(masterPassword, confirmPassword) {
   if (masterPassword !== confirmPassword) {
     throw createPublicError("Master password confirmation does not match.");
   }
+}
+
+const MAX_HINT_LENGTH = 100;
+
+// Cleans a password hint and refuses anything that would hand over the password.
+// Returns "" for no hint.
+function normalizePasswordHint(value, masterPassword) {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw createPublicError("Password hint is not valid.");
+
+  const hint = value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!hint) return "";
+
+  if (hint.length > MAX_HINT_LENGTH) {
+    throw createPublicError(`Password hint must be ${MAX_HINT_LENGTH} characters or fewer.`);
+  }
+  if (masterPassword && hint.toLowerCase().includes(masterPassword.toLowerCase())) {
+    throw createPublicError("Password hint must not contain your master password.");
+  }
+
+  return hint;
 }
 
 async function deriveVaultKey(password, salt) {

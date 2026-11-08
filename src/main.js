@@ -397,6 +397,10 @@ function registerSettingsHandlers() {
     return handleVaultOperation(() => vaultStore.changeMasterPassword(payload));
   });
 
+  ipcMain.handle("vault:set-password-hint", async (_event, payload) => {
+    return handleVaultOperation(() => vaultStore.setPasswordHint(payload));
+  });
+
   ipcMain.handle("app:get-info", async () => {
     return handleVaultOperation(async () => ({
       version: app.getVersion(),

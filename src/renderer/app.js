@@ -150,7 +150,7 @@ function renderFromState(state) {
   if (state.isUnlocked) {
     renderDashboard(state);
   } else if (state.hasVault) {
-    renderUnlockForm();
+    renderUnlockForm(state);
   } else {
     renderCreateForm();
   }
@@ -198,6 +198,15 @@ function renderCreateForm() {
         <li id="rule-variety">Mix letters with numbers or symbols</li>
       </ul>
 
+      <label class="hint-label" for="password-hint">
+        <span>Password hint (optional)</span>
+        <input id="password-hint" name="password-hint" type="text" maxlength="100" autocomplete="off" />
+      </label>
+      <p class="form-note hint-note">
+        The hint is shown on the login screen <strong>without</strong> the password, so anyone using this
+        computer can read it. Describe it vaguely and never type the password itself.
+      </p>
+
       <button class="primary-button" type="submit" disabled>Create Vault</button>
       <p class="form-message" id="form-message" role="status"></p>
     </form>
@@ -209,7 +218,8 @@ function renderCreateForm() {
   form.addEventListener("submit", handleCreateVault);
 }
 
-function renderUnlockForm() {
+function renderUnlockForm(state) {
+  const hint = state && typeof state.passwordHint === "string" ? state.passwordHint : "";
   const authCard = getAuthCard();
   authCard.innerHTML = `
     <form class="auth-form" id="unlock-vault-form" novalidate>
@@ -225,6 +235,12 @@ function renderUnlockForm() {
         autocomplete: "current-password"
       })}
 
+      ${hint ? `
+        <div class="hint-reveal">
+          <button class="link-button" type="button" id="show-hint-btn" aria-expanded="false">Show password hint</button>
+          <p class="hint-text" id="hint-text" hidden></p>
+        </div>` : ""}
+
       <button class="primary-button" type="submit">Unlock Vault</button>
       <p class="form-message" id="form-message" role="status"></p>
     </form>
@@ -232,6 +248,18 @@ function renderUnlockForm() {
 
   const form = document.querySelector("#unlock-vault-form");
   setupPasswordToggles(form);
+
+  if (hint) {
+    const hintButton = form.querySelector("#show-hint-btn");
+    const hintText = form.querySelector("#hint-text");
+    hintText.textContent = hint;
+    hintButton.addEventListener("click", () => {
+      const showing = hintText.hidden;
+      hintText.hidden = !showing;
+      hintButton.setAttribute("aria-expanded", String(showing));
+      hintButton.textContent = showing ? "Hide password hint" : "Show password hint";
+    });
+  }
   form.addEventListener("submit", handleUnlockVault);
 }
 
@@ -796,7 +824,8 @@ async function handleCreateVault(event) {
   const message = form.querySelector("#form-message");
   const payload = {
     masterPassword: form.querySelector("#master-password").value,
-    confirmPassword: form.querySelector("#confirm-password").value
+    confirmPassword: form.querySelector("#confirm-password").value,
+    hint: form.querySelector("#password-hint").value
   };
 
   setBusy(button, message, "Creating vault...");
@@ -2480,6 +2509,34 @@ async function openSettingsModal() {
           </div>
 
           <div class="settings-subgroup" style="margin-top: 16px;">
+            <h4 class="settings-subgroup-title">Password Hint</h4>
+            <p class="settings-section-hint">
+              Shown on the login screen without the password, so keep it vague. Leave it empty to remove the hint.
+            </p>
+            <div class="change-pw-form" id="hint-form">
+              <div class="settings-input-row">
+                <label class="settings-input-label" for="hint-input">Hint</label>
+                <div class="settings-input-wrap">
+                  <input class="settings-input" type="text" id="hint-input" maxlength="100" autocomplete="off" placeholder="Optional reminder">
+                </div>
+              </div>
+              <div class="settings-input-row">
+                <label class="settings-input-label" for="hint-current">Current Password</label>
+                <div class="settings-input-wrap">
+                  <input class="settings-input" type="password" id="hint-current" autocomplete="current-password" placeholder="Current master password">
+                  <button class="settings-eye-btn" type="button" data-target="hint-current" aria-label="Show/Hide">
+                    ${renderEyeIcon()}
+                  </button>
+                </div>
+              </div>
+              <p class="form-message" id="hint-status" style="display:none"></p>
+              <button class="primary-button settings-cpw-btn" type="button" id="hint-submit-btn">
+                Save Hint
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-subgroup" style="margin-top: 16px;">
             <h4 class="settings-subgroup-title">Change Master Password</h4>
             <div class="change-pw-form" id="change-pw-form">
               <div class="settings-input-row">
@@ -2507,6 +2564,12 @@ async function openSettingsModal() {
                   <button class="settings-eye-btn" type="button" data-target="cpw-confirm" aria-label="Show/Hide">
                     ${renderEyeIcon()}
                   </button>
+                </div>
+              </div>
+              <div class="settings-input-row">
+                <label class="settings-input-label" for="cpw-hint">New Hint (optional)</label>
+                <div class="settings-input-wrap">
+                  <input class="settings-input" type="text" id="cpw-hint" maxlength="100" autocomplete="off" placeholder="Replaces the old hint">
                 </div>
               </div>
               <p class="form-message" id="cpw-status" style="display:none"></p>
@@ -2796,6 +2859,11 @@ async function openSettingsModal() {
 
   // ── Change master password ───────────────────────────────────────────────────
   overlay.querySelector("#cpw-submit-btn").addEventListener("click", runChangeMasterPassword);
+  overlay.querySelector("#hint-submit-btn").addEventListener("click", runSavePasswordHint);
+  window.secureLoginVault.auth.getState().then((state) => {
+    const input = overlay.querySelector("#hint-input");
+    if (input && state && typeof state.passwordHint === "string") input.value = state.passwordHint;
+  });
 
   // ── Manage Categories (opens its own modal on top) ──────────────────────────
   overlay.querySelector("#settings-manage-categories-btn").addEventListener("click", openManageCategoriesModal);
@@ -3642,7 +3710,8 @@ async function runChangeMasterPassword() {
   const payload = {
     currentPassword: currentInput.value,
     newPassword:     newInput.value,
-    confirmPassword: confirmInput.value
+    confirmPassword: confirmInput.value,
+    hint:            overlay.querySelector("#cpw-hint").value
   };
 
   submitBtn.disabled = true;
@@ -3661,8 +3730,44 @@ async function runChangeMasterPassword() {
   currentInput.value = "";
   newInput.value     = "";
   confirmInput.value = "";
+  const hintInput = overlay.querySelector("#hint-input");
+  if (hintInput) hintInput.value = payload.hint.trim();
+  overlay.querySelector("#cpw-hint").value = "";
   showCpwStatus("Master password changed successfully.", false);
   showToast("Master password changed", "info");
+}
+
+async function runSavePasswordHint() {
+  const overlay      = document.querySelector("#settings-modal-overlay");
+  const hintInput    = overlay.querySelector("#hint-input");
+  const currentInput = overlay.querySelector("#hint-current");
+  const statusEl     = overlay.querySelector("#hint-status");
+  const submitBtn    = overlay.querySelector("#hint-submit-btn");
+
+  function showHintStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.className = isError ? "form-message is-error" : "form-message is-success";
+    statusEl.style.display = msg ? "" : "none";
+  }
+
+  showHintStatus("", false);
+  submitBtn.disabled = true;
+
+  const res = await window.secureLoginVault.settings.setPasswordHint({
+    currentPassword: currentInput.value,
+    hint: hintInput.value
+  });
+
+  submitBtn.disabled = false;
+
+  if (!res.ok) {
+    showHintStatus(res.message || "Could not save the hint.", true);
+    return;
+  }
+
+  currentInput.value = "";
+  hintInput.value = res.result.hint;
+  showHintStatus(res.result.hint ? "Password hint saved." : "Password hint removed.", false);
 }
 
 // ─── Phase 9: Import ───────────────────────────────────────────────────────────

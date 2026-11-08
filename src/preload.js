@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
 
   settings: {
     changeMasterPassword: (payload) => ipcRenderer.invoke("vault:change-master-password", payload),
+    setPasswordHint:      (payload) => ipcRenderer.invoke("vault:set-password-hint", payload),
     getAppInfo:           ()        => ipcRenderer.invoke("app:get-info"),
     pickFolder:           ()        => ipcRenderer.invoke("app:pick-folder"),
     setLockPolicy:        (policy)  => ipcRenderer.invoke("vault:set-lock-policy", policy),
