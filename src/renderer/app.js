@@ -4783,13 +4783,37 @@ const FAQ_SECTIONS = [
       },
       {
         q: "I forgot my master password. Can you recover it for me?",
-        a: "No — and this is by design. Your master password is never saved anywhere, " +
-           "not even in a hidden or hashed form that could be reversed. If it's lost, " +
-           "the credentials in that vault can't be recovered either. The best " +
-           "protection against this is keeping a written copy somewhere safe (like a " +
-           "physical safe or a separate password manager) and making regular " +
-           "encrypted backups, which still require the password to restore but at " +
-           "least protect you from a corrupted database file."
+        a: "The app can't show you your old password — it's never saved in a form " +
+           "that could be read back. But if you created a recovery key, you can " +
+           "set a new master password without losing anything: on the login screen " +
+           "click \"Forgot password?\", enter your recovery key, and choose a new " +
+           "password. If you didn't create a recovery key, a lost password means " +
+           "the vault can't be opened, and neither can its backups, since they " +
+           "need the same password. Try the password hint on the login screen " +
+           "first, and keep a written copy of your password or recovery key " +
+           "somewhere safe and offline."
+      },
+      {
+        q: "What is a recovery key, and should I create one?",
+        a: "A recovery key is a long, random code (like XXXX-XXXX-XXXX-…) that can " +
+           "reset your master password if you ever forget it. Yes — we recommend " +
+           "one. It's offered when you create a vault, and you can make or replace " +
+           "it any time in Settings → Security → Recovery Key. It's shown only " +
+           "once, so write it down or print it and keep it offline, separate from " +
+           "your computer and not inside this vault. Anyone who has your recovery " +
+           "key and your vault file can open your vault, so guard it like the " +
+           "master password itself. Creating a new key makes the old one stop " +
+           "working."
+      },
+      {
+        q: "What is the password hint?",
+        a: "An optional reminder you can add when creating a vault or in Settings → " +
+           "Security → Password Hint. If you set one, a \"Show password hint\" link " +
+           "appears on the login screen. Because it has to be readable before the " +
+           "vault is unlocked, anyone using your computer can see it — make it a " +
+           "vague nudge only you would understand, never the password itself. The " +
+           "app refuses a hint that contains your password. A hint helps you " +
+           "remember a password; it can't recover one you've lost."
       },
       {
         q: "Why does the app say \"At least 12 characters\" when creating a password?",
@@ -4811,15 +4835,20 @@ const FAQ_SECTIONS = [
            "separate, slower scrambling process turns your password into the actual " +
            "encryption key, and that key locks your entire credential database using " +
            "a strong, modern encryption standard (AES-256 — the same level of " +
-           "encryption used by banks and governments). Without the right master " +
-           "password, the stored data is unreadable noise."
+           "encryption used by banks and governments). If you set up a recovery key, " +
+           "the database is locked with a random key that is itself protected two " +
+           "ways — by your master password and by your recovery key — which is " +
+           "what makes a password reset possible. Without the right master " +
+           "password or recovery key, the stored data is unreadable noise."
       },
       {
         q: "Is anything ever stored as plain, readable text?",
-        a: "No. Website passwords, your master password, and the encryption key " +
-           "itself are never written to disk in readable form. The only things you " +
-           "can read without unlocking the vault are non-sensitive details like the " +
-           "app version and where the vault file lives on your computer."
+        a: "Not your credentials. Website passwords, your master password, your " +
+           "recovery key, and the encryption keys are never written to disk in " +
+           "readable form. The only things readable without unlocking the vault " +
+           "are non-sensitive details like the app version and where the vault " +
+           "file lives on your computer — plus your password hint, if you chose to " +
+           "set one, because it has to show on the login screen."
       },
       {
         q: "Does the app connect to the internet or send my data anywhere?",
@@ -4834,15 +4863,19 @@ const FAQ_SECTIONS = [
            "master password it can't be opened or read. That said, treat the vault " +
            "file (and any backups) the way you'd treat a physical key: don't leave " +
            "copies somewhere a stranger could grab them, and don't email it to " +
-           "yourself over an unsecured connection."
+           "yourself over an unsecured connection. Never store your recovery key " +
+           "next to the vault file or a backup — together, the two open it."
       },
       {
-        q: "Why does the app lock itself after a while?",
-        a: "That's Auto-Lock, found in Settings → Security. If you step away from " +
-           "your computer with the vault open, anyone who sits down could see your " +
-           "credentials. After your chosen period of inactivity (5, 10, 30 minutes, " +
-           "1 hour, or never), the app automatically locks and asks for your master " +
-           "password again."
+        q: "Why does the app lock itself?",
+        a: "Two settings in Settings → Security do this. Auto-Lock locks the vault " +
+           "after a period of inactivity (5, 10, 30 minutes, 1 hour, or never). " +
+           "Lock on Minimize locks it when you minimize the window " +
+           "or switch to another program and stay away longer than the grace " +
+           "period you choose (instantly, 10 or 30 seconds, 1 minute, or never). " +
+           "Either way, anyone who sits down at your computer would need your " +
+           "master password. Picking a file in the Import, Export or Backup " +
+           "windows doesn't count as leaving, so it won't lock you out mid-task."
       },
       {
         q: "Why did my copied password disappear from my clipboard?",
@@ -4946,7 +4979,11 @@ const FAQ_SECTIONS = [
         q: "Can I change my master password without losing my saved logins?",
         a: "Yes. Settings → Security → Change Master Password re-locks your vault " +
            "with the new password without ever exposing your stored credentials in " +
-           "the process. You'll need to confirm your current password first."
+           "the process. You'll need to confirm your current password first. Your " +
+           "recovery key keeps working after a change, but your old password hint " +
+           "is replaced by the new one you enter (or removed if you leave it " +
+           "empty), since it described the old password. Older backups still " +
+           "need the password they were made with."
       },
       {
         q: "Can I move my vault file to a different folder or drive?",
@@ -4964,10 +5001,11 @@ const FAQ_SECTIONS = [
         q: "The app won't accept my master password, but I'm sure it's correct.",
         a: "Double-check Caps Lock and your keyboard layout, since the password " +
            "field doesn't reveal typos. If you're using the Show/Hide password " +
-           "toggle, confirm what's actually typed matches what you intended. As a " +
-           "security measure, there's no \"forgot password\" option, so if the " +
-           "password genuinely doesn't work, your only path back in is restoring " +
-           "from a backup made with a password you do remember."
+           "toggle, confirm what's actually typed matches what you intended, and " +
+           "try the \"Show password hint\" link if the login screen has one. If " +
+           "you created a recovery key, click \"Forgot password?\" on the login " +
+           "screen to set a new password. Without a recovery key, the only way " +
+           "back in is a backup made with a password you do remember."
       },
       {
         q: "Something in the app looks visually off — a button or icon in the wrong place.",
