@@ -40,7 +40,7 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     }
   }
 
-  async function handleMessage(socket, value) {
+  async function handleMessage(socket, context, value) {
     if (!isPlainObject(value) || !isValidId(value.id)) {
       send(socket, { ok: false, error: "bad-message" });
       return;
@@ -54,8 +54,13 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     }
 
     try {
-      const result = await handlers[type](value);
-      send(socket, { ...(isPlainObject(result) ? result : {}), id, ok: true });
+      const result = await handlers[type](value, context);
+      if (isPlainObject(result) && typeof result.error === "string") {
+        // A handler refusing on purpose (e.g. "not-paired"): a failure reply, nothing else.
+        send(socket, { id, ok: false, error: result.error });
+      } else {
+        send(socket, { ...(isPlainObject(result) ? result : {}), id, ok: true });
+      }
     } catch {
       // Details stay inside the app; the extension only learns that it failed.
       send(socket, { id, ok: false, error: "internal-error" });
@@ -68,6 +73,8 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
       return;
     }
     connections.add(socket);
+    // Per-connection state the handlers may read and set (e.g. "authenticated").
+    const context = { authenticated: false };
 
     let windowStart = Date.now();
     let windowCount = 0;
@@ -97,7 +104,7 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
           return;
         }
 
-        handleMessage(socket, value);
+        handleMessage(socket, context, value);
       },
       onError() {
         socket.destroy(); // malformed or oversized: drop the connection
@@ -137,6 +144,12 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
       for (const socket of connections) socket.destroy();
       connections.clear();
       return new Promise((resolve) => closing.close(() => resolve()));
+    },
+
+    // Drops every open connection but keeps listening (e.g. after unpairing).
+    closeConnections() {
+      for (const socket of connections) socket.destroy();
+      connections.clear();
     },
 
     isRunning: () => server !== null,
