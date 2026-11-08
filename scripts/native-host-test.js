@@ -353,7 +353,7 @@ async function main() {
     await app.close();
   }
 
-  // The real helper process: refuses to run for anyone (no extension ID is registered yet)
+  // The real helper process: refuses an extension that is not on its allow-list
   await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, "..", "src", "native-host", "host.js"), `chrome-extension://${GOOD_ID}/`], {
       stdio: ["pipe", "pipe", "pipe"],

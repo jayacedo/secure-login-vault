@@ -2,8 +2,9 @@
 // this through "allowed_origins" in the helper's registration; the helper checks
 // again so a wrong registration can't widen access.
 //
-// Empty means "nobody": the helper refuses every caller. The extension's ID is
-// added when the extension itself is created.
-const ALLOWED_EXTENSION_IDS = [];
+// An extension's ID comes from the public key in extension/manifest.json (see
+// scripts/extension-key.js). Add another ID here only for another build of the
+// extension, for example a store-published one, which gets its own ID.
+const ALLOWED_EXTENSION_IDS = ["nofnmddlckpmcngliaanefkffdkfacpc"];
 
 module.exports = { ALLOWED_EXTENSION_IDS };

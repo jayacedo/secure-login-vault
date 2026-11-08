@@ -1,0 +1,93 @@
+:root {
+  --bg: #ffffff;
+  --text: #17202a;
+  --muted: #5d6b79;
+  --line: #d9e0e7;
+  --accent: #1f7a68;
+  --ok-bg: #e6f5f0;
+  --problem-bg: #fdf1e3;
+  --problem-line: #e9c58f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141c24;
+    --text: #e8edf2;
+    --muted: #9aa8b6;
+    --line: #2a3643;
+    --accent: #3fd6a3;
+    --ok-bg: #16322b;
+    --problem-bg: #33291a;
+    --problem-line: #6e5528;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 320px;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, "Segoe UI", sans-serif;
+}
+
+main {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.status {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.status p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.status[data-state="connected"] {
+  border-color: var(--accent);
+  background: var(--ok-bg);
+}
+
+.status[data-state="problem"] {
+  border-color: var(--problem-line);
+  background: var(--problem-bg);
+}
+
+button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
