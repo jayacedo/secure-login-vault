@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
 const initSqlJs = require("sql.js");
+const { writeJsonAtomic } = require("./fsUtils");
 
 let sqlitePromise;
 
@@ -1337,14 +1338,6 @@ function queryAll(db, sql, params = []) {
 
 function queryOne(db, sql, params = []) {
   return queryAll(db, sql, params)[0] || {};
-}
-
-async function writeJsonAtomic(filePath, value) {
-  const temporaryPath = `${filePath}.tmp`;
-  const json = `${JSON.stringify(value, null, 2)}\n`;
-
-  await fs.writeFile(temporaryPath, json, { encoding: "utf8", flag: "wx" });
-  await fs.rename(temporaryPath, filePath);
 }
 
 function isValidEncryptedDatabase(payload) {

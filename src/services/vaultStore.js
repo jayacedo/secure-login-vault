@@ -3,6 +3,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { promisify } = require("util");
+const { writeJsonAtomic, fileExists } = require("./fsUtils");
 const {
   createEncryptedVaultFile,
   readDashboardData,
@@ -53,6 +54,8 @@ function createVaultStore(basePath) {
   const vaultDirectory = path.join(basePath, "vault");
   const authFilePath = path.join(vaultDirectory, AUTH_FILE_NAME);
   const databaseFilePath = path.join(vaultDirectory, DATABASE_FILE_NAME);
+  const databaseBackupPath = `${databaseFilePath}.rekey.bak`;
+  const preRestoreSuffix = ".pre-restore.bak";
   let sessionKey = null;
   let session = null;
 
@@ -379,10 +382,21 @@ function createVaultStore(basePath) {
     };
 
     // Re-key the SQLite database: read with old key, write with new key
+    // Two files must change and they cannot be swapped atomically together.
+    // Keep a copy of the old database first: if we fail (or crash) between the
+    // two writes, the old auth record + old database copy are still a matching
+    // pair (see recovery in ensureVaultDatabase).
     const { rekeyEncryptedVaultFile } = require("./sqliteVault");
-    await rekeyEncryptedVaultFile(databaseFilePath, sessionKey, newKey);
-
-    await writeJsonAtomic(authFilePath, updatedAuthRecord);
+    await fs.copyFile(databaseFilePath, databaseBackupPath);
+    try {
+      await rekeyEncryptedVaultFile(databaseFilePath, sessionKey, newKey);
+      await writeJsonAtomic(authFilePath, updatedAuthRecord);
+    } catch (error) {
+      // Put the old database back so it matches the unchanged auth record.
+      await fs.copyFile(databaseBackupPath, databaseFilePath).catch(() => {});
+      throw error;
+    }
+    await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
 
     // Update live session key
     sessionKey.fill(0);
@@ -464,8 +478,23 @@ function createVaultStore(basePath) {
     lockVault();
 
     await fs.mkdir(vaultDirectory, { recursive: true });
-    await writeJsonAtomic(authFilePath, bundle.auth);
-    await writeJsonAtomic(databaseFilePath, bundle.database);
+
+    // Keep the vault being replaced so a restore is never destructive. These
+    // copies are overwritten by the next restore.
+    const hadAuth = await fileExists(authFilePath);
+    const hadDatabase = await fileExists(databaseFilePath);
+    if (hadAuth) await fs.copyFile(authFilePath, authFilePath + preRestoreSuffix);
+    if (hadDatabase) await fs.copyFile(databaseFilePath, databaseFilePath + preRestoreSuffix);
+
+    try {
+      await writeJsonAtomic(databaseFilePath, bundle.database);
+      await writeJsonAtomic(authFilePath, bundle.auth);
+    } catch (error) {
+      // Roll back to the previous pair so the vault is never half-restored.
+      if (hadDatabase) await fs.copyFile(databaseFilePath + preRestoreSuffix, databaseFilePath).catch(() => {});
+      if (hadAuth) await fs.copyFile(authFilePath + preRestoreSuffix, authFilePath).catch(() => {});
+      throw error;
+    }
 
     return { restored: true, createdAt: bundle.createdAt };
   }
@@ -489,7 +518,18 @@ function createVaultStore(basePath) {
 
   async function ensureVaultDatabase(authRecord, key) {
     if (await fileExists(databaseFilePath)) {
-      await verifyEncryptedVaultFile(databaseFilePath, key);
+      try {
+        await verifyEncryptedVaultFile(databaseFilePath, key);
+      } catch (error) {
+        // Interrupted master-password change: the database was re-keyed but the
+        // auth record was not updated. The pre-change copy matches this key.
+        if (!(await fileExists(databaseBackupPath))) throw error;
+        await verifyEncryptedVaultFile(databaseBackupPath, key).catch(() => {
+          throw error;
+        });
+        await fs.copyFile(databaseBackupPath, databaseFilePath);
+        await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
+      }
       return;
     }
 
@@ -637,23 +677,6 @@ function decryptJson(payload, key) {
   } catch {
     throw createPublicError("Vault could not be decrypted with this master password.");
   }
-}
-
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function writeJsonAtomic(filePath, value) {
-  const temporaryPath = `${filePath}.tmp`;
-  const json = `${JSON.stringify(value, null, 2)}\n`;
-
-  await fs.writeFile(temporaryPath, json, { encoding: "utf8", flag: "wx" });
-  await fs.rename(temporaryPath, filePath);
 }
 
 function isValidAuthRecord(record) {
