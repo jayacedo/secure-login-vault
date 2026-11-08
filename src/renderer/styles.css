@@ -2601,6 +2601,47 @@ mark.search-highlight {
   gap: 8px;
 }
 
+/* Pair Browser: the one-time code */
+#extension-pair-row {
+  flex-wrap: wrap;
+}
+
+/* The buttons' own display rules would otherwise win over the hidden attribute. */
+#extension-pair-row [hidden] {
+  display: none !important;
+}
+
+.extension-pair-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.extension-pair-code-box {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--panel-muted);
+}
+
+.extension-pair-code-box[hidden] {
+  display: none;
+}
+
+.extension-pair-code {
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* ── White-label branding controls ─────────────────────────────────────────── */
 
 .brand-logo-field {

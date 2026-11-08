@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const { createVaultStore } = require("./services/vaultStore");
@@ -9,6 +9,8 @@ const { buildLoginTarget, describeTargetProblem } = require("./services/siteLogi
 const { createLoginWindows } = require("./services/loginWindows");
 const { createExtensionBridge } = require("./services/extensionBridge");
 const { createExtensionHandlers } = require("./services/extensionHandlers");
+const { createPairing } = require("./services/extensionPairing");
+const { createPairingStorage } = require("./services/pairingStorage");
 const { getPipeName } = require("./native-host/pipeName");
 
 const isDevelopment = !app.isPackaged;
@@ -18,6 +20,9 @@ let mainWindow;
 let lockManager;
 let loginWindows;
 let extensionBridge;
+let extensionPairing;
+let pairingStorage;
+let pairingExpiresAt = 0;
 const pathGrants = createPathGrants();
 
 // Native dialogs take focus from the window; keep that from triggering the
@@ -150,6 +155,7 @@ function registerAuthHandlers() {
 
   ipcMain.handle("vault:lock", async () => {
     lockManager.setUnlocked(false);
+    extensionPairing.cancelPairing(); // an unused pairing code does not outlive the unlock
     loginWindows.closeAll();
     return vaultStore.lockVault();
   });
@@ -322,7 +328,58 @@ async function loadExtensionSettings() {
   }
 }
 
+function pairingStatus() {
+  const codeActive = extensionPairing.isPairingActive();
+  return {
+    paired: extensionPairing.isPaired(),
+    codeActive,
+    expiresAt: codeActive ? pairingExpiresAt : 0,
+    encryptionAvailable: pairingStorage.isAvailable()
+  };
+}
+
 function registerExtensionHandlers() {
+  // Pairing is only ever started from the unlocked app, by the person at the screen.
+  ipcMain.handle("vault:get-extension-pairing", async () => {
+    return handleVaultOperation(async () => pairingStatus());
+  });
+
+  ipcMain.handle("vault:start-extension-pairing", async () => {
+    return handleVaultOperation(async () => {
+      if (!(await vaultStore.getState()).isUnlocked) {
+        throw createPublicError("Unlock the vault first.");
+      }
+      if (!extensionBridge.isRunning()) {
+        throw createPublicError("Turn Browser Extension On first.");
+      }
+      if (!pairingStorage.isAvailable()) {
+        throw createPublicError("Windows encryption is not available for this account, so the pairing cannot be stored safely.");
+      }
+      const started = extensionPairing.startPairing();
+      pairingExpiresAt = started.expiresAt;
+      return { code: started.code, expiresAt: started.expiresAt };
+    });
+  });
+
+  ipcMain.handle("vault:cancel-extension-pairing", async () => {
+    return handleVaultOperation(async () => {
+      extensionPairing.cancelPairing();
+      return pairingStatus();
+    });
+  });
+
+  ipcMain.handle("vault:unpair-extension", async () => {
+    return handleVaultOperation(async () => {
+      try {
+        extensionPairing.unpair();
+      } catch {
+        throw createPublicError("The pairing could not be removed. Close other programs using the app data folder and try again.");
+      }
+      extensionBridge.closeConnections(); // anything already connected loses its access now
+      return pairingStatus();
+    });
+  });
+
   ipcMain.handle("vault:get-extension-bridge", async () => {
     return handleVaultOperation(async () => extensionStatus());
   });
@@ -642,14 +699,20 @@ app.whenReady().then(() => {
     onActivity: () => lockManager.noteActivity(),
     isDevelopment
   });
+  pairingStorage = createPairingStorage({
+    filePath: path.join(app.getPath("userData"), "extension-pairing.bin"),
+    safeStorage
+  });
+  extensionPairing = createPairing({ storage: pairingStorage });
   extensionBridge = createExtensionBridge({
     // SLV_PIPE_USER only exists so tests can use their own pipe, never a real user's.
     pipeName: getPipeName(process.env.SLV_PIPE_USER || undefined),
-    handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion() })
+    handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion(), pairing: extensionPairing })
   });
   lockManager = createLockManager({
     onLock: (reason) => {
       vaultStore.lockVault();
+      extensionPairing.cancelPairing(); // an unused code does not outlive the unlock
       loginWindows.closeAll();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("vault:auto-locked", { reason });

@@ -516,8 +516,8 @@ async function main() {
 
       pairing.unpair();
       bridge.closeConnections();
-      await conn.whenClosed();
-      assert.equal(conn.isClosed(), true);
+      await Promise.race([conn.whenClosed(), new Promise((resolve) => setTimeout(resolve, 5000))]);
+      assert.equal(conn.isClosed(), true, "the open connection was dropped");
 
       const again = await connect(pipeName);
       const run = await authenticate(again, secret);

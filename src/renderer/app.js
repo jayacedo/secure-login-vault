@@ -2712,6 +2712,23 @@ async function openSettingsModal() {
             </div>
           </div>
 
+          <div class="settings-row" id="extension-pair-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Pair Browser</span>
+              <span class="settings-row-hint" id="extension-pair-hint">Checking...</span>
+            </div>
+            <div class="settings-row-control extension-pair-buttons">
+              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-copy-btn" hidden>Copy code</button>
+              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-cancel-btn" hidden>Cancel</button>
+              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-btn" disabled>Pair browser</button>
+              <button class="secondary-button settings-action-btn" type="button" id="extension-unpair-btn" hidden>Unpair</button>
+            </div>
+            <div class="extension-pair-code-box" id="extension-pair-code-box" hidden>
+              <span class="extension-pair-code" id="extension-pair-code" aria-label="Pairing code"></span>
+              <span class="settings-row-hint" id="extension-pair-countdown"></span>
+            </div>
+          </div>
+
           <div class="settings-row">
             <div class="settings-row-label">
               <span class="settings-row-name">Default Backup Folder</span>
@@ -3089,6 +3106,8 @@ async function openSettingsModal() {
       else bridgeSelect.disabled = false;
     }
   });
+
+  setupExtensionPairing(overlay);
 
   // ── Clipboard clear select ───────────────────────────────────────────────────
   overlay.querySelector("#clipboard-clear-select").addEventListener("change", (e) => {
@@ -4005,6 +4024,135 @@ async function runChangeMasterPassword() {
   overlay.querySelector("#cpw-hint").value = "";
   showCpwStatus("Master password changed successfully.", false);
   showToast("Master password changed", "info");
+}
+
+// ─── Pair Browser (Settings) ───────────────────────────────────────────────────
+//
+// The one-time code is created by the main process and shown here only once; it is
+// placed in the page with textContent. Closing Settings cancels an unused code.
+function setupExtensionPairing(overlay) {
+  const api = window.secureLoginVault.settings;
+  const el = (id) => overlay.querySelector(id);
+  const hint = el("#extension-pair-hint");
+  const codeBox = el("#extension-pair-code-box");
+  const codeText = el("#extension-pair-code");
+  const countdown = el("#extension-pair-countdown");
+  const pairBtn = el("#extension-pair-btn");
+  const copyBtn = el("#extension-pair-copy-btn");
+  const cancelBtn = el("#extension-pair-cancel-btn");
+  const unpairBtn = el("#extension-unpair-btn");
+
+  let expiresAt = 0;
+  let ticker = null;
+  let unpairArmedTimer = null;
+  let showingCode = false;
+
+  const stopTicker = () => {
+    clearInterval(ticker);
+    ticker = null;
+  };
+  const isOpen = () => document.body.contains(overlay);
+
+  function render(status, message) {
+    showingCode = Boolean(status.codeActive) && Boolean(codeText.textContent);
+    if (!status.codeActive) codeText.textContent = "";
+    codeBox.hidden = !showingCode;
+    copyBtn.hidden = !showingCode;
+    cancelBtn.hidden = !showingCode;
+    pairBtn.hidden = showingCode;
+    unpairBtn.hidden = showingCode || !status.paired;
+    pairBtn.textContent = status.paired ? "Pair again" : "Pair browser";
+    pairBtn.disabled = status.encryptionAvailable === false;
+
+    if (message) hint.textContent = message;
+    else if (status.encryptionAvailable === false) hint.textContent = "Not available: Windows encryption is not available for this account.";
+    else if (showingCode) hint.textContent = "Paste this code into the Secure Login Vault extension. It works once.";
+    else if (status.paired) hint.textContent = "Paired. Your browser extension is linked to this app.";
+    else hint.textContent = "Not paired. Turn Browser Extension On, press Pair browser, then paste the code into the extension.";
+  }
+
+  async function refresh(message) {
+    const res = await api.getExtensionPairing();
+    if (!isOpen()) return null;
+    if (res.ok) render(res.result, message);
+    else hint.textContent = res.message || "Could not read the pairing state.";
+    return res.ok ? res.result : null;
+  }
+
+  function startTicker() {
+    stopTicker();
+    ticker = setInterval(async () => {
+      if (!isOpen()) {
+        stopTicker();
+        api.cancelExtensionPairing(); // closing Settings withdraws an unused code
+        return;
+      }
+      const left = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      countdown.textContent = left > 0 ? "Expires in " + left + " s" : "";
+      const status = await refresh();
+      if (!status) return;
+      if (!status.codeActive) {
+        stopTicker();
+        if (status.paired) {
+          render(status, "Paired. Your browser extension is linked to this app.");
+          showToast("Browser paired", "info");
+        } else {
+          render(status, "The code expired or was cancelled. Press Pair browser for a new one.");
+        }
+      }
+    }, 1000);
+  }
+
+  pairBtn.addEventListener("click", async () => {
+    pairBtn.disabled = true;
+    const res = await api.startExtensionPairing();
+    if (!res.ok) {
+      pairBtn.disabled = false;
+      showToast(res.message || "Could not start pairing.", "error", 5000);
+      return;
+    }
+    expiresAt = res.result.expiresAt;
+    codeText.textContent = res.result.code;
+    countdown.textContent = "";
+    await refresh();
+    startTicker();
+  });
+
+  copyBtn.addEventListener("click", () => {
+    // Sensitive copy: the clipboard is cleared automatically afterwards (see Settings).
+    copyToClipboard(codeText.textContent, "Pairing code copied", copyBtn, true);
+  });
+
+  cancelBtn.addEventListener("click", async () => {
+    stopTicker();
+    codeText.textContent = "";
+    await api.cancelExtensionPairing();
+    await refresh("Pairing cancelled.");
+  });
+
+  // Two clicks: the first arms the button, the second does it.
+  unpairBtn.addEventListener("click", async () => {
+    if (!unpairArmedTimer) {
+      unpairBtn.textContent = "Click again to unpair";
+      unpairArmedTimer = setTimeout(() => {
+        unpairArmedTimer = null;
+        unpairBtn.textContent = "Unpair";
+      }, 4000);
+      return;
+    }
+    clearTimeout(unpairArmedTimer);
+    unpairArmedTimer = null;
+    unpairBtn.textContent = "Unpair";
+    const res = await api.unpairExtension();
+    if (res.ok) {
+      showToast("Browser unpaired", "info");
+      await refresh("Not paired. Turn Browser Extension On, press Pair browser, then paste the code into the extension.");
+    } else {
+      showToast(res.message || "Could not unpair.", "error", 5000);
+    }
+  });
+
+  refresh();
 }
 
 // Reflects the main process's view of the browser connection in the Settings row.
