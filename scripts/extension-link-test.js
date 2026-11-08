@@ -114,9 +114,9 @@ function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
 
 // The real app side: pairing core + handlers + bridge on a pipe. Every request the app
 // receives is recorded.
-async function startApp(pipeName, { pairing = createPairing({ storage: memoryStorage() }), extraHandlers = {} } = {}) {
+async function startApp(pipeName, { pairing = createPairing({ storage: memoryStorage() }), extraHandlers = {}, vault } = {}) {
   const received = [];
-  const real = createExtensionHandlers({ getAppVersion: () => "9.9.9", pairing });
+  const real = createExtensionHandlers({ getAppVersion: () => "9.9.9", pairing, vault });
   const handlers = {};
   for (const [type, fn] of Object.entries({ ...real, ...extraHandlers })) {
     handlers[type] = (request, context) => {
@@ -298,6 +298,80 @@ async function main() {
     assert.equal((await link.check()).state, "verified");
   });
 
+  await check("saved logins for the page: only when verified, sanitised, and only what is asked for", async () => {
+    const credentials = [
+      { id: 1, websiteName: "Example", websiteUrl: "example.com", username: "alice", password: "pw-LEAK", notes: "note-LEAK" },
+      { id: 2, websiteName: "Admin", websiteUrl: "https://example.com/admin", username: "root", password: "pw-LEAK-2" }
+    ];
+    const vault = { locked: false, getCredentials: async () => {
+      if (vault.locked) throw Object.assign(new Error("Vault is locked."), { isPublic: true });
+      return credentials;
+    } };
+    await app.stop();
+    app = await startApp(pipeName, { vault });
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+
+    // nothing asked, nothing sent
+    app.received.length = 0;
+    for (const options of [undefined, {}, { url: "" }, { url: 5 }, { url: { href: "https://example.com" } }, { url: "x".repeat(3000) }]) {
+      const status = await link.check(options);
+      assert.equal(status.state, "verified");
+      assert.equal(status.site, undefined, JSON.stringify(options));
+    }
+    assert.equal(types(app).includes("find-logins"), false, "no page address, no lookup");
+
+    // asked: the request carries only the address, and the answer is names + usernames
+    app.received.length = 0;
+    const found = await link.check({ url: "https://example.com" });
+    assert.equal(found.state, "verified");
+    assert.deepEqual(found.site, { state: "ok", host: "example.com", logins: [{ id: 1, name: "Example", username: "alice" }, { id: 2, name: "Admin", username: "root" }] });
+    assert.equal(JSON.stringify(found).includes("LEAK"), false);
+    const lookup = app.received.find((r) => r.type === "find-logins");
+    assert.deepEqual(Object.keys(lookup).sort(), ["id", "type", "url"]);
+    assert.equal(lookup.url, "https://example.com");
+
+    assert.deepEqual((await link.check({ url: "https://nothing.example" })).site, { state: "ok", host: "nothing.example", logins: [] });
+    assert.deepEqual((await link.check({ url: "http://example.com" })).site, { state: "insecure" });
+    assert.deepEqual((await link.check({ url: "chrome://extensions" })).site, { state: "unsupported" });
+    vault.locked = true;
+    assert.deepEqual((await link.check({ url: "https://example.com" })).site, { state: "locked" });
+    assert.equal((await link.check({ url: "https://example.com" })).state, "verified", "locked vault, still a verified link");
+    vault.locked = false;
+
+    // pairing hands over the list straight away
+    const again = await link.pair(app.pairing.startPairing().code, { url: "https://example.com" });
+    assert.equal(again.state, "verified");
+    assert.equal(again.site.state, "ok");
+    assert.equal(again.site.logins.length, 2);
+    assert.equal(browser.stats.open, 0);
+  });
+
+  await check("an app that sends odd lists cannot push anything unexpected into the popup", async () => {
+    await app.stop();
+    const odd = [
+      { id: 1, name: "n".repeat(500), username: 5, password: "LEAK", extra: { a: 1 } }, null, 5, "x", [], { id: "2", name: "string id" }, { id: 1.5, name: "float id" },
+      ...Array.from({ length: 60 }, (_, i) => ({ id: i + 10, name: "N" + i, username: "u" }))
+    ];
+    app = await startApp(pipeName, { extraHandlers: { "find-logins": () => ({ host: "h".repeat(500), logins: odd }) } });
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+    const { site } = await link.check({ url: "https://example.com" });
+    assert.equal(site.state, "ok");
+    assert.equal(site.host.length, 100);
+    assert.equal(site.logins.length <= 20, true);
+    assert.deepEqual(Object.keys(site.logins[0]).sort(), ["id", "name", "username"]);
+    assert.equal(site.logins[0].name.length, 100);
+    assert.equal(site.logins[0].username, "", "a non-text username becomes empty");
+    assert.equal(JSON.stringify(site).includes("LEAK"), false);
+    assert.equal(site.logins.every((l) => Number.isSafeInteger(l.id)), true);
+
+    for (const reply of [() => ({ logins: "nope" }), () => ({ logins: null }), () => ({}), () => ({ error: "internal-error" }), () => ({ error: "surprise" })]) {
+      await app.stop();
+      app = await startApp(pipeName, { extraHandlers: { "find-logins": reply } });
+      assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+      assert.equal((await link.check({ url: "https://example.com" })).site.state, "error");
+    }
+  });
+
   await check("a used code cannot be used again", async () => {
     const { code } = app.pairing.startPairing();
     assert.equal((await link.pair(code)).state, "verified");
@@ -319,25 +393,26 @@ async function main() {
     await app.stop();
     app = await startApp(pipeName);
     assert.ok(browser.secret(), "the extension still holds a secret");
-    const status = await link.check();
+    const status = await link.check({ url: "https://example.com" });
     // a fresh app that was never paired answers "not-paired"
     assert.equal(status.state, "pairing-lost");
     assert.equal(status.connected, false);
     assert.equal(status.canPair, true);
     assert.equal(status.canForget, true);
-    assert.deepEqual(types(app), ["ping", "auth-begin"], "no proof was sent to an app that does not know us");
+    assert.deepEqual(types(app), ["ping", "auth-begin"], "no proof was sent to an app that does not know us, and no page address");
   });
 
   await check("an app holding a DIFFERENT secret is flagged, and gets no proof from us", async () => {
     await app.stop();
     const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
     app = await startApp(pipeName, { pairing: other });
-    const status = await link.check();
+    const status = await link.check({ url: "https://example.com" });
     assert.equal(status.state, "app-unverified");
     assert.equal(status.connected, false);
     assert.equal(status.danger, true);
-    assert.deepEqual(types(app), ["ping", "auth-begin"], "stopped before sending its own proof");
+    assert.deepEqual(types(app), ["ping", "auth-begin"], "stopped before sending its own proof, and never sent the page address");
     assert.match(status.detail, /something else may be answering/);
+    assert.equal(status.site, undefined);
   });
 
   await check("a fake app that makes up proofs is flagged as well (garbage proofs too)", async () => {

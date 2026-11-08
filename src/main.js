@@ -707,7 +707,11 @@ app.whenReady().then(() => {
   extensionBridge = createExtensionBridge({
     // SLV_PIPE_USER only exists so tests can use their own pipe, never a real user's.
     pipeName: getPipeName(process.env.SLV_PIPE_USER || undefined),
-    handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion(), pairing: extensionPairing })
+    handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion(),
+      pairing: extensionPairing,
+      // Respects the active-group lock like every other read; throws while locked.
+      vault: { getCredentials: () => vaultStore.getAllCredentials() }
+    })
   });
   lockManager = createLockManager({
     onLock: (reason) => {

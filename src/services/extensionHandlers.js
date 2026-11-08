@@ -7,8 +7,12 @@
 //   ping                          "are you there?"
 //   pair-begin / pair-finish      one-time pairing, needs the code shown in the app
 //   auth-begin / auth-finish      two-way proof with the paired secret
-// Everything added later goes through requireAuth(): only a connection that has
-// completed auth-finish may use it.
+// Everything else goes through requireAuth(): only a connection that has completed
+// auth-finish may use it.
+//   find-logins { url }           which saved logins belong to this page (exact origin);
+//                                 names and usernames only, never passwords
+
+const { matchLogins } = require("./siteMatch");
 
 const PROTOCOL_VERSION = 1;
 
@@ -20,7 +24,9 @@ function requireAuth(handler) {
   };
 }
 
-function createExtensionHandlers({ getAppVersion, pairing }) {
+const LOCKED_MESSAGE = "Vault is locked.";
+
+function createExtensionHandlers({ getAppVersion, pairing, vault }) {
   const handlers = {
     ping() {
       return { type: "pong", appVersion: getAppVersion(), protocol: PROTOCOL_VERSION };
@@ -32,6 +38,24 @@ function createExtensionHandlers({ getAppVersion, pairing }) {
     handlers["pair-finish"] = (request, context) => pairing.pairFinish(request, context);
     handlers["auth-begin"] = (request, context) => pairing.authBegin(request, context);
     handlers["auth-finish"] = (request, context) => pairing.authFinish(request, context);
+  }
+
+  if (vault) {
+    handlers["find-logins"] = requireAuth(async (request) => {
+      if (typeof request.url !== "string") return { error: "bad-message" };
+
+      let credentials;
+      try {
+        credentials = await vault.getCredentials();
+      } catch (error) {
+        if (error && error.message === LOCKED_MESSAGE) return { error: "locked" };
+        throw error; // anything else is a failure, not "locked"
+      }
+
+      const match = matchLogins(request.url, credentials);
+      if (!match.ok) return { error: match.reason };
+      return { host: match.host, logins: match.logins };
+    });
   }
 
   return handlers;

@@ -145,6 +145,38 @@ async function main() {
     assert.equal((await api(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true, "unlock again");
   });
 
+  await check("find-logins in the real app: only for a verified connection, only exact matches, no secrets, and not while locked", async () => {
+    const add = (data) => api(`credentials.add(${JSON.stringify(data)})`);
+    assert.equal((await add({ websiteName: "Example", websiteUrl: "https://example.com/login", username: "alice", password: "pw-SECRET-1", category: "Other", notes: "NOTE-SECRET" })).ok, true);
+    assert.equal((await add({ websiteName: "Example admin", websiteUrl: "example.com", username: "root", password: "pw-SECRET-2", category: "Other" })).ok, true);
+    assert.equal((await add({ websiteName: "Sub", websiteUrl: "https://www.example.com", username: "bob", password: "pw-SECRET-3", category: "Other" })).ok, true);
+    assert.equal((await add({ websiteName: "Local", websiteUrl: "http://localhost:3000", username: "dev", password: "pw-SECRET-4", category: "Other" })).ok, true);
+
+    const anonymous = await connect(pipeName);
+    assert.equal((await anonymous.request({ type: "find-logins", url: "https://example.com/" })).error, "not-authenticated");
+    anonymous.close();
+
+    const conn = await connect(pipeName);
+    assert.equal((await authenticate(conn, secret)).finish.ok, true);
+    const found = await conn.request({ type: "find-logins", url: "https://example.com/account" });
+    assert.equal(found.ok, true, JSON.stringify(found));
+    assert.deepEqual(found.logins.map((l) => [l.name, l.username]).sort((x, y) => x[0].localeCompare(y[0])), [["Example", "alice"], ["Example admin", "root"]]);
+    const text = JSON.stringify(found);
+    for (const secretText of ["pw-SECRET", "NOTE-SECRET"]) assert.equal(text.includes(secretText), false, secretText);
+
+    assert.deepEqual((await conn.request({ type: "find-logins", url: "https://www.example.com/" })).logins.map((l) => l.username), ["bob"]);
+    assert.deepEqual((await conn.request({ type: "find-logins", url: "http://localhost:3000/x" })).logins.map((l) => l.username), ["dev"]);
+    assert.deepEqual((await conn.request({ type: "find-logins", url: "https://evil-example.com/" })).logins, []);
+    assert.equal((await conn.request({ type: "find-logins", url: "http://example.com/" })).error, "insecure-page");
+
+    // locking the vault ends access to the list on the very next request
+    assert.equal((await api("auth.lockVault()")).ok !== false, true);
+    assert.equal((await conn.request({ type: "find-logins", url: "https://example.com/" })).error, "locked");
+    assert.equal((await api(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true, "unlock again");
+    assert.equal((await conn.request({ type: "find-logins", url: "https://example.com/" })).ok, true, "and it works again once unlocked");
+    conn.close();
+  });
+
   // ── The Settings screen, in the real window ─────────────────────────────────
   const ui = (code) => inApp(code);
   const q = (selector, property = "textContent") => ui(`const e = document.querySelector(${JSON.stringify(selector)}); return e ? e.${property} : null;`);

@@ -25,7 +25,8 @@ assert.match(manifest.version, /^\d+(\.\d+){0,3}$/);
 // This extension may talk to the desktop helper and nothing else. Any new capability
 // (website access, scripts in pages, being contacted by sites) must be a deliberate
 // change to this test.
-assert.deepEqual(manifest.permissions, ["nativeMessaging", "storage"]);
+// "activeTab" lets the popup read the address of the tab it was opened on, and nothing else.
+assert.deepEqual(manifest.permissions, ["nativeMessaging", "storage", "activeTab"]);
 for (const forbidden of [
   "host_permissions",
   "optional_permissions",
@@ -328,23 +329,43 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
   }
 
   // ── popup.js, run in a real DOM against a fake chrome ───────────────────────
-  function openPopup(respond) {
+  function openPopup(respond, { tabUrl, tabsThrow = false, tabsError = false } = {}) {
     const html = read("popup.html").replace(/<script[^>]*><\/script>/, "").replace(/<link[^>]*>/, "");
     const dom = new JSDOM(html, { runScripts: "outside-only" });
     const calls = [];
+    let insideTabsCallback = false;
     dom.window.chrome = {
       runtime: {
         lastError: undefined,
         sendMessage(message, callback) {
           calls.push(message);
+          // Like Chrome: lastError only exists during the one callback it belongs to.
+          if (insideTabsCallback) dom.window.chrome.runtime.lastError = undefined;
           respond({ message, callback, chrome: dom.window.chrome, calls });
         }
       }
     };
+    if (tabUrl !== undefined || tabsThrow) {
+      dom.window.chrome.tabs = {
+        query(options, callback) {
+          if (tabsThrow) throw new Error("no tabs permission");
+          assert.deepEqual(options, { active: true, currentWindow: true }, "only the active tab is asked for");
+          if (tabsError) dom.window.chrome.runtime.lastError = { message: "x" };
+          insideTabsCallback = true;
+          callback(tabUrl === null ? [] : [{ url: tabUrl }]);
+          insideTabsCallback = false;
+          dom.window.chrome.runtime.lastError = undefined;
+        }
+      };
+    }
     dom.window.eval(read("popup.js"));
     const $ = (id) => dom.window.document.getElementById(id);
     return {
       calls,
+      siteVisible: () => !$("site").hidden,
+      siteTitle: () => $("site-title").textContent,
+      siteNote: () => $("site-note").textContent,
+      logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.children).map((c) => c.textContent)),
       state: () => $("status").dataset.state,
       title: () => $("status-title").textContent,
       detail: () => $("status-detail").textContent,
@@ -494,6 +515,97 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
     popup.forgetButton.click();
     assert.deepEqual(popup.calls[1], { type: "forget" });
     assert.equal(popup.forgetVisible(), false);
+  }
+
+  // ── Saved logins for the page, in the popup ─────────────────────────────────
+  const verified = (site) => ({ state: "verified", connected: true, title: "Connected", detail: "ok", canForget: true, site });
+
+  // Only the origin of the tab leaves the popup, and only for http(s) pages
+  {
+    const popup = openPopup(({ callback }) => callback(verified({ state: "ok", host: "example.com", logins: [] })), { tabUrl: "https://example.com/a/b?token=SECRET#frag" });
+    assert.deepEqual(popup.calls[0], { type: "get-status", url: "https://example.com" });
+    assert.equal(JSON.stringify(popup.calls).includes("SECRET"), false);
+    const port = openPopup(({ callback }) => callback(verified({ state: "ok", host: "example.com:8443", logins: [] })), { tabUrl: "https://user:pw@Example.com:8443/x" });
+    assert.deepEqual(port.calls[0], { type: "get-status", url: "https://example.com:8443" }, "no user info, lower-cased, port kept");
+    const local = openPopup(({ callback }) => callback(verified({ state: "ok", host: "localhost:3000", logins: [] })), { tabUrl: "http://localhost:3000/" });
+    assert.deepEqual(local.calls[0], { type: "get-status", url: "http://localhost:3000" });
+  }
+  for (const [label, options] of [
+    ["chrome page", { tabUrl: "chrome://extensions/" }], ["blank", { tabUrl: "about:blank" }], ["file", { tabUrl: "file:///C:/x.html" }],
+    ["data", { tabUrl: "data:text/html,hi" }], ["garbage", { tabUrl: "not a url" }], ["no tab", { tabUrl: null }],
+    ["tabs throws", { tabsThrow: true }], ["lastError", { tabUrl: "https://example.com/", tabsError: true }]
+  ]) {
+    const popup = openPopup(({ callback }) => callback(verified(undefined)), options);
+    assert.deepEqual(popup.calls[0], { type: "get-status" }, label + ": nothing about the tab is sent");
+    assert.equal(popup.siteVisible(), true, label);
+    assert.equal(popup.siteNote(), "Saved logins are not offered on this kind of page.", label);
+    assert.deepEqual(popup.logins(), []);
+  }
+
+  {
+    const popup = openPopup(
+      ({ callback }) => callback(verified({ state: "ok", host: "example.com", logins: [{ id: 1, name: "Example", username: "alice" }, { id: 2, name: "Admin", username: "" }, { id: 3, name: "Third", username: "carol@example.com" }] })),
+      { tabUrl: "https://example.com/login" }
+    );
+    assert.equal(popup.siteVisible(), true);
+    assert.equal(popup.siteTitle(), "Saved logins for example.com");
+    assert.deepEqual(popup.logins(), [["Example", "alice"], ["Admin"], ["Third", "carol@example.com"]]);
+    assert.equal(popup.siteNote(), "");
+  }
+
+  for (const [state, note] of [
+    ["locked", "Secure Login Vault is locked. Unlock it to see your logins here."],
+    ["insecure", "This page is not secure (http), so no logins are offered."],
+    ["unsupported", "Saved logins are not offered on this kind of page."],
+    ["error", "Could not look up saved logins. Check again."],
+    ["something-new", "Could not look up saved logins. Check again."]
+  ]) {
+    const popup = openPopup(({ callback }) => callback(verified({ state })), { tabUrl: "https://example.com/" });
+    assert.equal(popup.siteNote(), note, state);
+    assert.deepEqual(popup.logins(), []);
+  }
+  {
+    const popup = openPopup(({ callback }) => callback(verified({ state: "ok", host: "example.com", logins: [] })), { tabUrl: "https://example.com/" });
+    assert.equal(popup.siteNote(), "No saved logins for this site.");
+  }
+
+  // Logins are only ever shown on a verified link, whatever the answer contains
+  for (const status of [
+    { connected: false, state: "unpaired", title: "Not paired", detail: "", canPair: true, site: { state: "ok", host: "example.com", logins: [{ id: 1, name: "Leak", username: "x" }] } },
+    { connected: "true", title: "x", detail: "", site: { state: "ok", host: "example.com", logins: [{ id: 1, name: "Leak", username: "x" }] } },
+    { connected: false, danger: true, title: "Could not verify the app", detail: "", site: { state: "ok", host: "evil", logins: [{ id: 1, name: "Leak", username: "x" }] } }
+  ]) {
+    const popup = openPopup(({ callback }) => callback(status), { tabUrl: "https://example.com/" });
+    assert.equal(popup.siteVisible(), false);
+    assert.deepEqual(popup.logins(), []);
+  }
+
+  // Hostile names are text, never markup; junk entries are skipped; the list is capped
+  {
+    const evil = '<img src=x onerror="window.pwned=1"><script>window.pwned=1</script>';
+    const many = Array.from({ length: 50 }, (_, i) => ({ id: i + 1, name: "N" + (i + 1), username: "u" }));
+    const popup = openPopup(
+      ({ callback }) => callback(verified({ state: "ok", host: evil, logins: [{ id: 1, name: evil, username: evil }, null, 5, "x", [], { id: 2 }, ...many] })),
+      { tabUrl: "https://example.com/" }
+    );
+    assert.equal(popup.siteTitle(), "Saved logins for " + evil);
+    assert.deepEqual(popup.logins()[0], [evil, evil]);
+    assert.equal(popup.count("#logins img"), 0);
+    assert.equal(popup.count("script"), 0);
+    assert.equal(popup.pwned(), undefined);
+    assert.equal(popup.logins().length <= 20, true, "capped");
+  }
+
+  // Pairing from the popup carries the page origin too, so the list shows right away
+  {
+    const popup = openPopup(({ message, callback }) => {
+      if (message.type === "get-status") return callback({ connected: false, title: "Not paired", detail: "", canPair: true });
+      callback(verified({ state: "ok", host: "example.com", logins: [{ id: 1, name: "Example", username: "alice" }] }));
+    }, { tabUrl: "https://example.com/x?y=1" });
+    popup.codeInput.value = "x";
+    popup.pairButton.click();
+    assert.deepEqual(popup.calls[1], { type: "pair", code: "x", url: "https://example.com" });
+    assert.deepEqual(popup.logins(), [["Example", "alice"]]);
   }
 
   // The input is not a place for the browser to remember or check things

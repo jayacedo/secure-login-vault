@@ -85,6 +85,47 @@ h1 {
   display: none !important;
 }
 
+.site {
+  display: grid;
+  gap: 6px;
+}
+
+.site h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.logins {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logins li {
+  display: grid;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.login-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.login-user {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+}
+
 .pairing {
   display: grid;
   gap: 6px;

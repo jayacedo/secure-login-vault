@@ -117,6 +117,14 @@ function makeChrome({ connectNativeFor, store }) {
         assert.equal(keptOpen, true, "the background worker answers asynchronously");
       }
     },
+    // The tab the popup was opened on (set by the test); only its URL is visible, as with activeTab.
+    activeTabUrl: undefined,
+    tabs: {
+      query(options, callback) {
+        assert.deepEqual(options, { active: true, currentWindow: true });
+        callback(chrome.activeTabUrl ? [{ url: chrome.activeTabUrl }] : []);
+      }
+    },
     storage: {
       local: {
         async get(key) { return key in store ? { [key]: store[key] } : {}; },
@@ -153,6 +161,10 @@ function openPopup(chrome) {
     button: $("recheck"),
     pairingVisible: () => !$("pairing").hidden,
     forgetVisible: () => !$("forget").hidden,
+    siteTitle: () => $("site-title").textContent,
+    siteNote: () => $("site-note").textContent,
+    siteVisible: () => !$("site").hidden,
+    logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.children).map((c) => c.textContent)),
     typeCode: (code) => { $("code").value = code; },
     codeValue: () => $("code").value,
     pair: () => $("pair").click(),
@@ -255,6 +267,45 @@ async function main() {
     assert.equal(popup.forgetVisible(), true);
     assert.match(ownStore.slvPairingSecret, /^[0-9a-f]{64}$/);
     assert.equal((await inApp("settings.getExtensionPairing()")).result.paired, true);
+  });
+
+  await check("the popup lists the saved logins for the page it is opened on (and only those)", async () => {
+    const add = (data) => inApp(`credentials.add(${JSON.stringify(data)})`);
+    assert.equal((await add({ websiteName: "Example", websiteUrl: "https://example.com/login", username: "alice", password: "pw-SECRET-1", category: "Other", notes: "NOTE-SECRET" })).ok, true);
+    assert.equal((await add({ websiteName: "Example admin", websiteUrl: "example.com", username: "root", password: "pw-SECRET-2", category: "Other" })).ok, true);
+    assert.equal((await add({ websiteName: "WWW", websiteUrl: "https://www.example.com", username: "bob", password: "pw-SECRET-3", category: "Other" })).ok, true);
+
+    ownChrome.activeTabUrl = "https://example.com/account?token=SECRET-TOKEN";
+    const view = await popupWithAnswer();
+    assert.equal(view.state(), "connected");
+    assert.equal(view.siteTitle(), "Saved logins for example.com");
+    assert.deepEqual(view.logins().map((l) => l.join(" / ")).sort(), ["Example / alice", "Example admin / root"]);
+
+    ownChrome.activeTabUrl = "https://www.example.com/";
+    assert.deepEqual((await popupWithAnswer()).logins(), [["WWW", "bob"]]);
+
+    ownChrome.activeTabUrl = "https://evil-example.com/";
+    const lookalike = await popupWithAnswer();
+    assert.deepEqual(lookalike.logins(), []);
+    assert.equal(lookalike.siteNote(), "No saved logins for this site.");
+
+    ownChrome.activeTabUrl = "http://example.com/";
+    assert.equal((await popupWithAnswer()).siteNote(), "This page is not secure (http), so no logins are offered.");
+
+    ownChrome.activeTabUrl = "chrome://extensions/";
+    assert.equal((await popupWithAnswer()).siteNote(), "Saved logins are not offered on this kind of page.");
+
+    // locked vault: still connected and verified, but no list
+    ownChrome.activeTabUrl = "https://example.com/";
+    assert.equal((await inApp("auth.lockVault()")).ok !== false, true);
+    const locked = await popupWithAnswer();
+    assert.equal(locked.state(), "connected");
+    assert.equal(locked.siteNote(), "Secure Login Vault is locked. Unlock it to see your logins here.");
+    assert.deepEqual(locked.logins(), []);
+    assert.equal((await inApp(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true);
+    assert.equal((await popupWithAnswer()).logins().length, 2);
+
+    ownChrome.activeTabUrl = undefined;
   });
 
   await check("the same code cannot be used twice", async () => {

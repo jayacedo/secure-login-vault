@@ -1,6 +1,8 @@
 // The extension's link to the desktop app, as one object with three operations:
-//   check()      ping the app; if paired, run the two-way proof and report the result
-//   pair(code)   pair with the one-time code shown in the app
+//   check({url}) ping the app; if paired, run the two-way proof and report the result;
+//                when verified and a page origin is given, also ask which saved logins
+//                belong to that page (names and usernames only)
+//   pair(code, {url})   pair with the one-time code shown in the app, then check
 //   forget()     delete this browser's copy of the pairing secret
 // Every operation opens its own connection to the helper and closes it again.
 //
@@ -116,7 +118,8 @@
     }
 
     // ── check ─────────────────────────────────────────────────────────────────
-    function check() {
+    function check(options) {
+      var pageUrl = options && typeof options.url === "string" && options.url.length <= 2048 ? options.url : "";
       return deps.storage.get().then(function (stored) {
         var secretHex = pairing.isSecretHex(stored) ? stored : null;
         var session = openSession();
@@ -136,7 +139,10 @@
                 { canPair: true, appVersion: base.appVersion }
               );
             }
-            return verify(session, secretHex, base);
+            return verify(session, secretHex, base).then(function (result) {
+              // Only a fully verified connection is ever asked about saved logins.
+              return result.state === "verified" && pageUrl ? addSite(session, result, pageUrl) : result;
+            });
           })
           .then(
             function (result) {
@@ -148,6 +154,37 @@
               return genericError(secretHex);
             }
           );
+      });
+    }
+
+    function cleanText(value) {
+      return typeof value === "string" ? value.slice(0, 100) : "";
+    }
+
+    function addSite(session, result, pageUrl) {
+      return session.request("find-logins", { url: pageUrl }).then(function (outcome) {
+        var reply = outcome.reply;
+        var site;
+        if (outcome.runtimeError || !reply) {
+          site = { state: "error" };
+        } else if (reply.ok === true && Array.isArray(reply.logins)) {
+          var logins = [];
+          reply.logins.slice(0, 20).forEach(function (entry) {
+            if (entry && typeof entry === "object" && Number.isSafeInteger(entry.id)) {
+              logins.push({ id: entry.id, name: cleanText(entry.name), username: cleanText(entry.username) });
+            }
+          });
+          site = { state: "ok", host: cleanText(reply.host), logins: logins };
+        } else if (reply.error === "locked") {
+          site = { state: "locked" };
+        } else if (reply.error === "insecure-page") {
+          site = { state: "insecure" };
+        } else if (reply.error === "unsupported-page" || reply.error === "bad-url") {
+          site = { state: "unsupported" };
+        } else {
+          site = { state: "error" };
+        }
+        return Object.assign({}, result, { site: site });
       });
     }
 
@@ -216,7 +253,7 @@
       return problem("pair-failed", title, detail, secretHex, { canPair: true });
     }
 
-    function pair(codeText) {
+    function pair(codeText, options) {
       var codeBytes = pairing.parseCode(codeText);
       return deps.storage.get().then(function (stored) {
         var secretHex = pairing.isSecretHex(stored) ? stored : null;
@@ -239,7 +276,7 @@
         );
       }).then(function (result) {
         // After a successful pairing, report the verified state through a normal check.
-        return result && result.state === "paired-now" ? check() : result;
+        return result && result.state === "paired-now" ? check(options) : result;
       });
     }
 

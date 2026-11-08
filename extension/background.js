@@ -53,10 +53,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false; // ignore anything not from this extension
   if (!message || typeof message !== "object") return false;
 
+  // An optional page address (the popup sends only its origin) asks for matching logins too.
+  const url = typeof message.url === "string" ? message.url : "";
+
   if (message.type === "get-status") {
-    runOperation(() => link.check()).then(sendResponse);
+    runOperation(() => link.check({ url })).then(sendResponse);
   } else if (message.type === "pair" && typeof message.code === "string") {
-    runOperation(() => link.pair(message.code)).then(sendResponse);
+    runOperation(() => link.pair(message.code, { url })).then(sendResponse);
   } else if (message.type === "forget") {
     runOperation(() => link.forget()).then(sendResponse);
   } else {
