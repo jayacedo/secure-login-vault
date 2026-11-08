@@ -255,7 +255,16 @@ function selfTest({ launcherPath, origin, timeoutMs = 15000 }) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.kill();
+      // Close the helper's input the way a browser does so it exits by itself;
+      // killing the launcher is only a fallback.
+      try {
+        child.stdin.end();
+      } catch {
+        // already closed
+      }
+      const fallback = setTimeout(() => child.kill(), 2000);
+      fallback.unref();
+      child.once("exit", () => clearTimeout(fallback));
       if (error) reject(error);
       else resolve(value);
     };
