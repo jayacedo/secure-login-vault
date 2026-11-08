@@ -9,13 +9,14 @@
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/services/vaultStore.js && node --check src/services/sqliteVault.js && node --check src/renderer/app.js && node --check scripts/auth-smoke-test.js && node --check src/services/fsUtils.js && node --check scripts/data-safety-test.js && node --check src/services/ipcGuards.js && node --check scripts/ipc-guards-test.js && node --check src/services/lockManager.js && node --check scripts/lock-manager-test.js && node --check scripts/hint-test.js && node --check scripts/recovery-test.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/services/vaultStore.js && node --check src/services/sqliteVault.js && node --check src/renderer/app.js && node --check scripts/auth-smoke-test.js && node --check src/services/fsUtils.js && node --check scripts/data-safety-test.js && node --check src/services/ipcGuards.js && node --check scripts/ipc-guards-test.js && node --check src/services/lockManager.js && node --check scripts/lock-manager-test.js && node --check scripts/hint-test.js && node --check scripts/recovery-test.js && node --check src/login/formFill.js && node --check src/services/siteLogin.js && node --check scripts/site-login-test.js",
     "test:auth": "node scripts/auth-smoke-test.js",
     "test:safety": "node scripts/data-safety-test.js",
     "test:ipc": "node scripts/ipc-guards-test.js",
     "test:lock": "node scripts/lock-manager-test.js",
     "test:hint": "node scripts/hint-test.js",
     "test:recovery": "node scripts/recovery-test.js",
+    "test:login": "node scripts/site-login-test.js",
     "dist": "electron-builder --win"
   },
   "build": {
@@ -62,7 +63,8 @@
   },
   "devDependencies": {
     "electron": "^42.5.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "jsdom": "^31.0.0"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
