@@ -5,8 +5,8 @@
 const assert = require("assert");
 const fs = require("fs");
 const net = require("net");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { spawn } = require("child_process");
 const { app, BrowserWindow } = require("electron");
 const { encodeMessage, createMessageReader } = require("../src/native-host/framing");
@@ -105,7 +105,7 @@ async function runParent() {
   ];
 
   for (const [index, scenario] of scenarios.entries()) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "slv-startup-"));
+    const dir = fs.mkdtempSync(path.join(testTempRoot(), "slv-startup-"));
     if (scenario.file !== null) fs.writeFileSync(path.join(dir, "extension-settings.json"), scenario.file);
 
     const pipeUser = `startup-${process.pid}-${index}`;

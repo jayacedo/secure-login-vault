@@ -5,11 +5,11 @@
 const assert = require("assert");
 const fs = require("fs");
 const http = require("http");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { app, BrowserWindow } = require("electron");
 
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "slv-app-test-")));
+app.setPath("userData", fs.mkdtempSync(path.join(testTempRoot(), "slv-app-test-")));
 // The browser connection uses a pipe named after the OS user; give the test its own
 // so it can never collide with (or touch) a real running copy of the app.
 process.env.SLV_PIPE_USER = `app-test-${process.pid}`;

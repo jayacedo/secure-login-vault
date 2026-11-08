@@ -4,11 +4,11 @@
 const assert = require("assert");
 const fs = require("fs");
 const http = require("http");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { app } = require("electron");
 
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "slv-login-window-")));
+app.setPath("userData", fs.mkdtempSync(path.join(testTempRoot(), "slv-login-window-")));
 
 // Electron quits by default when the last window closes, which happens between
 // scenarios here (the real app always has its main window open).

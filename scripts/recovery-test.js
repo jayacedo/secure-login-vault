@@ -1,7 +1,7 @@
 const assert = require("assert");
 const fs = require("fs/promises");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { createVaultStore } = require("../src/services/vaultStore");
 
 const PW1 = "correct horse battery staple";
@@ -10,7 +10,7 @@ const PW3 = "third unrelated passphrase 77";
 const KEY_FORMAT = /^([A-Z2-7]{4}-){7}[A-Z2-7]{4}$/;
 
 async function newVault(prefix) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  const root = await fs.mkdtemp(path.join(testTempRoot(), prefix));
   const store = createVaultStore(root);
   await store.createVault({ masterPassword: PW1, confirmPassword: PW1, hint: "first hint" });
   await store.createCredential({ websiteName: "Example", password: "secret-1" });

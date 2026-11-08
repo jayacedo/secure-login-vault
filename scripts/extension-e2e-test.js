@@ -10,14 +10,14 @@
 //   npm run test:e2e
 const assert = require("assert");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const vm = require("vm");
 const { spawn } = require("child_process");
 const { JSDOM } = require("jsdom");
 const { app, BrowserWindow } = require("electron");
 
-const userData = fs.mkdtempSync(path.join(os.tmpdir(), "slv-e2e-"));
+const userData = fs.mkdtempSync(path.join(testTempRoot(), "slv-e2e-"));
 app.setPath("userData", userData);
 // Own pipe for the app AND the helper, so a real running app is never touched.
 process.env.SLV_PIPE_USER = `e2e-${process.pid}`;

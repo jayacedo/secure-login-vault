@@ -1,11 +1,11 @@
 const assert = require("assert");
 const fs = require("fs/promises");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { createVaultStore } = require("../src/services/vaultStore");
 
 async function run() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "secure-login-vault-auth-"));
+  const tempRoot = await fs.mkdtemp(path.join(testTempRoot(), "secure-login-vault-auth-"));
   const vaultStore = createVaultStore(tempRoot);
   const password = "correct horse battery staple";
 

@@ -1,14 +1,14 @@
 const assert = require("assert");
 const fs = require("fs/promises");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { createVaultStore } = require("../src/services/vaultStore");
 
 const PW1 = "correct horse battery staple";
 const PW2 = "another long passphrase 2026";
 
 async function run() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "slv-hint-"));
+  const root = await fs.mkdtemp(path.join(testTempRoot(), "slv-hint-"));
   const store = createVaultStore(root);
 
   try {

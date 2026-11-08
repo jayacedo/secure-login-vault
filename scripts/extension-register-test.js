@@ -1,7 +1,7 @@
 const assert = require("assert");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const { testTempRoot } = require("./testTemp");
 const { execFileSync } = require("child_process");
 const registration = require("../src/native-host/registration");
 const { ALLOWED_EXTENSION_IDS } = require("../src/native-host/config");
@@ -17,7 +17,7 @@ setTimeout(() => {
 const IDS = ["abcdefghijklmnopabcdefghijklmnop"];
 const tempRoots = [];
 function tempDir(name) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+  const dir = fs.mkdtempSync(path.join(testTempRoot(), `${name}-`));
   tempRoots.push(dir);
   return dir;
 }
@@ -203,8 +203,12 @@ async function main() {
     await assert.rejects(() => register({ installDir, ...sources, allowedExtensionIds: IDS, runReg: failing }), /Could not register with Google Chrome/);
   }
 
-  // ── The real registry, with a throwaway helper name (Windows only) ──────────
-  if (process.platform === "win32") {
+  // ── The real registry, with a throwaway helper name (Windows only, opt-in) ──
+  // Writes and removes a throwaway key under the user's real HKCU, so it only runs
+  // when asked: npm run test:register:real
+  const realRegistry = process.argv.includes("--real-registry");
+  if (!realRegistry) console.log("(skipped: real registry round trip; npm run test:register:real runs it)");
+  if (process.platform === "win32" && realRegistry) {
     const hostName = `com.securelogin.registrytest.p${process.pid}`;
     const installDir = path.join(tempDir("slv-reg-real"), "dir with spaces");
     const sources = fakeInstallSources();

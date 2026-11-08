@@ -8,3 +8,6 @@ Thumbs.db
 /2fa.png
 /futureFeature.png
 /slv.zip
+
+# test data (scripts/testTemp.js)
+/.tmp/
