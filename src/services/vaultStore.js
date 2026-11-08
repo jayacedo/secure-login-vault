@@ -66,7 +66,8 @@ function createVaultStore(basePath) {
     return {
       hasVault: hasAuth,
       // Stored unencrypted on purpose: it must be readable before unlocking.
-      passwordHint: hasAuth ? await readPasswordHint() : "",
+      passwordHint: hasAuth ? (await readPublicAuthInfo()).hint : "",
+      hasRecoveryKey: hasAuth ? (await readPublicAuthInfo()).hasRecoveryKey : false,
       databaseReady: hasDatabase,
       isUnlocked: Boolean(sessionKey),
       phase: "UI Polish",
@@ -166,8 +167,14 @@ function createVaultStore(basePath) {
       throw createPublicError("Vault verification failed.");
     }
 
-    await ensureVaultDatabase(authRecord, key);
-    startSession(key, new Date().toISOString());
+    // Vaults with a recovery key encrypt the database with a random data key,
+    // stored wrapped by the password-derived key. Older vaults use the
+    // password-derived key directly.
+    const databaseKey = authRecord.keyWrap ? unwrapBytes(authRecord.keyWrap.dek, key) : key;
+
+    await ensureVaultDatabase(authRecord, databaseKey);
+    startSession(databaseKey, new Date().toISOString());
+    if (databaseKey !== key) key.fill(0);
 
     return {
       unlocked: true,
@@ -390,7 +397,20 @@ function createVaultStore(basePath) {
     delete updatedAuthRecord.hint;
     if (newHint) updatedAuthRecord.hint = newHint;
 
-    // Re-key the SQLite database: read with old key, write with new key
+    if (authRecord.keyWrap) {
+      // The database stays encrypted with the same data key; only its wrapper
+      // changes, so this is a single atomic file write and the recovery key
+      // keeps working.
+      updatedAuthRecord.keyWrap = {
+        ...authRecord.keyWrap,
+        dek: wrapBytes(sessionKey, newKey)
+      };
+      await writeJsonAtomic(authFilePath, updatedAuthRecord);
+      newKey.fill(0);
+      return { changed: true };
+    }
+
+    // Legacy vault: re-key the SQLite database with the new password key.
     // Two files must change and they cannot be swapped atomically together.
     // Keep a copy of the old database first: if we fail (or crash) between the
     // two writes, the old auth record + old database copy are still a matching
@@ -433,6 +453,131 @@ function createVaultStore(basePath) {
 
     await writeJsonAtomic(authFilePath, updated);
     return { hint: newHint };
+  }
+
+  // ─── Recovery key ──────────────────────────────────────────────────────────
+
+  // Creates (or replaces) the recovery key and returns its text. The key is
+  // never stored; only the data key wrapped by it is. Generating a new key
+  // makes the previous one stop working. Vaults created before recovery keys
+  // existed are converted to the data-key layout the first time.
+  async function createRecoveryKey({ currentPassword }) {
+    ensureUnlocked();
+
+    const normalizedCurrent = normalizePassword(currentPassword);
+    if (!normalizedCurrent) throw createPublicError("Enter your current master password.");
+
+    const authRecord = await readAuthRecord();
+    const passwordMatches = await bcrypt.compare(normalizedCurrent, authRecord.passwordHash);
+    if (!passwordMatches) throw createPublicError("Current master password is incorrect.");
+
+    const recovery = generateRecoveryKey();
+    const recoverySalt = crypto.randomBytes(32);
+    const recoveryWrapKey = deriveRecoveryWrapKey(recovery.bytes, recoverySalt);
+    const now = new Date().toISOString();
+
+    if (authRecord.keyWrap) {
+      await writeJsonAtomic(authFilePath, {
+        ...authRecord,
+        updatedAt: now,
+        keyWrap: {
+          ...authRecord.keyWrap,
+          recovery: {
+            salt: recoverySalt.toString("base64"),
+            dek: wrapBytes(sessionKey, recoveryWrapKey)
+          }
+        }
+      });
+      return { recoveryKey: recovery.text, converted: false };
+    }
+
+    // Convert: re-encrypt the database with a new random data key. Same
+    // protection as a master password change: keep the old database until the
+    // auth record that matches the new one is safely written.
+    const dataKey = crypto.randomBytes(32);
+    const updatedAuthRecord = {
+      ...authRecord,
+      updatedAt: now,
+      keyWrap: {
+        dek: wrapBytes(dataKey, sessionKey),
+        recovery: {
+          salt: recoverySalt.toString("base64"),
+          dek: wrapBytes(dataKey, recoveryWrapKey)
+        }
+      }
+    };
+
+    const { rekeyEncryptedVaultFile } = require("./sqliteVault");
+    await fs.copyFile(databaseFilePath, databaseBackupPath);
+    try {
+      await rekeyEncryptedVaultFile(databaseFilePath, sessionKey, dataKey);
+      await writeJsonAtomic(authFilePath, updatedAuthRecord);
+    } catch (error) {
+      await fs.copyFile(databaseBackupPath, databaseFilePath).catch(() => {});
+      throw error;
+    }
+    await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
+
+    sessionKey.fill(0);
+    sessionKey = dataKey;
+    return { recoveryKey: recovery.text, converted: true };
+  }
+
+  // Sets a new master password using the recovery key. Works while locked. The
+  // vault stays locked afterwards; the user logs in with the new password.
+  async function resetWithRecoveryKey({ recoveryKey, newPassword, confirmPassword, hint }) {
+    const authRecord = await readAuthRecord();
+    const recovery = authRecord.keyWrap && authRecord.keyWrap.recovery;
+    if (!recovery) throw createPublicError("This vault does not have a recovery key.");
+
+    const recoveryBytes = parseRecoveryKey(recoveryKey);
+    if (!recoveryBytes) throw createPublicError("That is not a valid recovery key. Check it and try again.");
+
+    let dataKey;
+    try {
+      dataKey = unwrapBytes(
+        recovery.dek,
+        deriveRecoveryWrapKey(recoveryBytes, Buffer.from(recovery.salt, "base64"))
+      );
+    } catch {
+      throw createPublicError("The recovery key is incorrect.");
+    }
+
+    const normalizedNew = normalizePassword(newPassword);
+    validateNewPassword(normalizedNew, normalizePassword(confirmPassword));
+    const newHint = normalizePasswordHint(hint, normalizedNew);
+
+    // Make sure the data key really opens this vault before changing anything.
+    await verifyEncryptedVaultFile(databaseFilePath, dataKey);
+
+    const now = new Date().toISOString();
+    const passwordHash = await bcrypt.hash(normalizedNew, BCRYPT_ROUNDS);
+    const salt = crypto.randomBytes(32);
+    const newKey = await deriveVaultKey(normalizedNew, salt);
+
+    const updatedAuthRecord = {
+      ...authRecord,
+      updatedAt: now,
+      passwordHash,
+      keyDerivation: { ...authRecord.keyDerivation, salt: salt.toString("base64") },
+      encryption: {
+        ...authRecord.encryption,
+        vaultCheck: encryptJson(
+          { type: "secure-login-vault-auth-check", createdAt: now, check: crypto.randomBytes(32).toString("base64") },
+          newKey
+        )
+      },
+      keyWrap: { ...authRecord.keyWrap, dek: wrapBytes(dataKey, newKey) }
+    };
+    delete updatedAuthRecord.hint;
+    if (newHint) updatedAuthRecord.hint = newHint;
+
+    lockVault();
+    await writeJsonAtomic(authFilePath, updatedAuthRecord);
+    newKey.fill(0);
+    dataKey.fill(0);
+
+    return { reset: true };
   }
 
   // ─── Phase 9: Encrypted Backup & Restore ───────────────────────────────────
@@ -531,12 +676,16 @@ function createVaultStore(basePath) {
 
   // ─── Internal helpers ───────────────────────────────────────────────────────
 
-  async function readPasswordHint() {
+  // Facts the login screen needs before the vault is unlocked.
+  async function readPublicAuthInfo() {
     try {
       const record = JSON.parse(await fs.readFile(authFilePath, "utf8"));
-      return typeof record.hint === "string" ? record.hint : "";
+      return {
+        hint: typeof record.hint === "string" ? record.hint : "",
+        hasRecoveryKey: Boolean(record.keyWrap && record.keyWrap.recovery)
+      };
     } catch {
-      return "";
+      return { hint: "", hasRecoveryKey: false };
     }
   }
 
@@ -559,6 +708,9 @@ function createVaultStore(basePath) {
     if (await fileExists(databaseFilePath)) {
       try {
         await verifyEncryptedVaultFile(databaseFilePath, key);
+        // Everything matches, so any leftover pre-change copy (from a crash after
+        // the auth record was already written) is stale: remove it.
+        await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
       } catch (error) {
         // Interrupted master-password change: the database was re-keyed but the
         // auth record was not updated. The pre-change copy matches this key.
@@ -654,7 +806,9 @@ function createVaultStore(basePath) {
     createEncryptedBackup,
     restoreEncryptedBackup,
     changeMasterPassword,
-    setPasswordHint
+    setPasswordHint,
+    createRecoveryKey,
+    resetWithRecoveryKey
   };
 }
 
@@ -678,6 +832,87 @@ function validateNewPassword(masterPassword, confirmPassword) {
   if (masterPassword !== confirmPassword) {
     throw createPublicError("Master password confirmation does not match.");
   }
+}
+
+// ─── Data-key wrapping and recovery key helpers ──────────────────────────────
+
+function wrapBytes(value, key) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
+  return {
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: encrypted.toString("base64")
+  };
+}
+
+function unwrapBytes(payload, key) {
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(payload.iv, "base64"));
+    decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
+    return Buffer.concat([decipher.update(Buffer.from(payload.ciphertext, "base64")), decipher.final()]);
+  } catch {
+    throw createPublicError("Vault could not be decrypted with this master password.");
+  }
+}
+
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const RECOVERY_KEY_BYTES = 20; // 160 bits -> 32 base32 characters
+
+function encodeBase32(bytes) {
+  let bits = 0;
+  let value = 0;
+  let output = "";
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  return output;
+}
+
+function decodeBase32(text) {
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (const char of text) {
+    value = (value << 5) | BASE32_ALPHABET.indexOf(char);
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+// A random 160-bit key shown as XXXX-XXXX-... (8 groups of 4).
+function generateRecoveryKey() {
+  const bytes = crypto.randomBytes(RECOVERY_KEY_BYTES);
+  return { bytes, text: encodeBase32(bytes).match(/.{4}/g).join("-") };
+}
+
+// Accepts the key with or without dashes/spaces and in any letter case.
+// Returns the raw bytes, or null if it is not a well-formed recovery key.
+function parseRecoveryKey(value) {
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/[\s-]+/g, "").toUpperCase();
+  if (cleaned.length !== (RECOVERY_KEY_BYTES * 8) / 5) return null;
+  if (![...cleaned].every((char) => BASE32_ALPHABET.includes(char))) return null;
+  return decodeBase32(cleaned);
+}
+
+// The recovery key is already high-entropy random data, so a fast KDF is
+// enough here (unlike the human-chosen master password, which uses scrypt).
+function deriveRecoveryWrapKey(recoveryBytes, salt) {
+  return Buffer.from(
+    crypto.hkdfSync("sha256", recoveryBytes, salt, "secure-login-vault-recovery-v1", 32)
+  );
 }
 
 const MAX_HINT_LENGTH = 100;
@@ -754,9 +989,29 @@ function isValidAuthRecord(record) {
       typeof record.encryption.vaultCheck.iv === "string" &&
       typeof record.encryption.vaultCheck.tag === "string" &&
       typeof record.encryption.vaultCheck.ciphertext === "string" &&
+      isValidKeyWrap(record.keyWrap) &&
       (!record.storage ||
         (record.storage.type === "encrypted-sqlite" &&
           record.storage.fileName === DATABASE_FILE_NAME))
+  );
+}
+
+function isValidWrappedKey(value) {
+  return Boolean(
+    value &&
+      typeof value.iv === "string" &&
+      typeof value.tag === "string" &&
+      typeof value.ciphertext === "string"
+  );
+}
+
+function isValidKeyWrap(keyWrap) {
+  if (keyWrap === undefined) return true;
+  return Boolean(
+    keyWrap &&
+      isValidWrappedKey(keyWrap.dek) &&
+      (keyWrap.recovery === undefined ||
+        (typeof keyWrap.recovery.salt === "string" && isValidWrappedKey(keyWrap.recovery.dek)))
   );
 }
 

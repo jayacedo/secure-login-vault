@@ -401,6 +401,17 @@ function registerSettingsHandlers() {
     return handleVaultOperation(() => vaultStore.setPasswordHint(payload));
   });
 
+  ipcMain.handle("vault:create-recovery-key", async (_event, payload) => {
+    return handleVaultOperation(() => vaultStore.createRecoveryKey(payload || {}));
+  });
+
+  // Works while the vault is locked; leaves it locked (the user logs in next).
+  ipcMain.handle("vault:reset-with-recovery-key", async (_event, payload) => {
+    const response = await handleVaultOperation(() => vaultStore.resetWithRecoveryKey(payload || {}));
+    if (response.ok) lockManager.setUnlocked(false);
+    return response;
+  });
+
   ipcMain.handle("app:get-info", async () => {
     return handleVaultOperation(async () => ({
       version: app.getVersion(),

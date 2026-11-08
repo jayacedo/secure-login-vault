@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   settings: {
     changeMasterPassword: (payload) => ipcRenderer.invoke("vault:change-master-password", payload),
     setPasswordHint:      (payload) => ipcRenderer.invoke("vault:set-password-hint", payload),
+    createRecoveryKey:    (payload) => ipcRenderer.invoke("vault:create-recovery-key", payload),
+    resetWithRecoveryKey: (payload) => ipcRenderer.invoke("vault:reset-with-recovery-key", payload),
     getAppInfo:           ()        => ipcRenderer.invoke("app:get-info"),
     pickFolder:           ()        => ipcRenderer.invoke("app:pick-folder"),
     setLockPolicy:        (policy)  => ipcRenderer.invoke("vault:set-lock-policy", policy),

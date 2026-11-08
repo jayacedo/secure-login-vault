@@ -207,6 +207,11 @@ function renderCreateForm() {
         computer can read it. Describe it vaguely and never type the password itself.
       </p>
 
+      <label class="recovery-check" for="create-recovery-key">
+        <input id="create-recovery-key" type="checkbox" checked />
+        <span>Create a recovery key <small>(recommended) &mdash; lets you reset the master password if you ever forget it.</small></span>
+      </label>
+
       <button class="primary-button" type="submit" disabled>Create Vault</button>
       <p class="form-message" id="form-message" role="status"></p>
     </form>
@@ -235,6 +240,9 @@ function renderUnlockForm(state) {
         autocomplete: "current-password"
       })}
 
+      ${state && state.hasRecoveryKey ? `
+        <button class="link-button" type="button" id="forgot-password-btn">Forgot password?</button>` : ""}
+
       ${hint ? `
         <div class="hint-reveal">
           <button class="link-button" type="button" id="show-hint-btn" aria-expanded="false">Show password hint</button>
@@ -248,6 +256,11 @@ function renderUnlockForm(state) {
 
   const form = document.querySelector("#unlock-vault-form");
   setupPasswordToggles(form);
+
+  const forgotButton = form.querySelector("#forgot-password-btn");
+  if (forgotButton) {
+    forgotButton.addEventListener("click", () => renderRecoveryResetForm(state));
+  }
 
   if (hint) {
     const hintButton = form.querySelector("#show-hint-btn");
@@ -827,6 +840,7 @@ async function handleCreateVault(event) {
     confirmPassword: form.querySelector("#confirm-password").value,
     hint: form.querySelector("#password-hint").value
   };
+  const wantsRecoveryKey = form.querySelector("#create-recovery-key").checked;
 
   setBusy(button, message, "Creating vault...");
 
@@ -838,8 +852,145 @@ async function handleCreateVault(event) {
     return;
   }
 
-  const state = await window.secureLoginVault.auth.getState();
-  renderFromState(state);
+  const showDashboard = async () => {
+    renderFromState(await window.secureLoginVault.auth.getState());
+  };
+
+  if (wantsRecoveryKey) {
+    const keyResponse = await window.secureLoginVault.settings.createRecoveryKey({
+      currentPassword: payload.masterPassword
+    });
+
+    if (keyResponse.ok) {
+      renderRecoveryKeyScreen(keyResponse.result.recoveryKey, showDashboard);
+      return;
+    }
+
+    await showDashboard();
+    showToast("Vault created, but the recovery key could not be made. Create one in Settings.", "error", 6000);
+    return;
+  }
+
+  await showDashboard();
+}
+
+// ── Recovery key ──────────────────────────────────────────────────────────────
+
+// Markup for showing a freshly generated key once. The key text itself is
+// filled in with textContent by wireRecoveryKeyPanel, never interpolated.
+function renderRecoveryKeyPanelMarkup() {
+  return `
+    <div class="recovery-panel">
+      <p class="form-note">
+        This key is shown <strong>only once</strong>. If you forget your master password, it is the only way
+        back into your vault. Write it down or print it and keep it somewhere safe and offline &mdash; not in
+        this vault. Anyone who has this key and your vault file can open your vault.
+      </p>
+      <p class="recovery-key-text" id="recovery-key-text" aria-label="Recovery key"></p>
+      <div class="recovery-key-actions">
+        <button class="secondary-button" type="button" id="recovery-copy-btn">Copy</button>
+      </div>
+      <label class="recovery-check" for="recovery-saved-check">
+        <input id="recovery-saved-check" type="checkbox" />
+        <span>I have saved my recovery key somewhere safe.</span>
+      </label>
+      <button class="primary-button" type="button" id="recovery-done-btn" disabled>Continue</button>
+    </div>
+  `;
+}
+
+function wireRecoveryKeyPanel(container, recoveryKey, onDone) {
+  const keyText = container.querySelector("#recovery-key-text");
+  const copyButton = container.querySelector("#recovery-copy-btn");
+  const savedCheck = container.querySelector("#recovery-saved-check");
+  const doneButton = container.querySelector("#recovery-done-btn");
+
+  keyText.textContent = recoveryKey;
+  copyButton.addEventListener("click", () => {
+    // Sensitive copy: the clipboard is cleared automatically afterwards.
+    copyToClipboard(recoveryKey, "Recovery key", copyButton, true);
+  });
+  savedCheck.addEventListener("change", () => {
+    doneButton.disabled = !savedCheck.checked;
+  });
+  doneButton.addEventListener("click", () => {
+    keyText.textContent = "";
+    onDone();
+  });
+}
+
+function renderRecoveryKeyScreen(recoveryKey, onDone) {
+  const authCard = getAuthCard();
+  authCard.innerHTML = `
+    <div class="auth-form" id="recovery-key-screen">
+      <div>
+        <p class="eyebrow">Vault created</p>
+        <h2>Save your recovery key</h2>
+      </div>
+      ${renderRecoveryKeyPanelMarkup()}
+    </div>
+  `;
+  wireRecoveryKeyPanel(authCard.querySelector("#recovery-key-screen"), recoveryKey, onDone);
+}
+
+function renderRecoveryResetForm(state) {
+  const authCard = getAuthCard();
+  authCard.innerHTML = `
+    <form class="auth-form" id="recovery-reset-form" novalidate>
+      <div>
+        <p class="eyebrow">Forgot password</p>
+        <h2>Reset with Recovery Key</h2>
+        <p class="form-note">Enter the recovery key you saved when you set up this vault, then choose a new master password. Your credentials are kept.</p>
+      </div>
+
+      <label class="hint-label" for="reset-recovery-key">
+        <span>Recovery Key</span>
+        <input id="reset-recovery-key" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required />
+      </label>
+
+      ${renderPasswordInput({ id: "reset-new-password", label: "New Master Password", autocomplete: "new-password" })}
+      ${renderPasswordInput({ id: "reset-confirm-password", label: "Confirm New Password", autocomplete: "new-password" })}
+
+      <label class="hint-label" for="reset-hint">
+        <span>New password hint (optional)</span>
+        <input id="reset-hint" type="text" maxlength="100" autocomplete="off" />
+      </label>
+
+      <button class="primary-button" type="submit">Reset Password</button>
+      <button class="link-button" type="button" id="reset-cancel-btn">Back to login</button>
+      <p class="form-message" id="form-message" role="status"></p>
+    </form>
+  `;
+
+  const form = document.querySelector("#recovery-reset-form");
+  setupPasswordToggles(form);
+  form.querySelector("#reset-cancel-btn").addEventListener("click", () => renderUnlockForm(state));
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+
+    const button = form.querySelector("button[type='submit']");
+    const message = form.querySelector("#form-message");
+    setBusy(button, message, "Resetting password...");
+
+    const response = await window.secureLoginVault.auth.resetWithRecoveryKey({
+      recoveryKey: form.querySelector("#reset-recovery-key").value,
+      newPassword: form.querySelector("#reset-new-password").value,
+      confirmPassword: form.querySelector("#reset-confirm-password").value,
+      hint: form.querySelector("#reset-hint").value
+    });
+
+    if (!response.ok) {
+      setIdle(button);
+      showMessage(message, response.message, true);
+      return;
+    }
+
+    const freshState = await window.secureLoginVault.auth.getState();
+    renderUnlockForm(freshState);
+    showToast("Password reset. Log in with your new password.", "info", 5000);
+  });
 }
 
 async function handleUnlockVault(event) {
@@ -2537,6 +2688,29 @@ async function openSettingsModal() {
           </div>
 
           <div class="settings-subgroup" style="margin-top: 16px;">
+            <h4 class="settings-subgroup-title">Recovery Key</h4>
+            <p class="settings-section-hint" id="recovery-status-hint">
+              A recovery key lets you reset the master password if you forget it. Creating a new one replaces the old key.
+            </p>
+            <div class="change-pw-form" id="recovery-form">
+              <div class="settings-input-row">
+                <label class="settings-input-label" for="recovery-current">Current Password</label>
+                <div class="settings-input-wrap">
+                  <input class="settings-input" type="password" id="recovery-current" autocomplete="current-password" placeholder="Current master password">
+                  <button class="settings-eye-btn" type="button" data-target="recovery-current" aria-label="Show/Hide">
+                    ${renderEyeIcon()}
+                  </button>
+                </div>
+              </div>
+              <p class="form-message" id="recovery-status" style="display:none"></p>
+              <button class="primary-button settings-cpw-btn" type="button" id="recovery-create-btn">
+                Create Recovery Key
+              </button>
+            </div>
+            <div id="recovery-result" hidden></div>
+          </div>
+
+          <div class="settings-subgroup" style="margin-top: 16px;">
             <h4 class="settings-subgroup-title">Change Master Password</h4>
             <div class="change-pw-form" id="change-pw-form">
               <div class="settings-input-row">
@@ -2860,9 +3034,11 @@ async function openSettingsModal() {
   // ── Change master password ───────────────────────────────────────────────────
   overlay.querySelector("#cpw-submit-btn").addEventListener("click", runChangeMasterPassword);
   overlay.querySelector("#hint-submit-btn").addEventListener("click", runSavePasswordHint);
+  overlay.querySelector("#recovery-create-btn").addEventListener("click", runCreateRecoveryKey);
   window.secureLoginVault.auth.getState().then((state) => {
     const input = overlay.querySelector("#hint-input");
     if (input && state && typeof state.passwordHint === "string") input.value = state.passwordHint;
+    updateRecoveryKeyStatus(Boolean(state && state.hasRecoveryKey));
   });
 
   // ── Manage Categories (opens its own modal on top) ──────────────────────────
@@ -3735,6 +3911,55 @@ async function runChangeMasterPassword() {
   overlay.querySelector("#cpw-hint").value = "";
   showCpwStatus("Master password changed successfully.", false);
   showToast("Master password changed", "info");
+}
+
+function updateRecoveryKeyStatus(hasKey) {
+  const overlay = document.querySelector("#settings-modal-overlay");
+  if (!overlay) return;
+  const hintEl = overlay.querySelector("#recovery-status-hint");
+  const button = overlay.querySelector("#recovery-create-btn");
+  if (hintEl) {
+    hintEl.textContent = hasKey
+      ? "A recovery key is set up. Creating a new one replaces it, and the old key stops working."
+      : "No recovery key yet. Without one, a forgotten master password cannot be recovered.";
+  }
+  if (button) button.textContent = hasKey ? "Create New Recovery Key" : "Create Recovery Key";
+}
+
+async function runCreateRecoveryKey() {
+  const overlay      = document.querySelector("#settings-modal-overlay");
+  const currentInput = overlay.querySelector("#recovery-current");
+  const statusEl     = overlay.querySelector("#recovery-status");
+  const submitBtn    = overlay.querySelector("#recovery-create-btn");
+  const formEl       = overlay.querySelector("#recovery-form");
+  const resultEl     = overlay.querySelector("#recovery-result");
+
+  statusEl.style.display = "none";
+  submitBtn.disabled = true;
+
+  const res = await window.secureLoginVault.settings.createRecoveryKey({
+    currentPassword: currentInput.value
+  });
+
+  submitBtn.disabled = false;
+
+  if (!res.ok) {
+    statusEl.textContent = res.message || "Could not create the recovery key.";
+    statusEl.className = "form-message is-error";
+    statusEl.style.display = "";
+    return;
+  }
+
+  currentInput.value = "";
+  formEl.hidden = true;
+  resultEl.hidden = false;
+  resultEl.innerHTML = renderRecoveryKeyPanelMarkup();
+  wireRecoveryKeyPanel(resultEl, res.result.recoveryKey, () => {
+    resultEl.innerHTML = "";
+    resultEl.hidden = true;
+    formEl.hidden = false;
+    updateRecoveryKeyStatus(true);
+  });
 }
 
 async function runSavePasswordHint() {

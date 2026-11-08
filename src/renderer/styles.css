@@ -3238,3 +3238,50 @@ small.group-badge {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+
+/* ─── Recovery key ───────────────────────────────────────────────────────── */
+
+.recovery-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.recovery-check input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: none;
+}
+
+.recovery-check small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.recovery-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.recovery-key-text {
+  margin: 0;
+  padding: 14px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.recovery-key-actions {
+  display: flex;
+  gap: 10px;
+}
