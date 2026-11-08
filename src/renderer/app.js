@@ -1048,7 +1048,7 @@ function renderQrPreviewMarkup(id, dataUri, originalBytes) {
 
   return `
     <div class="qr-preview">
-      <img src="${dataUri}" alt="2FA QR code" class="qr-thumb" data-qr-action="view" data-qr-id="${id}" />
+      <img src="${safeImageSrc(dataUri)}" alt="2FA QR code" class="qr-thumb" data-qr-action="view" data-qr-id="${id}" />
       <div class="qr-preview-details">
         <span class="qr-size-hint">${sizeLine}</span>
         <div class="qr-preview-actions">
@@ -1191,7 +1191,7 @@ function openQrLightbox(dataUri) {
         </button>
       </div>
       <div class="modal-body qr-lightbox-body">
-        <img src="${dataUri}" alt="2FA QR code" class="qr-lightbox-img" />
+        <img src="${safeImageSrc(dataUri)}" alt="2FA QR code" class="qr-lightbox-img" />
         <span class="qr-size-hint">Stored size: ${formatFileSize(estimateDataUriBytes(dataUri))}</span>
         <p class="modal-hint">Point your authenticator app's camera at this code to re-add it on a new device. If it won't scan, try re-uploading a version cropped tightly around just the QR code.</p>
       </div>
@@ -2113,7 +2113,7 @@ function getBrandName() {
 }
 
 function getBrandLogo() {
-  return getPref(PREF_BRAND_LOGO, "");
+  return safeImageSrc(getPref(PREF_BRAND_LOGO, ""));
 }
 
 function getBrandAccent() {
@@ -2127,7 +2127,7 @@ function renderBrandMark(extraClass = "") {
   const logo = getBrandLogo();
   const cls = extraClass ? `brand-mark ${extraClass}` : "brand-mark";
   if (logo) {
-    return `<div class="${cls}" aria-hidden="true"><img src="${logo}" class="brand-mark-logo" alt="" /></div>`;
+    return `<div class="${cls}" aria-hidden="true"><img src="${escapeHtml(logo)}" class="brand-mark-logo" alt="" /></div>`;
   }
   return `<div class="${cls}" aria-hidden="true"><span></span></div>`;
 }
@@ -2374,7 +2374,7 @@ async function openSettingsModal() {
               <div class="brand-logo-field" id="brand-logo-field">
                 <div class="brand-logo-preview-wrap" id="brand-logo-preview-wrap">
                   ${currentBrandLogo
-                    ? `<img src="${currentBrandLogo}" class="brand-logo-preview" alt="" />`
+                    ? `<img src="${escapeHtml(currentBrandLogo)}" class="brand-logo-preview" alt="" />`
                     : `<div class="brand-logo-empty">No logo set</div>`}
                 </div>
                 <input type="file" accept="image/*" id="brand-logo-file" hidden />
@@ -2725,7 +2725,7 @@ async function openSettingsModal() {
       const { dataUri, width, height } = await resizeLogoToDataUri(file, 256);
       setPref(PREF_BRAND_LOGO, dataUri);
       applyBranding();
-      logoPreviewWrap.innerHTML = `<img src="${dataUri}" class="brand-logo-preview" alt="" />`;
+      logoPreviewWrap.innerHTML = `<img src="${escapeHtml(safeImageSrc(dataUri))}" class="brand-logo-preview" alt="" />`;
       logoRemoveBtn.disabled = false;
       logoUploadBtnLabel.textContent = "Replace";
 
@@ -3849,7 +3849,7 @@ function parseJsonImport(content) {
       tags: String(item.tags || "").trim(),
       groupName: String(item.groupName || item.group_name || item.clientGroup || "").trim(),
       notes: String(item.notes || "").trim(),
-      qrCode: String(item.qrCode || item.qr_code || ""),
+      qrCode: safeImageSrc(item.qrCode || item.qr_code || ""),
       favorite: Boolean(item.favorite)
     }))
     .filter((row) => row.websiteName && row.password);
@@ -4203,6 +4203,15 @@ function showRestorePasswordModal() {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+// Returns the value only if it is a base64 image data URI, otherwise "".
+// QR codes and logos are stored as data URIs and placed in <img src="...">;
+// imported files or stored settings must not be able to break out of the
+// attribute or point the image at anything other than inline image data.
+function safeImageSrc(value) {
+  const text = String(value || "");
+  return /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(text) ? text : "";
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -4241,7 +4250,7 @@ function showMessage(element, text, isError) {
 
 function renderError(message) {
   const authCard = getAuthCard();
-  authCard.innerHTML = `<p class="form-message is-error" role="alert">${message}</p>`;
+  authCard.innerHTML = `<p class="form-message is-error" role="alert">${escapeHtml(message)}</p>`;
   document.body.classList.add("app-ready");
 }
 
@@ -5123,9 +5132,12 @@ function showToast(message, type = "info", duration = 2800) {
 
   toast.innerHTML = `
     <span class="toast-icon">${iconMap[type] || iconMap.info}</span>
-    <span class="toast-message">${message}</span>
+    <span class="toast-message"></span>
     <button class="toast-close" type="button" aria-label="Dismiss">&times;</button>
   `;
+
+  // Message is plain text (callers pass names from the vault), never markup.
+  toast.querySelector(".toast-message").textContent = message;
 
   // Dismiss on close button
   toast.querySelector(".toast-close").addEventListener("click", () => dismissToast(toast));
