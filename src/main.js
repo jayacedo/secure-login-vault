@@ -2,11 +2,19 @@ const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require("ele
 const fs = require("fs/promises");
 const path = require("path");
 const { createVaultStore } = require("./services/vaultStore");
+const { isSafeExternalUrl, createPathGrants } = require("./services/ipcGuards");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
 let vaultStore;
 let mainWindow;
+const pathGrants = createPathGrants();
+
+function openExternalSafely(url) {
+  if (isSafeExternalUrl(url)) {
+    shell.openExternal(url);
+  }
+}
 
 // Without a stable AppUserModelID, Windows can group/cache the taskbar
 // button under the underlying electron.exe process instead of this app's
@@ -61,7 +69,7 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: "deny" };
   });
 
@@ -69,7 +77,7 @@ function createMainWindow() {
     const currentUrl = mainWindow.webContents.getURL();
     if (url !== currentUrl) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalSafely(url);
     }
   });
 
@@ -288,11 +296,17 @@ function registerImportExportHandlers() {
       return { ok: true, result: { canceled: true } };
     }
 
+    // Remember the choice: only a path picked here may be written to below.
+    pathGrants.grant("export", result.filePath);
     return { ok: true, result: { canceled: false, filePath: result.filePath } };
   });
 
-  ipcMain.handle("vault:write-export-file", async (_event, { filePath, content }) => {
+  ipcMain.handle("vault:write-export-file", async (_event, { filePath, content } = {}) => {
     return handleVaultOperation(async () => {
+      if (!pathGrants.has("export", filePath) || typeof content !== "string") {
+        throw createPublicError("Choose where to save the file first.");
+      }
+      pathGrants.revoke("export", filePath);
       await fs.writeFile(filePath, content, "utf8");
       return { written: true, filePath };
     });
@@ -300,8 +314,14 @@ function registerImportExportHandlers() {
 
   // ─── Phase 9: Encrypted Backup & Restore ───────────────────────────────────
 
-  ipcMain.handle("vault:create-backup", async (_event, { filePath }) => {
-    return handleVaultOperation(() => vaultStore.createEncryptedBackup(filePath));
+  ipcMain.handle("vault:create-backup", async (_event, { filePath } = {}) => {
+    return handleVaultOperation(async () => {
+      if (!pathGrants.has("export", filePath)) {
+        throw createPublicError("Choose where to save the backup first.");
+      }
+      pathGrants.revoke("export", filePath);
+      return vaultStore.createEncryptedBackup(filePath);
+    });
   });
 
   ipcMain.handle("vault:pick-restore-file", async () => {
@@ -315,11 +335,21 @@ function registerImportExportHandlers() {
       return { ok: true, result: { canceled: true } };
     }
 
+    pathGrants.grant("restore", result.filePaths[0]);
     return { ok: true, result: { canceled: false, filePath: result.filePaths[0] } };
   });
 
-  ipcMain.handle("vault:restore-backup", async (_event, { filePath, masterPassword }) => {
-    return handleVaultOperation(() => vaultStore.restoreEncryptedBackup(filePath, masterPassword));
+  ipcMain.handle("vault:restore-backup", async (_event, { filePath, masterPassword } = {}) => {
+    return handleVaultOperation(async () => {
+      if (!pathGrants.has("restore", filePath)) {
+        throw createPublicError("Choose a backup file first.");
+      }
+      // Kept after a failed attempt (e.g. wrong password) so the user can
+      // retry; revoked once the restore succeeds.
+      const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
+      pathGrants.revoke("restore", filePath);
+      return outcome;
+    });
   });
 }
 
@@ -379,6 +409,12 @@ function registerSettingsHandlers() {
     mainWindow.setIcon(DEFAULT_ICON_PATH);
     return { ok: true };
   });
+}
+
+function createPublicError(message) {
+  const error = new Error(message);
+  error.isPublic = true;
+  return error;
 }
 
 async function handleVaultOperation(operation) {
