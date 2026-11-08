@@ -3,11 +3,14 @@ const fs = require("fs/promises");
 const path = require("path");
 const { createVaultStore } = require("./services/vaultStore");
 const { isSafeExternalUrl, createPathGrants } = require("./services/ipcGuards");
+const { createLockManager, normalizePolicy } = require("./services/lockManager");
+const { writeJsonAtomic } = require("./services/fsUtils");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
 let vaultStore;
 let mainWindow;
+let lockManager;
 const pathGrants = createPathGrants();
 
 function openExternalSafely(url) {
@@ -47,26 +50,13 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // Notify the renderer when the window is minimized or loses focus entirely
-  // (e.g. user alt-tabs away or minimizes to taskbar). The renderer decides
-  // whether to actually lock based on whether auto-lock is enabled and starts
-  // a short grace timer rather than locking instantly, since focus is regained
-  // is a very common, harmless case (alt-tab, notification, etc).
-  mainWindow.on("minimize", () => {
-    mainWindow.webContents.send("vault:window-backgrounded", { reason: "minimize" });
-  });
-
-  mainWindow.on("blur", () => {
-    mainWindow.webContents.send("vault:window-backgrounded", { reason: "blur" });
-  });
-
-  mainWindow.on("focus", () => {
-    mainWindow.webContents.send("vault:window-foregrounded");
-  });
-
-  mainWindow.on("restore", () => {
-    mainWindow.webContents.send("vault:window-foregrounded");
-  });
+  // Background auto-lock is enforced here, not in the renderer: minimizing or
+  // losing focus starts the grace timer, regaining focus cancels it (alt-tab,
+  // notifications etc. are common and harmless).
+  mainWindow.on("minimize", () => lockManager.windowBackgrounded());
+  mainWindow.on("blur", () => lockManager.windowBackgrounded());
+  mainWindow.on("focus", () => lockManager.windowForegrounded());
+  mainWindow.on("restore", () => lockManager.windowForegrounded());
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     openExternalSafely(url);
@@ -112,14 +102,19 @@ function registerAuthHandlers() {
   });
 
   ipcMain.handle("vault:create", async (_event, payload) => {
-    return handleVaultOperation(() => vaultStore.createVault(payload));
+    const response = await handleVaultOperation(() => vaultStore.createVault(payload));
+    if (response.ok) lockManager.setUnlocked(true);
+    return response;
   });
 
   ipcMain.handle("vault:unlock", async (_event, payload) => {
-    return handleVaultOperation(() => vaultStore.unlockVault(payload));
+    const response = await handleVaultOperation(() => vaultStore.unlockVault(payload));
+    if (response.ok) lockManager.setUnlocked(true);
+    return response;
   });
 
   ipcMain.handle("vault:lock", async () => {
+    lockManager.setUnlocked(false);
     return vaultStore.lockVault();
   });
 
@@ -347,9 +342,51 @@ function registerImportExportHandlers() {
       // Kept after a failed attempt (e.g. wrong password) so the user can
       // retry; revoked once the restore succeeds.
       const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
+      lockManager.setUnlocked(false); // restore locks the vault
       pathGrants.revoke("restore", filePath);
       return outcome;
     });
+  });
+}
+
+// ─── Auto-lock policy ─────────────────────────────────────────────────────────
+
+const LOCK_POLICY_FILE = "lock-policy.json";
+
+function lockPolicyPath() {
+  return path.join(app.getPath("userData"), LOCK_POLICY_FILE);
+}
+
+async function loadLockPolicy() {
+  try {
+    lockManager.setPolicy(JSON.parse(await fs.readFile(lockPolicyPath(), "utf8")));
+  } catch {
+    // Missing or unreadable: keep the built-in defaults until the renderer syncs.
+  }
+}
+
+function registerLockPolicyHandlers() {
+  // The renderer reports its settings; the main process validates, stores and
+  // enforces them. Persisted so the policy applies from the next launch too.
+  ipcMain.handle("vault:set-lock-policy", async (_event, payload) => {
+    return handleVaultOperation(async () => {
+      let policy;
+      try {
+        policy = normalizePolicy(payload);
+      } catch (error) {
+        throw createPublicError(error.message);
+      }
+      lockManager.setPolicy(policy);
+      await writeJsonAtomic(lockPolicyPath(), policy);
+      return { applied: true };
+    });
+  });
+
+  // Fire-and-forget user-activity ping that restarts the inactivity timer.
+  ipcMain.on("vault:activity", (event) => {
+    if (mainWindow && event.sender === mainWindow.webContents) {
+      lockManager.noteActivity();
+    }
   });
 }
 
@@ -433,7 +470,17 @@ async function handleVaultOperation(operation) {
 
 app.whenReady().then(() => {
   vaultStore = createVaultStore(app.getPath("userData"));
+  lockManager = createLockManager({
+    onLock: (reason) => {
+      vaultStore.lockVault();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("vault:auto-locked", { reason });
+      }
+    }
+  });
+  loadLockPolicy();
   registerAuthHandlers();
+  registerLockPolicyHandlers();
   registerImportExportHandlers();
   registerSettingsHandlers();
   createMainWindow();
@@ -446,6 +493,9 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  if (lockManager) {
+    lockManager.dispose();
+  }
   if (vaultStore) {
     vaultStore.lockVault();
   }

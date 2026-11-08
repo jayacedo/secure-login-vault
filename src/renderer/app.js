@@ -2214,78 +2214,58 @@ function resizeLogoToDataUri(file, maxDim) {
 
 // ── Auto-Lock ──────────────────────────────────────────────────────────────────
 
-let _autoLockTimer = null;
-let _backgroundLockTimer = null;
-let _unsubscribeWindowBackgrounded = null;
-let _unsubscribeWindowForegrounded = null;
+// The main process enforces both locks (see src/services/lockManager.js). The
+// renderer only (1) tells it the user's settings, (2) pings it on user activity
+// and (3) updates the UI when it reports that the vault has been locked.
+
+const ACTIVITY_PING_INTERVAL_MS = 5000;
+let _lastActivityPing = 0;
+let _activityListenersAttached = false;
+let _unsubscribeAutoLocked = null;
 
 function getAutoLockDelay() {
   return parseInt(getPref(PREF_AUTO_LOCK, "0"), 10) || 0;
 }
 
-// Returns the background-lock grace period in ms, or null if disabled.
-// "0" means instant (lock immediately on minimize/blur).
-function getBackgroundLockGraceMs() {
+// Returns the background-lock grace period in seconds, or null if disabled.
+// 0 means instant (lock immediately on minimize/blur).
+function getBackgroundLockGraceSeconds() {
   const stored = getPref(PREF_BACKGROUND_LOCK, "10");
   if (stored === "off") return null;
   const seconds = parseInt(stored, 10);
-  return Number.isNaN(seconds) ? null : seconds * 1000;
+  return Number.isNaN(seconds) ? null : seconds;
 }
 
-function resetAutoLockTimer() {
-  clearTimeout(_autoLockTimer);
-  const seconds = getAutoLockDelay();
-  if (!seconds) return;
+function reportUserActivity() {
+  const now = Date.now();
+  if (now - _lastActivityPing < ACTIVITY_PING_INTERVAL_MS) return;
+  _lastActivityPing = now;
+  window.secureLoginVault.settings.noteActivity();
+}
 
-  _autoLockTimer = setTimeout(async () => {
-    await window.secureLoginVault.auth.lockVault();
+function handleAutoLocked(payload) {
+  if (payload && payload.reason === "inactivity") {
     showToast("Vault locked due to inactivity", "info");
-    window.location.reload();
-  }, seconds * 1000);
-}
-
-async function lockDueToBackgrounding() {
-  await window.secureLoginVault.auth.lockVault();
+  }
   window.location.reload();
 }
 
 function startAutoLockWatcher() {
-  // Clear any previously registered background-lock listeners first, since
-  // this function can be called again (e.g. when the user changes a setting),
-  // and we don't want duplicate IPC listeners stacking up.
-  if (_unsubscribeWindowBackgrounded) {
-    _unsubscribeWindowBackgrounded();
-    _unsubscribeWindowBackgrounded = null;
-  }
-  if (_unsubscribeWindowForegrounded) {
-    _unsubscribeWindowForegrounded();
-    _unsubscribeWindowForegrounded = null;
-  }
-  clearTimeout(_backgroundLockTimer);
-
-  // Background lock (minimize/blur) is its own toggle, independent of the
-  // inactivity Auto-Lock setting — a user may want one without the other.
-  const graceMs = getBackgroundLockGraceMs();
-  if (graceMs !== null) {
-    _unsubscribeWindowBackgrounded = window.secureLoginVault.auth.onWindowBackgrounded(() => {
-      clearTimeout(_backgroundLockTimer);
-      if (graceMs === 0) {
-        lockDueToBackgrounding();
-      } else {
-        _backgroundLockTimer = setTimeout(lockDueToBackgrounding, graceMs);
-      }
-    });
-
-    _unsubscribeWindowForegrounded = window.secureLoginVault.auth.onWindowForegrounded(() => {
-      clearTimeout(_backgroundLockTimer);
-    });
-  }
-
-  if (!getAutoLockDelay()) return;
-  ["mousemove", "keydown", "mousedown", "scroll", "touchstart"].forEach((evt) => {
-    window.addEventListener(evt, resetAutoLockTimer, { passive: true });
+  window.secureLoginVault.settings.setLockPolicy({
+    idleSeconds: getAutoLockDelay(),
+    backgroundGraceSeconds: getBackgroundLockGraceSeconds()
   });
-  resetAutoLockTimer();
+
+  if (!_unsubscribeAutoLocked) {
+    _unsubscribeAutoLocked = window.secureLoginVault.auth.onAutoLocked(handleAutoLocked);
+  }
+
+  if (!_activityListenersAttached) {
+    ["mousemove", "keydown", "mousedown", "scroll", "touchstart"].forEach((evt) => {
+      window.addEventListener(evt, reportUserActivity, { passive: true });
+    });
+    _activityListenersAttached = true;
+  }
 }
 
 // ── Clipboard clear delay (Phase 8 hook, configurable in Phase 10) ─────────────
@@ -2770,7 +2750,6 @@ async function openSettingsModal() {
   // ── Auto-lock select ─────────────────────────────────────────────────────────
   overlay.querySelector("#auto-lock-select").addEventListener("change", (e) => {
     setPref(PREF_AUTO_LOCK, e.target.value);
-    clearTimeout(_autoLockTimer);
     startAutoLockWatcher();
   });
 

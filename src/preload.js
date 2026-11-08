@@ -9,15 +9,12 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     createVault:  (payload) => ipcRenderer.invoke("vault:create", payload),
     unlockVault:  (payload) => ipcRenderer.invoke("vault:unlock", payload),
     lockVault:    ()        => ipcRenderer.invoke("vault:lock"),
-    onWindowBackgrounded: (callback) => {
+    // Fired by the main process after it has already locked the vault
+    // (inactivity or window backgrounded); the renderer only updates its UI.
+    onAutoLocked: (callback) => {
       const handler = (_event, payload) => callback(payload);
-      ipcRenderer.on("vault:window-backgrounded", handler);
-      return () => ipcRenderer.removeListener("vault:window-backgrounded", handler);
-    },
-    onWindowForegrounded: (callback) => {
-      const handler = () => callback();
-      ipcRenderer.on("vault:window-foregrounded", handler);
-      return () => ipcRenderer.removeListener("vault:window-foregrounded", handler);
+      ipcRenderer.on("vault:auto-locked", handler);
+      return () => ipcRenderer.removeListener("vault:auto-locked", handler);
     }
   },
 
@@ -77,7 +74,9 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   settings: {
     changeMasterPassword: (payload) => ipcRenderer.invoke("vault:change-master-password", payload),
     getAppInfo:           ()        => ipcRenderer.invoke("app:get-info"),
-    pickFolder:           ()        => ipcRenderer.invoke("app:pick-folder")
+    pickFolder:           ()        => ipcRenderer.invoke("app:pick-folder"),
+    setLockPolicy:        (policy)  => ipcRenderer.invoke("vault:set-lock-policy", policy),
+    noteActivity:         ()        => ipcRenderer.send("vault:activity")
   },
 
   branding: {
