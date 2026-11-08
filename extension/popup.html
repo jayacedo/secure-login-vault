@@ -18,7 +18,14 @@
         <p id="status-detail"></p>
       </section>
 
+      <section id="pairing" class="pairing" hidden>
+        <label for="code">Pairing code</label>
+        <input id="code" type="text" autocomplete="off" spellcheck="false" maxlength="60" placeholder="Paste the code from the app" />
+        <button id="pair" type="button">Pair</button>
+      </section>
+
       <button id="recheck" type="button">Check again</button>
+      <button id="forget" class="quiet" type="button" hidden>Forget pairing</button>
     </main>
     <script src="popup.js"></script>
   </body>

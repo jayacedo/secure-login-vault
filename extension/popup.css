@@ -7,6 +7,8 @@
   --ok-bg: #e6f5f0;
   --problem-bg: #fdf1e3;
   --problem-line: #e9c58f;
+  --danger-bg: #fdecec;
+  --danger-line: #e08a8a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,6 +21,8 @@
     --ok-bg: #16322b;
     --problem-bg: #33291a;
     --problem-line: #6e5528;
+    --danger-bg: #381d1d;
+    --danger-line: #8a3f3f;
   }
 }
 
@@ -67,9 +71,49 @@ h1 {
   background: var(--ok-bg);
 }
 
+.status[data-state="danger"] {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+}
+
 .status[data-state="problem"] {
   border-color: var(--problem-line);
   background: var(--problem-bg);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.pairing {
+  display: grid;
+  gap: 6px;
+}
+
+.pairing label {
+  font-weight: 600;
+}
+
+.pairing input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  font: 13px/1.4 "Cascadia Mono", Consolas, monospace;
+}
+
+.pairing input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.quiet {
+  min-height: 30px;
+  border-color: transparent;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 button {

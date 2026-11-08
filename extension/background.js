@@ -1,40 +1,66 @@
-// Background service worker. It is the only part that talks to the browser helper,
-// and it only answers requests from this extension's own pages (the popup).
-importScripts("status.js");
+// Background service worker. It is the only part that talks to the browser helper
+// (and so the desktop app), and it only answers requests from this extension's own
+// pages (the popup). The pairing secret lives only here, in extension storage that
+// page scripts cannot read.
+importScripts("status.js", "pairing.js", "link.js");
 
 const HOST_NAME = self.SLVStatus.HOST_NAME;
-const describeStatus = self.SLVStatus.describeStatus;
-const ANSWER_TIMEOUT_MS = 12000; // the helper gives up after 10 s on its own
+const SECRET_KEY = "slvPairingSecret";
+const OPERATION_DEADLINE_MS = 30000; // a hard stop; every request inside has its own, shorter, timeout
 
-// Asks the desktop app "are you there?" through the helper and returns a status
-// object (never rejects, never throws).
-function checkConnection() {
+const link = self.SLVLink.createLink({
+  hostName: HOST_NAME,
+  pairing: self.SLVPairing,
+  status: self.SLVStatus,
+  randomId: () => crypto.randomUUID(),
+  connectNative: (host) => chrome.runtime.connectNative(host),
+  getLastError: () => (chrome.runtime.lastError ? chrome.runtime.lastError.message : ""),
+  storage: {
+    get: async () => {
+      const stored = await chrome.storage.local.get(SECRET_KEY);
+      return stored && typeof stored[SECRET_KEY] === "string" ? stored[SECRET_KEY] : null;
+    },
+    set: (secretHex) => chrome.storage.local.set({ [SECRET_KEY]: secretHex }),
+    clear: () => chrome.storage.local.remove(SECRET_KEY)
+  }
+});
+
+// One operation at a time, so two popups cannot interleave pairing and checking.
+let queue = Promise.resolve();
+function runOperation(operation) {
+  const run = queue.then(() => withDeadline(operation()));
+  queue = run.catch(() => {});
+  return run;
+}
+
+function withDeadline(promise) {
   return new Promise((resolve) => {
-    let settled = false;
-    const finish = (status) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(status);
-    };
-    const timer = setTimeout(() => finish(describeStatus({ ok: false, error: "timeout" }, "")), ANSWER_TIMEOUT_MS);
-
-    try {
-      chrome.runtime.sendNativeMessage(HOST_NAME, { id: crypto.randomUUID(), type: "ping" }, (reply) => {
-        const runtimeError = chrome.runtime.lastError ? chrome.runtime.lastError.message : "";
-        finish(describeStatus(reply, runtimeError));
-      });
-    } catch (error) {
-      // The call itself failed (not the helper): show the generic "no answer" state.
-      finish(describeStatus(undefined, ""));
-    }
+    const timer = setTimeout(() => resolve(self.SLVStatus.describeStatus({ ok: false, error: "timeout" }, "")), OPERATION_DEADLINE_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(self.SLVStatus.describeStatus(undefined, ""));
+      }
+    );
   });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false; // ignore anything not from this extension
-  if (!message || message.type !== "get-status") return false;
+  if (!message || typeof message !== "object") return false;
 
-  checkConnection().then(sendResponse);
+  if (message.type === "get-status") {
+    runOperation(() => link.check()).then(sendResponse);
+  } else if (message.type === "pair" && typeof message.code === "string") {
+    runOperation(() => link.pair(message.code)).then(sendResponse);
+  } else if (message.type === "forget") {
+    runOperation(() => link.forget()).then(sendResponse);
+  } else {
+    return false;
+  }
   return true; // the answer is sent asynchronously
 });
