@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   settings: {
     changeMasterPassword: (payload) => ipcRenderer.invoke("vault:change-master-password", payload),
     setPasswordHint:      (payload) => ipcRenderer.invoke("vault:set-password-hint", payload),
+    getExtensionBridge:   ()        => ipcRenderer.invoke("vault:get-extension-bridge"),
+    setExtensionBridge:   (payload) => ipcRenderer.invoke("vault:set-extension-bridge", payload),
     createRecoveryKey:    (payload) => ipcRenderer.invoke("vault:create-recovery-key", payload),
     resetWithRecoveryKey: (payload) => ipcRenderer.invoke("vault:reset-with-recovery-key", payload),
     getAppInfo:           ()        => ipcRenderer.invoke("app:get-info"),

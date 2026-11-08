@@ -10,6 +10,9 @@ const path = require("path");
 const { app, BrowserWindow } = require("electron");
 
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "slv-app-test-")));
+// The browser connection uses a pipe named after the OS user; give the test its own
+// so it can never collide with (or touch) a real running copy of the app.
+process.env.SLV_PIPE_USER = `app-test-${process.pid}`;
 require("../src/main.js");
 
 const MASTER = "integration test master password";
@@ -213,6 +216,94 @@ async function main() {
     await pageValue(`document.querySelector('[data-action="client-sign-in"][data-which="hosting"]').click()`);
     await waitForPage(`!!document.querySelector(".toast--error")`, "the error toast");
     assert.match(await pageValue(`document.querySelector(".toast--error .toast-message").textContent`), /plain http/);
+  });
+
+  // ── Browser extension connection ───────────────────────────────────────────
+  const { encodeMessage, createMessageReader } = require("../src/native-host/framing");
+  const { getPipeName } = require("../src/native-host/pipeName");
+  const net = require("net");
+  const pipeName = getPipeName(process.env.SLV_PIPE_USER);
+  const settingsFile = path.join(app.getPath("userData"), "extension-settings.json");
+
+  // Asks the app "ping" through the real pipe. Resolves the reply, or rejects if nothing listens.
+  const pingApp = () =>
+    new Promise((resolve, reject) => {
+      const socket = net.createConnection(pipeName);
+      const reader = createMessageReader({
+        onMessage(value) { socket.destroy(); resolve(value); },
+        onError: reject
+      });
+      socket.on("data", (chunk) => reader.push(chunk));
+      socket.on("error", reject);
+      socket.once("connect", () => socket.write(encodeMessage({ id: 1, type: "ping" })));
+      setTimeout(() => { socket.destroy(); reject(new Error("no reply")); }, 4000);
+    });
+
+  await check("browser extension connection is off by default and nothing listens", async () => {
+    const status = await pageValue(`window.secureLoginVault.settings.getExtensionBridge()`);
+    assert.deepEqual(status, { ok: true, result: { enabled: false, running: false, error: "" } });
+    await assert.rejects(() => pingApp(), "the pipe must not exist while the switch is off");
+    assert.equal(fs.existsSync(settingsFile), false);
+  });
+
+  await check("turning it on starts the connection, and the app answers a ping", async () => {
+    const response = await pageValue(`window.secureLoginVault.settings.setExtensionBridge({ enabled: true })`);
+    assert.deepEqual(response, { ok: true, result: { enabled: true, running: true, error: "" } });
+    const pong = await pingApp();
+    assert.equal(pong.ok, true);
+    assert.equal(pong.type, "pong");
+    assert.equal(pong.appVersion, app.getVersion());
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, "utf8")), { enabled: true });
+  });
+
+  await check("turning it off closes the connection", async () => {
+    const response = await pageValue(`window.secureLoginVault.settings.setExtensionBridge({ enabled: false })`);
+    assert.deepEqual(response, { ok: true, result: { enabled: false, running: false, error: "" } });
+    await assert.rejects(() => pingApp());
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, "utf8")), { enabled: false });
+  });
+
+  await check("invalid on/off requests are refused and change nothing", async () => {
+    for (const payload of [`{ enabled: "yes" }`, `{ enabled: 1 }`, `{}`, `null`, `"on"`]) {
+      const response = await pageValue(`window.secureLoginVault.settings.setExtensionBridge(${payload})`);
+      assert.equal(response.ok, false, payload);
+    }
+    const status = await pageValue(`window.secureLoginVault.settings.getExtensionBridge()`);
+    assert.equal(status.result.running, false);
+  });
+
+  await check("UI: the Settings switch turns the connection on and off", async () => {
+    mainWindow.webContents.reload();
+    await new Promise((resolve) => mainWindow.webContents.once("did-finish-load", resolve));
+    await waitForPage(`!!document.querySelector("#open-settings-btn")`, "the dashboard");
+    await pageValue(`document.querySelector("#open-settings-btn").click()`);
+    await waitForPage(
+      `(function () { var s = document.querySelector("#extension-bridge-select"); return !!s && !s.disabled; })()`,
+      "the Browser Extension switch to be ready"
+    );
+    assert.equal(await pageValue(`document.querySelector("#extension-bridge-select").value`), "off");
+
+    await pageValue(`(function () {
+      var s = document.querySelector("#extension-bridge-select");
+      s.value = "on";
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await waitForPage(
+      `document.querySelector("#extension-bridge-hint").textContent.indexOf("can connect") !== -1`,
+      "the hint to say the extension can connect"
+    );
+    assert.equal((await pingApp()).ok, true, "the app answers after switching on in the UI");
+
+    await pageValue(`(function () {
+      var s = document.querySelector("#extension-bridge-select");
+      s.value = "off";
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await waitForPage(
+      `document.querySelector("#extension-bridge-hint").textContent.indexOf("Off by default") !== -1`,
+      "the hint to go back to off"
+    );
+    await assert.rejects(() => pingApp(), "nothing listens after switching off in the UI");
   });
 
   await check("locking the vault closes every login window", async () => {

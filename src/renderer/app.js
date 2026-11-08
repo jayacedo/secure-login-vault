@@ -2701,6 +2701,19 @@ async function openSettingsModal() {
 
           <div class="settings-row">
             <div class="settings-row-label">
+              <span class="settings-row-name">Browser Extension</span>
+              <span class="settings-row-hint" id="extension-bridge-hint">Lets the Secure Login Vault browser extension connect to this app. Off by default.</span>
+            </div>
+            <div class="settings-row-control">
+              <select class="settings-select" id="extension-bridge-select" disabled>
+                <option value="off" selected>Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
               <span class="settings-row-name">Default Backup Folder</span>
               <span class="settings-row-hint">Where encrypted backups are saved by default.</span>
             </div>
@@ -3055,6 +3068,26 @@ async function openSettingsModal() {
   overlay.querySelector("#background-lock-select").addEventListener("change", (e) => {
     setPref(PREF_BACKGROUND_LOCK, e.target.value);
     startAutoLockWatcher();
+  });
+
+  // ── Browser extension connection (On / Off) ──────────────────────────────────
+  const bridgeSelect = overlay.querySelector("#extension-bridge-select");
+  window.secureLoginVault.settings.getExtensionBridge().then((res) => {
+    if (res.ok) showExtensionBridgeStatus(res.result);
+  });
+  bridgeSelect.addEventListener("change", async () => {
+    bridgeSelect.disabled = true;
+    const res = await window.secureLoginVault.settings.setExtensionBridge({
+      enabled: bridgeSelect.value === "on"
+    });
+    if (res.ok) {
+      showExtensionBridgeStatus(res.result);
+    } else {
+      showToast(res.message || "Could not change the browser connection.", "error", 5000);
+      const current = await window.secureLoginVault.settings.getExtensionBridge();
+      if (current.ok) showExtensionBridgeStatus(current.result);
+      else bridgeSelect.disabled = false;
+    }
   });
 
   // ── Clipboard clear select ───────────────────────────────────────────────────
@@ -3972,6 +4005,26 @@ async function runChangeMasterPassword() {
   overlay.querySelector("#cpw-hint").value = "";
   showCpwStatus("Master password changed successfully.", false);
   showToast("Master password changed", "info");
+}
+
+// Reflects the main process's view of the browser connection in the Settings row.
+function showExtensionBridgeStatus(status) {
+  const select = document.querySelector("#extension-bridge-select");
+  const hint = document.querySelector("#extension-bridge-hint");
+  if (!select || !hint) return;
+
+  select.value = status.enabled ? "on" : "off";
+  select.disabled = false;
+
+  if (status.error) {
+    hint.textContent = status.error;
+  } else if (status.running) {
+    hint.textContent = "On. The Secure Login Vault browser extension can connect to this app.";
+  } else if (status.enabled) {
+    hint.textContent = "On, but the connection is not running.";
+  } else {
+    hint.textContent = "Lets the Secure Login Vault browser extension connect to this app. Off by default.";
+  }
 }
 
 function updateRecoveryKeyStatus(hasKey) {

@@ -7,6 +7,9 @@ const { createLockManager, normalizePolicy } = require("./services/lockManager")
 const { writeJsonAtomic } = require("./services/fsUtils");
 const { buildLoginTarget, describeTargetProblem } = require("./services/siteLogin");
 const { createLoginWindows } = require("./services/loginWindows");
+const { createExtensionBridge } = require("./services/extensionBridge");
+const { createExtensionHandlers } = require("./services/extensionHandlers");
+const { getPipeName } = require("./native-host/pipeName");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -14,6 +17,7 @@ let vaultStore;
 let mainWindow;
 let lockManager;
 let loginWindows;
+let extensionBridge;
 const pathGrants = createPathGrants();
 
 // Native dialogs take focus from the window; keep that from triggering the
@@ -269,6 +273,80 @@ function registerAuthHandlers() {
 
   ipcMain.handle("vault:search-clients", async (_event, options) => {
     return handleVaultOperation(() => vaultStore.searchVaultClients(options));
+  });
+}
+
+// ─── Browser extension connection ─────────────────────────────────────────────
+//
+// Off by default: until the user turns it on in Settings, the app listens on
+// nothing. The choice is stored in the app's data folder (not in the page).
+
+const EXTENSION_SETTINGS_FILE = "extension-settings.json";
+const extensionState = { enabled: false, error: "" };
+
+function extensionSettingsPath() {
+  return path.join(app.getPath("userData"), EXTENSION_SETTINGS_FILE);
+}
+
+function extensionStatus() {
+  return {
+    enabled: extensionState.enabled,
+    running: extensionBridge.isRunning(),
+    error: extensionState.error
+  };
+}
+
+async function startExtensionBridge() {
+  try {
+    await extensionBridge.start();
+    extensionState.error = "";
+    return true;
+  } catch (error) {
+    extensionState.error =
+      error && error.code === "EADDRINUSE"
+        ? "Another copy of Secure Login Vault is already using the browser connection."
+        : "The browser connection could not be started.";
+    return false;
+  }
+}
+
+async function loadExtensionSettings() {
+  try {
+    const saved = JSON.parse(await fs.readFile(extensionSettingsPath(), "utf8"));
+    extensionState.enabled = saved && saved.enabled === true;
+  } catch {
+    extensionState.enabled = false; // missing or unreadable: stay off
+  }
+  if (extensionState.enabled) {
+    await startExtensionBridge();
+  }
+}
+
+function registerExtensionHandlers() {
+  ipcMain.handle("vault:get-extension-bridge", async () => {
+    return handleVaultOperation(async () => extensionStatus());
+  });
+
+  ipcMain.handle("vault:set-extension-bridge", async (_event, payload) => {
+    return handleVaultOperation(async () => {
+      if (!payload || typeof payload.enabled !== "boolean") {
+        throw createPublicError("Choose On or Off.");
+      }
+
+      if (payload.enabled) {
+        // Only record "on" if it actually started.
+        if (!(await startExtensionBridge())) {
+          throw createPublicError(extensionState.error);
+        }
+      } else {
+        await extensionBridge.stop();
+        extensionState.error = "";
+      }
+
+      extensionState.enabled = payload.enabled;
+      await writeJsonAtomic(extensionSettingsPath(), { enabled: payload.enabled });
+      return extensionStatus();
+    });
   });
 }
 
@@ -564,6 +642,11 @@ app.whenReady().then(() => {
     onActivity: () => lockManager.noteActivity(),
     isDevelopment
   });
+  extensionBridge = createExtensionBridge({
+    // SLV_PIPE_USER only exists so tests can use their own pipe, never a real user's.
+    pipeName: getPipeName(process.env.SLV_PIPE_USER || undefined),
+    handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion() })
+  });
   lockManager = createLockManager({
     onLock: (reason) => {
       vaultStore.lockVault();
@@ -577,6 +660,8 @@ app.whenReady().then(() => {
   registerAuthHandlers();
   registerLockPolicyHandlers();
   registerLoginHandlers();
+  registerExtensionHandlers();
+  loadExtensionSettings();
   registerImportExportHandlers();
   registerSettingsHandlers();
   createMainWindow();
@@ -589,6 +674,9 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  if (extensionBridge) {
+    extensionBridge.stop();
+  }
   if (loginWindows) {
     loginWindows.closeAll();
   }
