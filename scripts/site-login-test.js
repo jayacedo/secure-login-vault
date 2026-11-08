@@ -303,12 +303,99 @@ for (const secret of NASTY) {
 {
   const script = buildFillScript(CREDS, { layout: false });
   assert.equal(script.includes("require("), false);
-  assert.equal(script.startsWith("(function fillLoginForm"), true);
+  assert.equal(script.includes("function fillLoginForm"), true);
   assert.equal(script.includes(CREDS.password), true, "credentials are embedded as data");
   const dom = new JSDOM(`<form><input name="u"><input type="password"><button>x</button></form>`, {
     runScripts: "outside-only"
   });
   assert.equal(dom.window.eval(script).status, "filled");
+}
+
+// The script re-checks the page origin itself (in case the page navigated after
+// the caller's check)
+{
+  const html = `<form><input name="u"><input type="password" name="pw"><button>x</button></form>`;
+  const secret = { username: "me", password: "pw" };
+
+  const same = new JSDOM(html, { url: "https://example.com/login", runScripts: "outside-only" });
+  const fine = same.window.eval(
+    buildFillScript(secret, { layout: false, expectedOrigin: "https://example.com" })
+  );
+  assert.equal(fine.status, "filled");
+
+  const other = new JSDOM(html, { url: "https://evil.example/login", runScripts: "outside-only" });
+  const blocked = other.window.eval(
+    buildFillScript(secret, { layout: false, expectedOrigin: "https://example.com" })
+  );
+  assert.equal(blocked.status, "blocked");
+  assert.equal(other.window.document.querySelector("[name=u]").value, "");
+  assert.equal(other.window.document.querySelector("[name=pw]").value, "");
+}
+
+// After the username step was done once, it is not filled again
+{
+  const doc = page(`<form><input type="email" name="identifier" autocomplete="username"><button type="submit">Next</button></form>`);
+  const result = fillLoginForm(doc, CREDS, { submit: true, skipUsernameOnly: true });
+  assert.equal(result.status, "no-form");
+  assert.equal(doc.querySelector("[name=identifier]").value, "");
+}
+
+// ── Building a target from a saved entry ─────────────────────────────────────
+
+const { buildLoginTarget, describeTargetProblem } = require("../src/services/siteLogin");
+
+{
+  const target = buildLoginTarget("credential", {
+    websiteName: "Client Site",
+    websiteUrl: "client.com/wp-admin",
+    username: "",
+    email: "me@client.com",
+    password: "pw"
+  });
+  assert.equal(target.ok, true);
+  assert.equal(target.url, "https://client.com/wp-admin");
+  assert.equal(target.origin, "https://client.com");
+  assert.equal(target.username, "me@client.com", "falls back to the email");
+  assert.equal(target.password, "pw");
+  assert.equal(target.label, "Client Site");
+}
+
+{
+  const client = {
+    name: "Acme",
+    adminUrl: "https://acme.com/wp-login.php",
+    adminUsername: "wpadmin",
+    adminPassword: "wp-pass",
+    hostingUrl: "https://host.example/login",
+    hostingUsername: "hostuser",
+    hostingPassword: "host-pass",
+    phpMyAdminUrl: "https://acme.com/phpmyadmin",
+    dbUsername: "dbuser",
+    dbPassword: "db-pass"
+  };
+  const admin = buildLoginTarget("client", client, "admin");
+  assert.deepEqual([admin.url, admin.username, admin.password], ["https://acme.com/wp-login.php", "wpadmin", "wp-pass"]);
+  assert.equal(admin.label, "Acme - WP Admin");
+  const hosting = buildLoginTarget("client", client, "hosting");
+  assert.deepEqual([hosting.origin, hosting.username, hosting.password], ["https://host.example", "hostuser", "host-pass"]);
+  const pma = buildLoginTarget("client", client, "phpmyadmin");
+  assert.deepEqual([pma.url, pma.username, pma.password], ["https://acme.com/phpmyadmin", "dbuser", "db-pass"]);
+
+  assert.equal(buildLoginTarget("client", client, "ftp").reason, "unknown");
+  assert.equal(buildLoginTarget("client", client).reason, "unknown");
+  assert.equal(buildLoginTarget("nonsense", client, "admin").reason, "unknown");
+  assert.equal(buildLoginTarget("credential", null).reason, "unknown");
+}
+
+assert.equal(buildLoginTarget("credential", { websiteUrl: "", username: "u", password: "p" }).reason, "empty");
+assert.equal(buildLoginTarget("credential", { websiteUrl: "javascript:alert(1)", password: "p" }).reason, "unsupported");
+assert.equal(buildLoginTarget("credential", { websiteUrl: "http://example.com", password: "p" }).reason, "insecure");
+assert.equal(buildLoginTarget("credential", { websiteUrl: "example.com" }).reason, "no-credentials");
+assert.equal(buildLoginTarget("credential", { websiteUrl: "example.com", username: "u" }).ok, true, "username alone is enough to try");
+
+for (const reason of ["empty", "invalid", "unsupported", "insecure", "no-credentials", "unknown", "anything"]) {
+  assert.equal(typeof describeTargetProblem(reason), "string");
+  assert.ok(describeTargetProblem(reason).length > 10);
 }
 
 console.log("site-login tests passed");

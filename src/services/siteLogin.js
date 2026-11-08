@@ -98,10 +98,86 @@ function buildFillScript(credentials, options) {
   });
   const settings = toLiteral({
     submit: Boolean(options && options.submit),
-    layout: !(options && options.layout === false)
+    layout: !(options && options.layout === false),
+    skipUsernameOnly: Boolean(options && options.skipUsernameOnly)
   });
 
-  return `(${fillLoginForm.toString()})(document, ${payload}, ${settings})`;
+  // Last line of defence: the page may have navigated between the caller's
+  // origin check and this script running, so it re-checks where it is running.
+  const guard =
+    options && options.expectedOrigin
+      ? `if (location.origin !== ${toLiteral(String(options.expectedOrigin))}) { return { status: "blocked" }; } `
+      : "";
+
+  return `(function () { ${guard}return (${fillLoginForm.toString()})(document, ${payload}, ${settings}); })()`;
+}
+
+// What the "Sign in" button needs from a saved entry. Returns the target to open
+// and fill, or { ok: false, reason } with a reason from resolveLoginUrl or:
+//   "no-credentials" (nothing to fill) | "unknown" (bad request)
+function buildLoginTarget(kind, record, which) {
+  if (!record || typeof record !== "object") return { ok: false, reason: "unknown" };
+
+  let rawUrl;
+  let username;
+  let password;
+  let label;
+
+  if (kind === "credential") {
+    rawUrl = record.websiteUrl;
+    username = record.username || record.email;
+    password = record.password;
+    label = record.websiteName;
+  } else if (kind === "client" && which === "admin") {
+    rawUrl = record.adminUrl;
+    username = record.adminUsername;
+    password = record.adminPassword;
+    label = `${record.name} - WP Admin`;
+  } else if (kind === "client" && which === "hosting") {
+    rawUrl = record.hostingUrl;
+    username = record.hostingUsername;
+    password = record.hostingPassword;
+    label = `${record.name} - Hosting`;
+  } else if (kind === "client" && which === "phpmyadmin") {
+    rawUrl = record.phpMyAdminUrl;
+    username = record.dbUsername;
+    password = record.dbPassword;
+    label = `${record.name} - phpMyAdmin`;
+  } else {
+    return { ok: false, reason: "unknown" };
+  }
+
+  const resolved = resolveLoginUrl(rawUrl);
+  if (!resolved.ok) return { ok: false, reason: resolved.reason };
+
+  if (!username && !password) return { ok: false, reason: "no-credentials" };
+
+  return {
+    ok: true,
+    url: resolved.url,
+    origin: resolved.origin,
+    host: resolved.host,
+    username: String(username || ""),
+    password: String(password || ""),
+    label: String(label || resolved.host)
+  };
+}
+
+// Plain-language message for a refused target; safe to show to the user.
+function describeTargetProblem(reason) {
+  switch (reason) {
+    case "empty":
+      return "This entry has no website address to open.";
+    case "invalid":
+    case "unsupported":
+      return "This entry's website address is not a valid web address.";
+    case "insecure":
+      return "This site uses plain http, so Secure Login Vault will not fill a password there. Open it in your browser instead.";
+    case "no-credentials":
+      return "This entry has no saved username or password to fill in.";
+    default:
+      return "Could not open this entry.";
+  }
 }
 
 module.exports = {
@@ -109,5 +185,7 @@ module.exports = {
   resolveLoginUrl,
   originOf,
   canFillAt,
-  buildFillScript
+  buildFillScript,
+  buildLoginTarget,
+  describeTargetProblem
 };

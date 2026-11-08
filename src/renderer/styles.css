@@ -3285,3 +3285,46 @@ small.group-badge {
   display: flex;
   gap: 10px;
 }
+
+/* ─── Sign in buttons ────────────────────────────────────────────────────── */
+
+.row-action-btn.signin-action {
+  color: var(--accent-strong);
+}
+
+.signin-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.signin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--accent-strong);
+  background: var(--panel-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.signin-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.signin-btn:hover,
+.signin-btn:focus-visible {
+  border-color: var(--accent);
+  background: rgba(31, 122, 104, 0.08);
+}
+
+.signin-btn:disabled {
+  cursor: progress;
+}

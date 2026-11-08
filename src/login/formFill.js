@@ -184,7 +184,9 @@ function fillLoginForm(doc, credentials, options) {
     return result;
   }
 
-  const usernameOnly = findUsernameOnly();
+  // After the username step has already been done once, do not fill it again:
+  // a page that keeps asking for it is probably rejecting it.
+  const usernameOnly = opts.skipUsernameOnly ? null : findUsernameOnly();
   if (usernameOnly && username) {
     setValue(usernameOnly, username);
     result.filledUsername = true;

@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     setActive:       (name)                   => ipcRenderer.invoke("vault:set-active-group", name)
   },
 
+  login: {
+    // Opens the saved entry's site in a secure window and fills the login form.
+    open: (payload) => ipcRenderer.invoke("vault:open-login-window", payload)
+  },
+
   clients: {
     getAll:         ()          => ipcRenderer.invoke("vault:get-clients"),
     getOne:         (id)        => ipcRenderer.invoke("vault:get-client", id),

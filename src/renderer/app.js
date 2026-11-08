@@ -498,6 +498,13 @@ function renderCredentialRow(credential, query = "") {
                   data-value="${escapeHtml(credential.websiteUrl || '')}">
             ${renderExternalLinkIcon()}
           </button>
+          <button class="icon-button row-action-btn signin-action"
+                  type="button" title="Sign in (opens the site and fills your login)"
+                  aria-label="Sign in to ${escapeHtml(credential.websiteName || "this site")}"
+                  data-action="sign-in"
+                  data-id="${credential.id}">
+            ${renderSignInIcon()}
+          </button>
         </span>` : ""}
       </span>
 
@@ -711,7 +718,32 @@ function bindCredentialActions() {
       const val = btn.dataset.value;
       if (val) window.open(resolveWebsiteUrl(val), "_blank");
     }
+
+    if (action === "sign-in") {
+      runSignIn({ kind: "credential", id }, btn);
+    }
   });
+}
+
+// Opens the saved site in a secure window and fills the login. Only the entry's
+// id goes to the main process; the password never passes through this page.
+async function runSignIn(request, button) {
+  if (button.disabled) return;
+  button.disabled = true;
+
+  try {
+    const res = await window.secureLoginVault.login.open(request);
+    if (res.ok) {
+      showToast(`Opening ${res.result.host}...`, "info");
+    } else {
+      showToast(res.message || "Could not open the site.", "error", 5000);
+    }
+  } finally {
+    // Brief pause so a double-click doesn't open two windows.
+    setTimeout(() => {
+      button.disabled = false;
+    }, 800);
+  }
 }
 
 async function refreshCredentials() {
@@ -1784,6 +1816,16 @@ function setupClientVaultInteractions() {
     grid.addEventListener("click", async (e) => {
       if (e.target.closest('[data-action="quick-link"]')) return; // let the anchor navigate
 
+      const signInBtn = e.target.closest('[data-action="client-sign-in"]');
+      if (signInBtn) {
+        e.stopPropagation(); // don't open the client's edit modal
+        runSignIn(
+          { kind: "client", id: Number(signInBtn.dataset.id), which: signInBtn.dataset.which },
+          signInBtn
+        );
+        return;
+      }
+
       const favBtn = e.target.closest('[data-action="favorite"]');
       if (favBtn) {
         e.stopPropagation();
@@ -1886,6 +1928,13 @@ function renderClientCard(client, query = "") {
     { label: "phpMyAdmin", url: client.phpMyAdminUrl }
   ].filter((l) => l.url);
 
+  // One Sign in button per site that has an address and something to fill in.
+  const signIns = [
+    { which: "admin", label: "WP Admin", url: client.adminUrl, user: client.adminUsername, pass: client.adminPassword },
+    { which: "hosting", label: "Hosting", url: client.hostingUrl, user: client.hostingUsername, pass: client.hostingPassword },
+    { which: "phpmyadmin", label: "phpMyAdmin", url: client.phpMyAdminUrl, user: client.dbUsername, pass: client.dbPassword }
+  ].filter((s) => s.url && (s.user || s.pass));
+
   return `
     <div class="client-card ${client.favorite ? "is-favorite" : ""}" data-id="${client.id}">
       <div class="client-card-head">
@@ -1910,6 +1959,18 @@ function renderClientCard(client, query = "") {
               (l) =>
                 `<a href="${escapeHtml(resolveWebsiteUrl(l.url))}" target="_blank" rel="noopener"
                     title="${escapeHtml(l.label)}" data-action="quick-link">${renderExternalLinkIcon()}</a>`
+            )
+            .join("")}
+        </div>
+      ` : ""}
+      ${signIns.length ? `
+        <div class="signin-links" aria-label="Sign in">
+          ${signIns
+            .map(
+              (s) =>
+                `<button class="signin-btn" type="button" data-action="client-sign-in"
+                         data-id="${client.id}" data-which="${s.which}"
+                         title="Sign in to ${escapeHtml(s.label)} (opens the site and fills your login)">${renderSignInIcon()}<span>${escapeHtml(s.label)}</span></button>`
             )
             .join("")}
         </div>
@@ -5558,6 +5619,14 @@ function renderLinkIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
     <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+  </svg>`;
+}
+
+function renderSignInIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+    <path d="m10 17 5-5-5-5"/>
+    <path d="M15 12H3"/>
   </svg>`;
 }
 

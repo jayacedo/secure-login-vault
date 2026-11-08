@@ -5,12 +5,15 @@ const { createVaultStore } = require("./services/vaultStore");
 const { isSafeExternalUrl, createPathGrants } = require("./services/ipcGuards");
 const { createLockManager, normalizePolicy } = require("./services/lockManager");
 const { writeJsonAtomic } = require("./services/fsUtils");
+const { buildLoginTarget, describeTargetProblem } = require("./services/siteLogin");
+const { createLoginWindows } = require("./services/loginWindows");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
 let vaultStore;
 let mainWindow;
 let lockManager;
+let loginWindows;
 const pathGrants = createPathGrants();
 
 // Native dialogs take focus from the window; keep that from triggering the
@@ -23,6 +26,21 @@ async function withNativeDialog(openDialog) {
   } finally {
     lockManager.resumeBackground();
   }
+}
+
+// The vault counts as "left" only when none of the app's windows (the main
+// window or a login window) has focus. Moving focus between them is not leaving.
+function handleAppWindowBlur() {
+  setTimeout(() => {
+    const stillActive = BrowserWindow.getAllWindows().some(
+      (win) => !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+    );
+    if (!stillActive) lockManager.windowBackgrounded();
+  }, 100);
+}
+
+function handleAppWindowFocus() {
+  lockManager.windowForegrounded();
 }
 
 function openExternalSafely(url) {
@@ -65,10 +83,11 @@ function createMainWindow() {
   // Background auto-lock is enforced here, not in the renderer: minimizing or
   // losing focus starts the grace timer, regaining focus cancels it (alt-tab,
   // notifications etc. are common and harmless).
-  mainWindow.on("minimize", () => lockManager.windowBackgrounded());
-  mainWindow.on("blur", () => lockManager.windowBackgrounded());
-  mainWindow.on("focus", () => lockManager.windowForegrounded());
-  mainWindow.on("restore", () => lockManager.windowForegrounded());
+  mainWindow.on("minimize", handleAppWindowBlur);
+  mainWindow.on("blur", handleAppWindowBlur);
+  mainWindow.on("focus", handleAppWindowFocus);
+  mainWindow.on("restore", handleAppWindowFocus);
+  mainWindow.on("closed", () => loginWindows.closeAll());
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     openExternalSafely(url);
@@ -127,6 +146,7 @@ function registerAuthHandlers() {
 
   ipcMain.handle("vault:lock", async () => {
     lockManager.setUnlocked(false);
+    loginWindows.closeAll();
     return vaultStore.lockVault();
   });
 
@@ -252,6 +272,37 @@ function registerAuthHandlers() {
   });
 }
 
+function registerLoginHandlers() {
+  // "Sign in": the renderer only says which saved entry; the main process reads
+  // the credentials itself, so the password never goes through the page.
+  ipcMain.handle("vault:open-login-window", async (_event, payload) => {
+    return handleVaultOperation(async () => {
+      const request = payload && typeof payload === "object" ? payload : {};
+      const id = Number(request.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        throw createPublicError("Choose an entry to sign in to.");
+      }
+
+      let record;
+      if (request.kind === "credential") {
+        record = await vaultStore.getCredential(id);
+      } else if (request.kind === "client") {
+        record = await vaultStore.getClient(id);
+      } else {
+        throw createPublicError("Choose an entry to sign in to.");
+      }
+
+      const target = buildLoginTarget(request.kind, record, request.which);
+      if (!target.ok) {
+        throw createPublicError(describeTargetProblem(target.reason));
+      }
+
+      const opened = loginWindows.open({ ...target, submit: true });
+      return { opened: true, host: opened.host };
+    });
+  });
+}
+
 function registerImportExportHandlers() {
   // ─── Phase 9: Import ────────────────────────────────────────────────────────
 
@@ -361,6 +412,7 @@ function registerImportExportHandlers() {
       // retry; revoked once the restore succeeds.
       const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
       lockManager.setUnlocked(false); // restore locks the vault
+      loginWindows.closeAll();
       pathGrants.revoke("restore", filePath);
       return outcome;
     });
@@ -505,9 +557,17 @@ async function handleVaultOperation(operation) {
 
 app.whenReady().then(() => {
   vaultStore = createVaultStore(app.getPath("userData"));
+  loginWindows = createLoginWindows({
+    openExternal: openExternalSafely,
+    onBlur: handleAppWindowBlur,
+    onFocus: handleAppWindowFocus,
+    onActivity: () => lockManager.noteActivity(),
+    isDevelopment
+  });
   lockManager = createLockManager({
     onLock: (reason) => {
       vaultStore.lockVault();
+      loginWindows.closeAll();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("vault:auto-locked", { reason });
       }
@@ -516,6 +576,7 @@ app.whenReady().then(() => {
   loadLockPolicy();
   registerAuthHandlers();
   registerLockPolicyHandlers();
+  registerLoginHandlers();
   registerImportExportHandlers();
   registerSettingsHandlers();
   createMainWindow();
@@ -528,6 +589,9 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  if (loginWindows) {
+    loginWindows.closeAll();
+  }
   if (lockManager) {
     lockManager.dispose();
   }
