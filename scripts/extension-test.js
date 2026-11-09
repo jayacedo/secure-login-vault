@@ -25,8 +25,10 @@ assert.match(manifest.version, /^\d+(\.\d+){0,3}$/);
 // This extension may talk to the desktop helper and nothing else. Any new capability
 // (website access, scripts in pages, being contacted by sites) must be a deliberate
 // change to this test.
-// "activeTab" lets the popup read the address of the tab it was opened on, and nothing else.
-assert.deepEqual(manifest.permissions, ["nativeMessaging", "storage", "activeTab"]);
+// "activeTab" gives temporary access to the one tab the person is using, only after they act
+// in the popup; "scripting" lets the extension run its fill code there. Neither reads any
+// website on its own, and there are no host permissions.
+assert.deepEqual(manifest.permissions, ["nativeMessaging", "storage", "activeTab", "scripting"]);
 for (const forbidden of [
   "host_permissions",
   "optional_permissions",
@@ -83,7 +85,7 @@ for (const file of Object.values(manifest.action.default_icon)) {
 
 // ── Source hygiene: no markup injection, no remote code, no eval ─────────────
 
-for (const file of ["background.js", "popup.js", "status.js", "pairing.js", "link.js", "popup.html", "popup.css"]) {
+for (const file of ["background.js", "popup.js", "status.js", "pairing.js", "link.js", "fillInPage.js", "popup.html", "popup.css"]) {
   const text = read(file);
   for (const pattern of [/innerHTML/, /outerHTML/, /insertAdjacentHTML/, /document\.write/, /\beval\s*\(/, /new Function/, /https?:\/\//]) {
     assert.equal(pattern.test(text), false, `${file} must not contain ${pattern}`);
@@ -143,7 +145,7 @@ assert.deepEqual(cases.filter(([, state]) => state === "connected"), []);
 // The fake browser hands out ports; `respond(message)` plays the helper and the app
 // (return a reply, or undefined to say nothing).
 
-function loadBackground({ respond = () => undefined, connectThrows = false, disconnectWith = null, runtimeId = "ext-id" } = {}) {
+function loadBackground({ respond = () => undefined, connectThrows = false, disconnectWith = null, runtimeId = "ext-id", tab = { id: 7, url: "https://example.com/login" } } = {}) {
   const listeners = [];
   const sent = [];
   const storageCalls = [];
@@ -187,6 +189,17 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
         };
       }
     },
+    tabs: {
+      query(options, callback) {
+        assert.deepEqual(options, { active: true, currentWindow: true });
+        callback(tab ? [tab] : []);
+      }
+    },
+    scripting: {
+      async executeScript() {
+        throw new Error("a fill that reached the page without a verified app");
+      }
+    },
     storage: {
       local: {
         async get(key) {
@@ -211,6 +224,7 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
     setTimeout,
     clearTimeout,
     TextEncoder,
+    URL,
     Uint8Array,
     String,
     Promise,
@@ -313,10 +327,31 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
     }
   }
 
+  // Fill: refuses before contacting the app when there is no usable page; bad ids are ignored
+  for (const tab of [null, {}, { id: 7 }, { id: 7, url: "chrome://extensions/" }, { id: 7, url: "about:blank" }, { id: 7, url: "file:///C:/x.html" }, { url: "https://example.com/" }, { id: "7", url: "https://example.com/" }]) {
+    const bg = loadBackground({ tab, respond: () => PONG });
+    const result = await bg.ask({ type: "fill", loginId: 1 });
+    assert.deepEqual(result, { ok: false, status: "error", message: "Open the login page in this tab first." }, JSON.stringify(tab));
+    assert.equal(bg.sent.length, 0, "the app was never contacted");
+  }
+  {
+    const bg = loadBackground({ respond: () => PONG });
+    for (const bad of [{ type: "fill" }, { type: "fill", loginId: "1" }, { type: "fill", loginId: 1.5 }, { type: "fill", loginId: null }, { type: "fill", loginId: {} }, { type: "fill", loginId: [1] }, { type: "fill", loginId: NaN }, { type: "fill", loginId: 2 ** 60 }]) {
+      assert.deepEqual(await bg.ask(bad), { __ignored: true }, JSON.stringify(bad));
+    }
+    assert.deepEqual(await bg.ask({ type: "fill", loginId: 1 }, { id: "some-other-extension" }), { __ignored: true });
+    assert.equal(bg.sent.length, 0);
+    // not paired: no password request is ever made, and the person is told why
+    const unpaired = await bg.ask({ type: "fill", loginId: 1 });
+    assert.equal(unpaired.ok, false);
+    assert.match(unpaired.message, /Not paired/);
+    assert.deepEqual(bg.sent.map((s) => s.message.type), ["ping"]);
+  }
+
   // Requests from anyone but this extension, and unknown requests, are ignored
   {
     const bg = loadBackground({ respond: () => PONG });
-    for (const message of [{ type: "get-status" }, { type: "pair", code: "x" }, { type: "forget" }]) {
+    for (const message of [{ type: "get-status" }, { type: "pair", code: "x" }, { type: "forget" }, { type: "fill", loginId: 1 }]) {
       assert.deepEqual(await bg.ask(message, { id: "some-other-extension" }), { __ignored: true });
       assert.deepEqual(await bg.ask(message, {}), { __ignored: true });
     }
@@ -365,7 +400,10 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
       siteVisible: () => !$("site").hidden,
       siteTitle: () => $("site-title").textContent,
       siteNote: () => $("site-note").textContent,
-      logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.children).map((c) => c.textContent)),
+      logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.querySelectorAll(".login-name, .login-user")).map((c) => c.textContent)),
+      fillButtons: () => Array.from(dom.window.document.querySelectorAll("#logins button")),
+      fillNote: () => dom.window.document.getElementById("fill-note").textContent,
+      fillNoteOk: () => dom.window.document.getElementById("fill-note").dataset.ok,
       state: () => $("status").dataset.state,
       title: () => $("status-title").textContent,
       detail: () => $("status-detail").textContent,
@@ -594,6 +632,56 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
     assert.equal(popup.count("script"), 0);
     assert.equal(popup.pwned(), undefined);
     assert.equal(popup.logins().length <= 20, true, "capped");
+  }
+
+  // Fill buttons
+  {
+    let pendingFill = null;
+    const popup = openPopup(({ message, callback }) => {
+      if (message.type === "get-status") {
+        return callback(verified({ state: "ok", host: "example.com", logins: [{ id: 11, name: "Example", username: "alice" }, { id: 12, name: "Admin", username: "root" }, { id: "13", name: "Text id" }, { id: 1.5, name: "Float id" }, { name: "No id" }] }));
+      }
+      pendingFill = callback;
+    }, { tabUrl: "https://example.com/login" });
+    assert.equal(popup.fillButtons().length, 2, "only entries with a whole-number id get a Fill button");
+    assert.equal(popup.logins().length, 5);
+    assert.deepEqual(popup.fillButtons().map((b) => b.textContent), ["Fill", "Fill"]);
+    assert.deepEqual(popup.fillButtons().map((b) => b.getAttribute("aria-label")), ["Fill Example", "Fill Admin"]);
+    assert.deepEqual(popup.fillButtons().map((b) => b.type), ["button", "button"]);
+
+    popup.fillButtons()[1].click();
+    assert.deepEqual(popup.calls[1], { type: "fill", loginId: 12 }, "only the id is sent: no address, no password");
+    assert.equal(popup.fillNote(), "Filling...");
+    assert.equal(popup.fillButtons().every((b) => b.disabled), true, "locked while filling");
+    assert.equal(popup.button.disabled, true);
+
+    pendingFill({ ok: true, status: "filled", message: "Filled. Press the site's own Sign in button." });
+    assert.equal(popup.fillNote(), "Filled. Press the site's own Sign in button.");
+    assert.equal(popup.fillNoteOk(), "true");
+    assert.equal(popup.fillButtons().every((b) => !b.disabled), true);
+
+    popup.fillButtons()[0].click();
+    pendingFill({ ok: false, status: "error", message: "Secure Login Vault is locked. Unlock it, then try again." });
+    assert.equal(popup.fillNoteOk(), "false");
+    assert.equal(popup.fillNote(), "Secure Login Vault is locked. Unlock it, then try again.");
+    assert.equal(popup.calls[2].loginId, 11);
+
+    // a broken or missing answer is a clear message, never silence
+    for (const bad of [undefined, "nope", null]) {
+      popup.fillButtons()[0].click();
+      pendingFill(bad);
+      assert.equal(popup.fillNote(), "Could not fill. Reload the extension and try again.");
+    }
+
+    // hostile text from the answer is text
+    popup.fillButtons()[0].click();
+    pendingFill({ ok: false, message: '<img src=x onerror="window.pwned=1">' });
+    assert.equal(popup.fillNote(), '<img src=x onerror="window.pwned=1">');
+    assert.equal(popup.pwned(), undefined);
+
+    // a new check clears the old fill message
+    popup.button.click();
+    assert.equal(popup.fillNote(), "");
   }
 
   // Pairing from the popup carries the page origin too, so the list shows right away

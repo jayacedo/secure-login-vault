@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     setPasswordHint:      (payload) => ipcRenderer.invoke("vault:set-password-hint", payload),
     getExtensionBridge:   ()        => ipcRenderer.invoke("vault:get-extension-bridge"),
     setExtensionBridge:   (payload) => ipcRenderer.invoke("vault:set-extension-bridge", payload),
+    setExtensionAskBeforeFill: (payload) => ipcRenderer.invoke("vault:set-extension-ask-before-fill", payload),
     getExtensionPairing:  ()        => ipcRenderer.invoke("vault:get-extension-pairing"),
     startExtensionPairing: ()       => ipcRenderer.invoke("vault:start-extension-pairing"),
     cancelExtensionPairing: ()      => ipcRenderer.invoke("vault:cancel-extension-pairing"),

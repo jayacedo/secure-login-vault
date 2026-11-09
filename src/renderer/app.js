@@ -2712,6 +2712,19 @@ async function openSettingsModal() {
             </div>
           </div>
 
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Ask Before Filling</span>
+              <span class="settings-row-hint" id="extension-ask-hint">When On, each time the browser extension wants to fill a login, you confirm it in this app first.</span>
+            </div>
+            <div class="settings-row-control">
+              <select class="settings-select" id="extension-ask-select" disabled>
+                <option value="off" selected>Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+          </div>
+
           <div class="settings-row" id="extension-pair-row">
             <div class="settings-row-label">
               <span class="settings-row-name">Pair Browser</span>
@@ -3104,6 +3117,20 @@ async function openSettingsModal() {
       const current = await window.secureLoginVault.settings.getExtensionBridge();
       if (current.ok) showExtensionBridgeStatus(current.result);
       else bridgeSelect.disabled = false;
+    }
+  });
+
+  const askSelect = overlay.querySelector("#extension-ask-select");
+  askSelect.addEventListener("change", async () => {
+    askSelect.disabled = true;
+    const res = await window.secureLoginVault.settings.setExtensionAskBeforeFill({ enabled: askSelect.value === "on" });
+    if (res.ok) {
+      showExtensionBridgeStatus(res.result);
+    } else {
+      showToast(res.message || "Could not change this setting.", "error", 5000);
+      const current = await window.secureLoginVault.settings.getExtensionBridge();
+      if (current.ok) showExtensionBridgeStatus(current.result);
+      else askSelect.disabled = false;
     }
   });
 
@@ -4163,6 +4190,12 @@ function showExtensionBridgeStatus(status) {
 
   select.value = status.enabled ? "on" : "off";
   select.disabled = false;
+
+  const askSelect = document.querySelector("#extension-ask-select");
+  if (askSelect) {
+    askSelect.value = status.askBeforeFill ? "on" : "off";
+    askSelect.disabled = false;
+  }
 
   if (status.error) {
     hint.textContent = status.error;

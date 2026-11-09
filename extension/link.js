@@ -4,6 +4,10 @@
 //                belong to that page (names and usernames only)
 //   pair(code, {url})   pair with the one-time code shown in the app, then check
 //   forget()     delete this browser's copy of the pairing secret
+//   fetchLogin({loginId, url})
+//                ask the app for ONE saved login's username and password, for the page
+//                at url. Only a fully verified connection is ever asked. The result is for
+//                the background worker alone; it is never passed on to the popup.
 // Every operation opens its own connection to the helper and closes it again.
 //
 // Nothing here trusts the app just because it answers: "connected" means the app
@@ -117,43 +121,96 @@
       return withFlags(status.describeStatus({ ok: false, error: "other" }, ""), secretHex);
     }
 
-    // ── check ─────────────────────────────────────────────────────────────────
-    function check(options) {
-      var pageUrl = options && typeof options.url === "string" && options.url.length <= 2048 ? options.url : "";
+    // ── One connection: ping, then (if paired) the two-way proof ──────────────
+    // Resolves to { status } when the link is not verified (the status to show), or to
+    // { verified: true, value } where value is whatever afterVerified(session, status)
+    // produced. afterVerified runs only on a fully verified connection.
+    function runVerified(afterVerified) {
       return deps.storage.get().then(function (stored) {
         var secretHex = pairing.isSecretHex(stored) ? stored : null;
         var session = openSession();
-        if (!session) return withFlags(status.describeStatus(undefined, ""), secretHex);
+        if (!session) return { status: withFlags(status.describeStatus(undefined, ""), secretHex) };
 
         return session
           .request("ping")
           .then(function (ping) {
             var base = describe(ping);
-            if (!base.connected) return withFlags(base, secretHex);
+            if (!base.connected) return { status: withFlags(base, secretHex) };
             if (!secretHex) {
-              return problem(
-                "unpaired",
-                "Not paired",
-                "Secure Login Vault is running. In the app, open Settings > Pair Browser, press Pair browser, copy the code and paste it below.",
-                null,
-                { canPair: true, appVersion: base.appVersion }
-              );
+              return {
+                status: problem(
+                  "unpaired",
+                  "Not paired",
+                  "Secure Login Vault is running. In the app, open Settings > Pair Browser, press Pair browser, copy the code and paste it below.",
+                  null,
+                  { canPair: true, appVersion: base.appVersion }
+                )
+              };
             }
             return verify(session, secretHex, base).then(function (result) {
-              // Only a fully verified connection is ever asked about saved logins.
-              return result.state === "verified" && pageUrl ? addSite(session, result, pageUrl) : result;
+              if (result.state !== "verified") return { status: result };
+              return Promise.resolve(afterVerified(session, result)).then(function (value) {
+                return { verified: true, status: result, value: value };
+              });
             });
           })
           .then(
-            function (result) {
+            function (outcome) {
               session.close();
-              return result;
+              return outcome;
             },
             function () {
               session.close();
-              return genericError(secretHex);
+              return { status: genericError(secretHex) };
             }
           );
+      });
+    }
+
+    // ── check ─────────────────────────────────────────────────────────────────
+    function check(options) {
+      var pageUrl = options && typeof options.url === "string" && options.url.length <= 2048 ? options.url : "";
+      return runVerified(function (session, result) {
+        // Only a fully verified connection is ever asked about saved logins.
+        return pageUrl ? addSite(session, result, pageUrl) : result;
+      }).then(function (outcome) {
+        return outcome.verified ? outcome.value : outcome.status;
+      });
+    }
+
+    // ── fetchLogin ────────────────────────────────────────────────────────────
+    var LOGIN_PROBLEMS = {
+      locked: "Secure Login Vault is locked. Unlock it, then try again.",
+      "no-match": "That login does not belong to this page.",
+      "rate-limited": "Too many fills in a minute. Wait a moment and try again.",
+      declined: "The fill was not approved in Secure Login Vault.",
+      "insecure-page": "Logins are only filled on secure (https) pages.",
+      "unsupported-page": "Logins are only filled on secure (https) pages.",
+      "bad-url": "Logins are only filled on secure (https) pages.",
+      "no-credentials": "This login has no username or password to fill."
+    };
+
+    function fetchLogin(request) {
+      var loginId = request && request.loginId;
+      var pageUrl = request && request.url;
+      if (!Number.isSafeInteger(loginId) || typeof pageUrl !== "string" || !pageUrl || pageUrl.length > 2048) {
+        return Promise.resolve({ ok: false, message: "That request could not be understood." });
+      }
+
+      return runVerified(function (session) {
+        return session.request("get-login", { loginId: loginId, url: pageUrl }).then(function (outcome) {
+          var reply = outcome.reply;
+          if (outcome.runtimeError || !reply) return { ok: false, message: "Could not get the login. Check again." };
+          if (reply.ok === true && typeof reply.password === "string" && typeof reply.username === "string") {
+            return { ok: true, username: reply.username, password: reply.password };
+          }
+          var known = typeof reply.error === "string" && Object.prototype.hasOwnProperty.call(LOGIN_PROBLEMS, reply.error);
+          return { ok: false, message: known ? LOGIN_PROBLEMS[reply.error] : "Could not get the login. Check again." };
+        });
+      }).then(function (outcome) {
+        if (outcome.verified) return outcome.value;
+        // Not verified: say why, in the same words as the status box.
+        return { ok: false, message: outcome.status.title + ". " + outcome.status.detail, unverified: true };
       });
     }
 
@@ -339,7 +396,7 @@
       return deps.storage.clear().then(check);
     }
 
-    return { check: check, pair: pair, forget: forget };
+    return { check: check, pair: pair, forget: forget, fetchLogin: fetchLogin };
   }
 
   var api = { createLink: createLink, REQUEST_TIMEOUT_MS: REQUEST_TIMEOUT_MS };

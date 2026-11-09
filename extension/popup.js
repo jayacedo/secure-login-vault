@@ -15,6 +15,7 @@
   const siteTitle = document.getElementById("site-title");
   const loginList = document.getElementById("logins");
   const siteNote = document.getElementById("site-note");
+  const fillNote = document.getElementById("fill-note");
 
   let pageOrigin = ""; // only the origin of the tab, never its full address
 
@@ -29,6 +30,7 @@
     pairButton.disabled = busy;
     forgetButton.disabled = busy;
     codeInput.disabled = busy;
+    for (const button of loginList.querySelectorAll("button")) button.disabled = busy;
   }
 
   // The origin (scheme + host + port) of the tab the popup was opened on, or "" for
@@ -55,6 +57,8 @@
     loginList.textContent = "";
     siteTitle.textContent = "";
     siteNote.textContent = "";
+    fillNote.textContent = "";
+    delete fillNote.dataset.ok;
     if (status.connected !== true) return; // logins are only ever shown on a verified link
 
     const site = status.site && typeof status.site === "object" ? status.site : null;
@@ -69,15 +73,28 @@
       for (const login of site.logins.slice(0, 20)) {
         if (!login || typeof login !== "object") continue;
         const item = document.createElement("li");
+        const text = document.createElement("div");
+        text.className = "login-text";
         const name = document.createElement("span");
         name.className = "login-name";
         name.textContent = String(login.name || "");
-        item.appendChild(name);
+        text.appendChild(name);
         if (login.username) {
           const user = document.createElement("span");
           user.className = "login-user";
           user.textContent = String(login.username);
-          item.appendChild(user);
+          text.appendChild(user);
+        }
+        item.appendChild(text);
+
+        // Only a whole number can be an id; anything else gets no Fill button.
+        if (Number.isSafeInteger(login.id)) {
+          const fillButton = document.createElement("button");
+          fillButton.type = "button";
+          fillButton.textContent = "Fill";
+          fillButton.setAttribute("aria-label", "Fill " + String(login.name || "login"));
+          fillButton.addEventListener("click", () => fill(login.id));
+          item.appendChild(fillButton);
         }
         loginList.appendChild(item);
       }
@@ -128,6 +145,24 @@
     currentOrigin((origin) => {
       pageOrigin = origin;
       ask(origin ? { type: "get-status", url: origin } : { type: "get-status" }, "Checking...");
+    });
+  }
+
+  // Only the login's id is sent. The background worker reads the tab and its address itself,
+  // asks the app, and fills; the popup never sees a password.
+  function fill(loginId) {
+    setBusy(true);
+    fillNote.dataset.ok = "";
+    fillNote.textContent = "Filling...";
+    chrome.runtime.sendMessage({ type: "fill", loginId: loginId }, (result) => {
+      setBusy(false);
+      if (chrome.runtime.lastError || !result || typeof result !== "object") {
+        fillNote.dataset.ok = "false";
+        fillNote.textContent = "Could not fill. Reload the extension and try again.";
+        return;
+      }
+      fillNote.dataset.ok = result.ok === true ? "true" : "false";
+      fillNote.textContent = String(result.message || "");
     });
   }
 

@@ -52,7 +52,7 @@ async function runChild() {
       if (!pong) await sleep(200);
     }
     assert.ok(pong && pong.type === "pong", "the saved On setting must start the connection");
-    assert.deepEqual((await status()).result, { enabled: true, running: true, error: "" });
+    assert.deepEqual((await status()).result, { enabled: true, askBeforeFill: false, running: true, error: "" });
   } else if (mode === "taken") {
     // The pipe is already used by something else: the app must stay up and say so.
     await sleep(1500);
@@ -62,18 +62,18 @@ async function runChild() {
     assert.match(result.error, /Another copy of Secure Login Vault/);
     // The user can switch it off, and that works.
     const off = await win.webContents.executeJavaScript(`window.secureLoginVault.settings.setExtensionBridge({ enabled: false })`);
-    assert.deepEqual(off.result, { enabled: false, running: false, error: "" });
+    assert.deepEqual(off.result, { enabled: false, askBeforeFill: false, running: false, error: "" });
     // Turning it on while the pipe is still taken fails cleanly and is not saved as on.
     const on = await win.webContents.executeJavaScript(`window.secureLoginVault.settings.setExtensionBridge({ enabled: true })`);
     assert.equal(on.ok, false);
     assert.match(on.message, /Another copy of Secure Login Vault/);
     const saved = JSON.parse(fs.readFileSync(path.join(userDataDir, "extension-settings.json"), "utf8"));
-    assert.deepEqual(saved, { enabled: false });
+    assert.deepEqual(saved, { enabled: false, askBeforeFill: false });
   } else {
     // default, disabled, corrupt: stays off
     await sleep(2500);
     await assert.rejects(() => pingPipe(pipeName), "nothing may listen");
-    assert.deepEqual((await status()).result, { enabled: false, running: false, error: "" });
+    assert.deepEqual((await status()).result, { enabled: false, askBeforeFill: false, running: false, error: "" });
   }
 }
 

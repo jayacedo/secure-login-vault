@@ -113,8 +113,32 @@ function makeChrome({ connectNativeFor, store }) {
       // Used by the popup: delivered to the background worker's listener.
       sendMessage(message, callback) {
         const sender = { id: chrome.runtime.id };
-        const keptOpen = listeners[0](message, sender, (response) => callback(response));
+        chrome.messages.push(message);
+        const keptOpen = listeners[0](message, sender, (response) => {
+          chrome.responses.push(response);
+          callback(response);
+        });
         assert.equal(keptOpen, true, "the background worker answers asynchronously");
+      }
+    },
+    messages: [],
+    responses: [],
+    // chrome.scripting.executeScript, with the page being a jsdom window: the function's text
+    // is run inside it, as Chrome runs an injected function in the page's isolated world.
+    injections: [],
+    pageUrl: undefined, // where the page really is (defaults to the tab's address)
+    pageHtml: "",
+    page: undefined,
+    scripting: {
+      async executeScript(injection) {
+        chrome.injections.push(injection);
+        chrome.page = new JSDOM(`<!doctype html><title>t</title>${chrome.pageHtml}`, { url: chrome.pageUrl || chrome.activeTabUrl, runScripts: "outside-only" });
+        // jsdom has no layout engine: give elements the non-zero size a real browser would report
+        for (const property of ["offsetWidth", "offsetHeight"]) {
+          Object.defineProperty(chrome.page.window.HTMLElement.prototype, property, { get: () => 100 });
+        }
+        const run = chrome.page.window.eval(`(${injection.func.toString()})`);
+        return [{ frameId: 0, result: run(...injection.args) }];
       }
     },
     // The tab the popup was opened on (set by the test); only its URL is visible, as with activeTab.
@@ -122,7 +146,7 @@ function makeChrome({ connectNativeFor, store }) {
     tabs: {
       query(options, callback) {
         assert.deepEqual(options, { active: true, currentWindow: true });
-        callback(chrome.activeTabUrl ? [{ url: chrome.activeTabUrl }] : []);
+        callback(chrome.activeTabUrl ? [{ id: 42, url: chrome.activeTabUrl }] : []);
       }
     },
     storage: {
@@ -140,7 +164,7 @@ function startBackground(chrome) {
   const sandbox = {
     chrome,
     crypto: { randomUUID: () => crypto.randomUUID(), subtle: crypto.webcrypto.subtle, getRandomValues: (a) => crypto.webcrypto.getRandomValues(a) },
-    console, setTimeout, clearTimeout, TextEncoder, Uint8Array, String, Promise, Object, Array, JSON, Error, parseInt
+    console, setTimeout, clearTimeout, TextEncoder, URL, Uint8Array, String, Promise, Object, Array, JSON, Error, parseInt
   };
   sandbox.self = sandbox;
   const context = vm.createContext(sandbox);
@@ -164,7 +188,10 @@ function openPopup(chrome) {
     siteTitle: () => $("site-title").textContent,
     siteNote: () => $("site-note").textContent,
     siteVisible: () => !$("site").hidden,
-    logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.children).map((c) => c.textContent)),
+    logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.querySelectorAll(".login-name, .login-user")).map((c) => c.textContent)),
+    fillButtons: () => Array.from(dom.window.document.querySelectorAll("#logins button")),
+    fillNote: () => dom.window.document.getElementById("fill-note").textContent,
+    pageText: () => dom.window.document.body.textContent,
     typeCode: (code) => { $("code").value = code; },
     codeValue: () => $("code").value,
     pair: () => $("pair").click(),
@@ -304,6 +331,83 @@ async function main() {
     assert.deepEqual(locked.logins(), []);
     assert.equal((await inApp(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true);
     assert.equal((await popupWithAnswer()).logins().length, 2);
+
+    ownChrome.activeTabUrl = undefined;
+  });
+
+  await check("Fill: a saved login goes into the page, only for its exact site, and the password never reaches the popup", async () => {
+    const LOGIN_PAGE = '<form id="f"><input type="text" name="log" autocomplete="username"><input type="password" name="pwd" autocomplete="current-password"><input type="submit" value="Log In"></form>';
+    const typed = (chrome) => ({ user: chrome.page.window.document.querySelector("[name=log]").value, pass: chrome.page.window.document.querySelector("[name=pwd]").value });
+    const fillAlice = async (view) => {
+      const index = view.logins().findIndex((l) => l[1] === "alice");
+      assert.ok(index >= 0, "alice is listed");
+      view.fillButtons()[index].click();
+      await waitFor(() => view.fillNote() !== "Filling...", 30000, "the fill to finish");
+    };
+    ownChrome.activeTabUrl = "https://example.com/login";
+    ownChrome.pageHtml = LOGIN_PAGE;
+
+    // the real thing
+    let view = await popupWithAnswer();
+    ownChrome.injections.length = 0;
+    ownChrome.messages.length = 0;
+    ownChrome.responses.length = 0;
+    await fillAlice(view);
+    assert.equal(view.fillNote(), "Filled. Press the site's own Sign in button.");
+    assert.deepEqual(typed(ownChrome), { user: "alice", pass: "pw-SECRET-1" });
+    assert.equal(ownChrome.injections.length, 1);
+    const injection = ownChrome.injections[0];
+    assert.deepEqual(injection.target, { tabId: injection.target.tabId, frameIds: [0] }, "the main page only");
+    assert.equal(injection.world, "ISOLATED");
+    assert.equal(injection.args[0], "https://example.com", "the origin the password was requested for");
+    assert.deepEqual(injection.args[2], { submit: false, layout: true, skipUsernameOnly: false });
+    assert.equal(ownChrome.page.window.document.getElementById("f").dataset.submitted, undefined);
+
+    // the popup never saw the password
+    const popupTraffic = JSON.stringify([ownChrome.messages, ownChrome.responses]);
+    assert.equal(popupTraffic.includes("pw-SECRET"), false, "not in a message to or from the popup");
+    assert.equal(view.pageText().includes("pw-SECRET"), false, "not anywhere in the popup");
+    assert.deepEqual(ownChrome.messages.filter((m) => m.type === "fill").map((m) => Object.keys(m).sort()), [["loginId", "type"]], "the popup sends only the id");
+
+    // the address comes from the tab: a popup that claims another site changes nothing
+    ownChrome.injections.length = 0;
+    const lied = await new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "fill", loginId: 1, url: "https://evil.test" }, resolve));
+    assert.equal(ownChrome.injections.length <= 1, true);
+    if (ownChrome.injections.length === 1) assert.equal(ownChrome.injections[0].args[0], "https://example.com", "a claimed address is ignored");
+    assert.equal(JSON.stringify(lied).includes("pw-SECRET"), false);
+
+    // another site's tab: nothing is released or filled
+    ownChrome.activeTabUrl = "https://evil-example.com/login";
+    view = await popupWithAnswer();
+    ownChrome.injections.length = 0;
+    const evilResult = await new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "fill", loginId: 1 }, resolve));
+    assert.deepEqual(evilResult, { ok: false, status: "error", message: "That login does not belong to this page." });
+    assert.equal(ownChrome.injections.length, 0, "nothing reached the page");
+
+    // the page moved to another site after the password was fetched: the page itself refuses
+    ownChrome.activeTabUrl = "https://example.com/login";
+    ownChrome.pageUrl = "https://evil.test/login";
+    view = await popupWithAnswer();
+    await fillAlice(view);
+    assert.equal(view.fillNote(), "The page changed, so nothing was filled.");
+    assert.deepEqual(typed(ownChrome), { user: "", pass: "" }, "the other site got nothing");
+    ownChrome.pageUrl = undefined;
+
+    // a page without a login form
+    ownChrome.pageHtml = '<form><input type="search" name="q"></form>';
+    view = await popupWithAnswer();
+    await fillAlice(view);
+    assert.equal(view.fillNote(), "No login form was found on this page.");
+
+    // a locked vault releases nothing
+    ownChrome.pageHtml = LOGIN_PAGE;
+    view = await popupWithAnswer();
+    assert.equal((await inApp("auth.lockVault()")).ok !== false, true);
+    ownChrome.injections.length = 0;
+    const lockedResult = await new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "fill", loginId: 1 }, resolve));
+    assert.equal(lockedResult.message, "Secure Login Vault is locked. Unlock it, then try again.");
+    assert.equal(ownChrome.injections.length, 0);
+    assert.equal((await inApp(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true);
 
     ownChrome.activeTabUrl = undefined;
   });

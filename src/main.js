@@ -288,7 +288,7 @@ function registerAuthHandlers() {
 // nothing. The choice is stored in the app's data folder (not in the page).
 
 const EXTENSION_SETTINGS_FILE = "extension-settings.json";
-const extensionState = { enabled: false, error: "" };
+const extensionState = { enabled: false, askBeforeFill: false, error: "" };
 
 function extensionSettingsPath() {
   return path.join(app.getPath("userData"), EXTENSION_SETTINGS_FILE);
@@ -297,6 +297,7 @@ function extensionSettingsPath() {
 function extensionStatus() {
   return {
     enabled: extensionState.enabled,
+    askBeforeFill: extensionState.askBeforeFill,
     running: extensionBridge.isRunning(),
     error: extensionState.error
   };
@@ -320,11 +321,58 @@ async function loadExtensionSettings() {
   try {
     const saved = JSON.parse(await fs.readFile(extensionSettingsPath(), "utf8"));
     extensionState.enabled = saved && saved.enabled === true;
+    extensionState.askBeforeFill = saved && saved.askBeforeFill === true;
   } catch {
     extensionState.enabled = false; // missing or unreadable: stay off
   }
   if (extensionState.enabled) {
     await startExtensionBridge();
+  }
+}
+
+// ─── Asking before the browser extension fills a login ────────────────────────
+//
+// With "Ask before filling" on, every password request from the extension waits for
+// a click in the app. The prompt names only the entry and the site, defaults to
+// "Don't fill", allows one prompt at a time (a second request is declined at once), and
+// declines by itself after a while. SLV_APPROVAL_TIMEOUT_MS only exists so tests need
+// not wait; it can only shorten the time.
+let approvalOpen = false;
+const APPROVAL_TIMEOUT_MS = Math.min(30000, Math.max(200, Number(process.env.SLV_APPROVAL_TIMEOUT_MS) || 30000));
+
+// What is shown comes from saved data, so strip anything that could reorder or hide text.
+const forPrompt = (text) => String(text || "").replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, 80);
+
+async function askBeforeFilling({ host, name }) {
+  if (!extensionState.askBeforeFill) return true;
+  if (approvalOpen || !mainWindow || mainWindow.isDestroyed()) return false;
+
+  approvalOpen = true;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), APPROVAL_TIMEOUT_MS);
+  try {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.flashFrame(true);
+    const result = await withNativeDialog(() =>
+      dialog.showMessageBox(mainWindow, {
+        type: "question",
+        title: "Fill a login?",
+        message: `Fill "${forPrompt(name)}" on ${forPrompt(host)}?`,
+        detail: "A browser extension asked to fill this login. Choose Fill only if you just asked for it.",
+        buttons: ["Don't fill", "Fill"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+        signal: abort.signal
+      })
+    );
+    return result && result.response === 1;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    approvalOpen = false;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(false);
   }
 }
 
@@ -401,7 +449,19 @@ function registerExtensionHandlers() {
       }
 
       extensionState.enabled = payload.enabled;
-      await writeJsonAtomic(extensionSettingsPath(), { enabled: payload.enabled });
+      await writeJsonAtomic(extensionSettingsPath(), { enabled: payload.enabled, askBeforeFill: extensionState.askBeforeFill });
+      return extensionStatus();
+    });
+  });
+
+  // Optional: confirm in the app every time the browser extension wants to fill a login.
+  ipcMain.handle("vault:set-extension-ask-before-fill", async (_event, payload) => {
+    return handleVaultOperation(async () => {
+      if (!payload || typeof payload.enabled !== "boolean") {
+        throw createPublicError("Choose On or Off.");
+      }
+      await writeJsonAtomic(extensionSettingsPath(), { enabled: extensionState.enabled, askBeforeFill: payload.enabled });
+      extensionState.askBeforeFill = payload.enabled;
       return extensionStatus();
     });
   });
@@ -709,6 +769,7 @@ app.whenReady().then(() => {
     pipeName: getPipeName(process.env.SLV_PIPE_USER || undefined),
     handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion(),
       pairing: extensionPairing,
+      approve: askBeforeFilling,
       // Respects the active-group lock like every other read; throws while locked.
       vault: { getCredentials: () => vaultStore.getAllCredentials() }
     })

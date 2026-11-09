@@ -114,9 +114,9 @@ function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
 
 // The real app side: pairing core + handlers + bridge on a pipe. Every request the app
 // receives is recorded.
-async function startApp(pipeName, { pairing = createPairing({ storage: memoryStorage() }), extraHandlers = {}, vault } = {}) {
+async function startApp(pipeName, { pairing = createPairing({ storage: memoryStorage() }), extraHandlers = {}, vault, handlerOptions = {} } = {}) {
   const received = [];
-  const real = createExtensionHandlers({ getAppVersion: () => "9.9.9", pairing, vault });
+  const real = createExtensionHandlers({ getAppVersion: () => "9.9.9", pairing, vault, ...handlerOptions });
   const handlers = {};
   for (const [type, fn] of Object.entries({ ...real, ...extraHandlers })) {
     handlers[type] = (request, context) => {
@@ -343,6 +343,117 @@ async function main() {
     assert.equal(again.state, "verified");
     assert.equal(again.site.state, "ok");
     assert.equal(again.site.logins.length, 2);
+    assert.equal(browser.stats.open, 0);
+  });
+
+  await check("fetching one login: only from a verified app, only for the page, and failures say why", async () => {
+    const credentials = [
+      { id: 1, websiteName: "Example", websiteUrl: "example.com", username: "alice", password: "pw-ALICE", notes: "note-LEAK" },
+      { id: 2, websiteName: "Other", websiteUrl: "other.test", username: "bob", password: "pw-BOB" }
+    ];
+    const vault = { locked: false, getCredentials: async () => {
+      if (vault.locked) throw Object.assign(new Error("Vault is locked."), { isPublic: true });
+      return credentials;
+    } };
+    const decisions = { approve: true };
+    await app.stop();
+    app = await startApp(pipeName, { vault, handlerOptions: { fillLimits: { overall: 4 }, approve: async () => decisions.approve } });
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+
+    // the happy path: exactly one get-login request, with exactly these fields
+    app.received.length = 0;
+    const got = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
+    assert.deepEqual(got, { ok: true, username: "alice", password: "pw-ALICE" });
+    assert.deepEqual(types(app), ["ping", "auth-begin", "auth-finish", "get-login"]);
+    const request = app.received.find((r) => r.type === "get-login");
+    assert.deepEqual(Object.keys(request).sort(), ["id", "loginId", "type", "url"]);
+    assert.equal(browser.stats.open, 0, "the connection is closed again");
+
+    // failures: a plain message, never a password
+    const refusals = [
+      [{ loginId: 2, url: "https://example.com" }, "That login does not belong to this page."],
+      [{ loginId: 1, url: "https://www.example.com" }, "That login does not belong to this page."],
+      [{ loginId: 99, url: "https://example.com" }, "That login does not belong to this page."]
+    ];
+    for (const [input, message] of refusals) {
+      const result = await link.fetchLogin(input);
+      assert.deepEqual(result, { ok: false, message }, JSON.stringify(input));
+    }
+
+    // (that used all 4 allowed per minute: the app now says to wait)
+    const limited = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
+    assert.deepEqual(limited, { ok: false, message: "Too many fills in a minute. Wait a moment and try again." });
+  });
+
+  await check("fetching one login: locked vault, plain http, declined in the app", async () => {
+    const credentials = [{ id: 1, websiteName: "Example", websiteUrl: "example.com", username: "alice", password: "pw-ALICE" }];
+    const vault = { locked: false, getCredentials: async () => {
+      if (vault.locked) throw Object.assign(new Error("Vault is locked."), { isPublic: true });
+      return credentials;
+    } };
+    const decisions = { approve: true };
+    await app.stop();
+    app = await startApp(pipeName, { vault, handlerOptions: { approve: async () => decisions.approve } });
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+
+    vault.locked = true;
+    assert.deepEqual(await link.fetchLogin({ loginId: 1, url: "https://example.com" }), { ok: false, message: "Secure Login Vault is locked. Unlock it, then try again." });
+    vault.locked = false;
+    assert.deepEqual(await link.fetchLogin({ loginId: 1, url: "http://example.com" }), { ok: false, message: "Logins are only filled on secure (https) pages." });
+    assert.deepEqual(await link.fetchLogin({ loginId: 1, url: "chrome://extensions" }), { ok: false, message: "Logins are only filled on secure (https) pages." });
+    decisions.approve = false;
+    assert.deepEqual(await link.fetchLogin({ loginId: 1, url: "https://example.com" }), { ok: false, message: "The fill was not approved in Secure Login Vault." });
+  });
+
+  await check("fetching one login: an unverified or unpaired app is never asked for a password", async () => {
+    // an app that holds a different secret
+    await app.stop();
+    const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
+    app = await startApp(pipeName, { pairing: other, vault: { getCredentials: async () => [{ id: 1, websiteName: "x", websiteUrl: "example.com", username: "u", password: "pw-LEAK" }] } });
+    const result = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
+    assert.equal(result.ok, false);
+    assert.equal(result.unverified, true);
+    assert.match(result.message, /Could not verify the app/);
+    assert.equal(types(app).includes("get-login"), false, "no password request reached it");
+    assert.equal(JSON.stringify(result).includes("pw-LEAK"), false);
+
+    // an app that does not know this browser at all
+    await app.stop();
+    app = await startApp(pipeName, { vault: { getCredentials: async () => [] } });
+    const lost = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
+    assert.equal(lost.ok, false);
+    assert.equal(types(app).includes("get-login"), false);
+
+    // no stored secret at all
+    const before = browser.secret();
+    browser.setSecret(null);
+    const unpaired = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
+    assert.equal(unpaired.ok, false);
+    assert.match(unpaired.message, /Not paired/);
+    assert.equal(types(app).includes("get-login"), false);
+    browser.setSecret(before);
+  });
+
+  await check("fetching one login: bad requests never open a connection; odd answers are not trusted", async () => {
+    await app.stop();
+    app = await startApp(pipeName, { vault: { getCredentials: async () => [] }, extraHandlers: { "get-login": () => ({ username: 5, password: { a: 1 } }) } });
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+
+    const opened = browser.stats.opened;
+    for (const bad of [undefined, null, {}, { loginId: "1", url: "https://example.com" }, { loginId: 1.5, url: "https://example.com" }, { loginId: NaN, url: "https://example.com" }, { loginId: 1, url: "" }, { loginId: 1, url: 5 }, { loginId: 1, url: "x".repeat(3000) }, { loginId: 2 ** 60, url: "https://example.com" }]) {
+      const result = await link.fetchLogin(bad);
+      assert.deepEqual(result, { ok: false, message: "That request could not be understood." }, JSON.stringify(bad));
+    }
+    assert.equal(browser.stats.opened, opened, "nothing was even connected");
+
+    // an answer with the wrong shapes is not a login
+    assert.deepEqual(await link.fetchLogin({ loginId: 1, url: "https://example.com" }), { ok: false, message: "Could not get the login. Check again." });
+    for (const reply of [() => ({ error: "surprise" }), () => ({}), () => ({ error: "internal-error" })]) {
+      await app.stop();
+      app = await startApp(pipeName, { vault: { getCredentials: async () => [] }, extraHandlers: { "get-login": reply } });
+      assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+      assert.deepEqual(await link.fetchLogin({ loginId: 1, url: "https://example.com" }), { ok: false, message: "Could not get the login. Check again." });
+    }
     assert.equal(browser.stats.open, 0);
   });
 

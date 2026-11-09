@@ -6,12 +6,13 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { testTempRoot } = require("./testTemp");
-const { app, BrowserWindow, safeStorage } = require("electron");
+const { app, BrowserWindow, safeStorage, dialog } = require("electron");
 
 const userData = fs.mkdtempSync(path.join(testTempRoot(), "slv-pairing-app-"));
 app.setPath("userData", userData);
 const pipeUser = `pairing-app-${process.pid}`;
 process.env.SLV_PIPE_USER = pipeUser; // own pipe: a real running app is never touched
+process.env.SLV_APPROVAL_TIMEOUT_MS = "1500"; // the "ask before filling" prompt gives up quickly in this test
 require("../src/main.js");
 
 const { getPipeName } = require("../src/native-host/pipeName");
@@ -177,6 +178,115 @@ async function main() {
     conn.close();
   });
 
+  await check("get-login in the real app: the saved password, only for the exact site, never while locked", async () => {
+    const conn = await connect(pipeName);
+    assert.equal((await authenticate(conn, secret)).finish.ok, true);
+    const list = await conn.request({ type: "find-logins", url: "https://example.com/" });
+    const alice = list.logins.find((l) => l.username === "alice");
+    const www = (await conn.request({ type: "find-logins", url: "https://www.example.com/" })).logins[0];
+    assert.ok(alice && www, "the saved logins are found");
+
+    const got = await conn.request({ type: "get-login", loginId: alice.id, url: "https://example.com" });
+    assert.equal(got.ok, true, JSON.stringify(got));
+    assert.deepEqual({ host: got.host, username: got.username, password: got.password }, { host: "example.com", username: "alice", password: "pw-SECRET-1" });
+    assert.equal(JSON.stringify(got).includes("NOTE-SECRET"), false);
+
+    // the other site's login id cannot be used here, nor this one there
+    assert.equal((await conn.request({ type: "get-login", loginId: www.id, url: "https://example.com" })).error, "no-match");
+    assert.equal((await conn.request({ type: "get-login", loginId: alice.id, url: "https://www.example.com" })).error, "no-match");
+    assert.equal((await conn.request({ type: "get-login", loginId: alice.id, url: "https://evil-example.com" })).error, "no-match");
+    assert.equal((await conn.request({ type: "get-login", loginId: alice.id, url: "http://example.com" })).error, "insecure-page");
+
+    // an unverified connection gets nothing
+    const anonymous = await connect(pipeName);
+    const refused = await anonymous.request({ type: "get-login", loginId: alice.id, url: "https://example.com" });
+    assert.deepEqual({ ok: refused.ok, error: refused.error, password: refused.password }, { ok: false, error: "not-authenticated", password: undefined });
+    anonymous.close();
+
+    // a locked vault releases nothing, even to a verified connection
+    assert.equal((await api("auth.lockVault()")).ok !== false, true);
+    const locked = await conn.request({ type: "get-login", loginId: alice.id, url: "https://example.com" });
+    assert.deepEqual({ ok: locked.ok, error: locked.error, password: locked.password }, { ok: false, error: "locked", password: undefined });
+    assert.equal((await api(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true, "unlock again");
+    conn.close();
+  });
+
+  await check("Ask before filling: off by default; when on, the person decides in a prompt that shows no secrets", async () => {
+    const prompts = [];
+    let answer = 1;
+    let hang = false;
+    // stand-in for the native dialog (the real one needs a person to click)
+    dialog.showMessageBox = (window, options) => {
+      prompts.push(options);
+      return new Promise((resolve) => {
+        if (hang) options.signal.addEventListener("abort", () => resolve({ response: options.cancelId }));
+        else setTimeout(() => resolve({ response: answer }), 50);
+      });
+    };
+
+    const conn = await connect(pipeName);
+    assert.equal((await authenticate(conn, secret)).finish.ok, true);
+    const alice = (await conn.request({ type: "find-logins", url: "https://example.com/" })).logins.find((l) => l.username === "alice");
+    const ask = () => conn.request({ type: "get-login", loginId: alice.id, url: "https://example.com" });
+
+    const before = await api("settings.getExtensionBridge()");
+    assert.equal(before.result.askBeforeFill, false, "off by default");
+    assert.equal((await ask()).password, "pw-SECRET-1");
+    assert.equal(prompts.length, 0, "no prompt while the setting is off");
+
+    assert.equal((await api("settings.setExtensionAskBeforeFill({ enabled: true })")).result.askBeforeFill, true);
+    const settingsFile = JSON.parse(fs.readFileSync(path.join(userData, "extension-settings.json"), "utf8"));
+    assert.deepEqual(settingsFile, { enabled: true, askBeforeFill: true }, "saved, and the connection setting is kept");
+
+    // approved
+    answer = 1;
+    assert.equal((await ask()).password, "pw-SECRET-1");
+    assert.equal(prompts.length, 1);
+    const shown = JSON.stringify(prompts[0]);
+    assert.match(prompts[0].message, /Example/);
+    assert.match(prompts[0].message, /example\.com/);
+    for (const secretText of ["pw-SECRET", "alice", "NOTE-SECRET"]) assert.equal(shown.includes(secretText), false, `the prompt does not show ${secretText}`);
+    assert.deepEqual(prompts[0].buttons, ["Don't fill", "Fill"]);
+    assert.equal(prompts[0].defaultId, 0, "pressing Enter means Don't fill");
+    assert.equal(prompts[0].cancelId, 0, "closing the prompt means Don't fill");
+
+    // declined
+    answer = 0;
+    const declined = await ask();
+    assert.deepEqual({ ok: declined.ok, error: declined.error, password: declined.password }, { ok: false, error: "declined", password: undefined });
+
+    // no answer in time: declined by itself
+    hang = true;
+    const started = Date.now();
+    const timedOut = await ask();
+    assert.equal(timedOut.error, "declined");
+    assert.ok(Date.now() - started < 4000, "gave up by itself");
+    hang = false;
+
+    // a request that fails the checks is never prompted
+    const promptsBefore = prompts.length;
+    assert.equal((await conn.request({ type: "get-login", loginId: alice.id, url: "https://evil-example.com" })).error, "no-match");
+    assert.equal(prompts.length, promptsBefore);
+
+    // a second request while a prompt is open is declined at once, with no second prompt
+    hang = true;
+    const first = ask();
+    await sleep(200);
+    const second = await ask();
+    assert.equal(second.error, "declined");
+    assert.equal(prompts.length, promptsBefore + 1, "one prompt at a time");
+    assert.equal((await first).error, "declined", "and the first gives up by itself");
+    hang = false;
+
+    // switched off again
+    assert.equal((await api("settings.setExtensionAskBeforeFill({ enabled: false })")).result.askBeforeFill, false);
+    assert.equal((await ask()).password, "pw-SECRET-1");
+
+    // bad settings values are refused
+    for (const bad of ["on", 1, null, {}]) assert.equal((await api(`settings.setExtensionAskBeforeFill({ enabled: ${JSON.stringify(bad)} })`)).ok, false);
+    conn.close();
+  });
+
   // ── The Settings screen, in the real window ─────────────────────────────────
   const ui = (code) => inApp(code);
   const q = (selector, property = "textContent") => ui(`const e = document.querySelector(${JSON.stringify(selector)}); return e ? e.${property} : null;`);
@@ -191,6 +301,27 @@ async function main() {
     assert.equal(await q("#extension-pair-btn"), "Pair again");
     assert.equal(await visible("#extension-unpair-btn"), true);
     assert.equal(await visible("#extension-pair-code-box"), false);
+  });
+
+  await check("Settings: Ask Before Filling shows the saved choice, saves changes, and is remembered", async () => {
+    const setSelect = (value) => ui(`const e = document.querySelector("#extension-ask-select"); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event("change")); return true;`);
+    const bridge = async () => (await api("settings.getExtensionBridge()")).result;
+    assert.equal(await q("#extension-ask-select", "value"), "off");
+    assert.equal(await q("#extension-ask-select", "disabled"), false);
+
+    await setSelect("on");
+    await waitFor(async () => (await bridge()).askBeforeFill === true, 5000, "the setting to be saved");
+    assert.equal(await q("#extension-ask-select", "value"), "on");
+    assert.equal((await bridge()).enabled, true, "the connection setting is untouched");
+
+    // reopening Settings shows what is saved
+    await ui("document.querySelector('#settings-modal-overlay').remove(); await openSettingsModal(); return true;");
+    await waitFor(async () => (await q("#extension-bridge-hint")) !== "Lets the Secure Login Vault browser extension connect to this app. Off by default.", 5000, "the status to load");
+    assert.equal(await q("#extension-ask-select", "value"), "on");
+
+    await setSelect("off");
+    await waitFor(async () => (await bridge()).askBeforeFill === false, 5000, "the setting to be saved");
+    assert.equal(await q("#extension-ask-select", "value"), "off");
   });
 
   await check("Settings: Pair again shows the code, Copy and Cancel", async () => {

@@ -241,26 +241,26 @@ async function main() {
 
   await check("browser extension connection is off by default and nothing listens", async () => {
     const status = await pageValue(`window.secureLoginVault.settings.getExtensionBridge()`);
-    assert.deepEqual(status, { ok: true, result: { enabled: false, running: false, error: "" } });
+    assert.deepEqual(status, { ok: true, result: { enabled: false, askBeforeFill: false, running: false, error: "" } });
     await assert.rejects(() => pingApp(), "the pipe must not exist while the switch is off");
     assert.equal(fs.existsSync(settingsFile), false);
   });
 
   await check("turning it on starts the connection, and the app answers a ping", async () => {
     const response = await pageValue(`window.secureLoginVault.settings.setExtensionBridge({ enabled: true })`);
-    assert.deepEqual(response, { ok: true, result: { enabled: true, running: true, error: "" } });
+    assert.deepEqual(response, { ok: true, result: { enabled: true, askBeforeFill: false, running: true, error: "" } });
     const pong = await pingApp();
     assert.equal(pong.ok, true);
     assert.equal(pong.type, "pong");
     assert.equal(pong.appVersion, app.getVersion());
-    assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, "utf8")), { enabled: true });
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, "utf8")), { enabled: true, askBeforeFill: false });
   });
 
   await check("turning it off closes the connection", async () => {
     const response = await pageValue(`window.secureLoginVault.settings.setExtensionBridge({ enabled: false })`);
-    assert.deepEqual(response, { ok: true, result: { enabled: false, running: false, error: "" } });
+    assert.deepEqual(response, { ok: true, result: { enabled: false, askBeforeFill: false, running: false, error: "" } });
     await assert.rejects(() => pingApp());
-    assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, "utf8")), { enabled: false });
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, "utf8")), { enabled: false, askBeforeFill: false });
   });
 
   await check("invalid on/off requests are refused and change nothing", async () => {

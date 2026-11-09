@@ -104,10 +104,35 @@ h1 {
 }
 
 .logins li {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.login-text {
+  display: grid;
+  min-width: 0;
+}
+
+.logins button {
+  flex: none;
+  min-height: 30px;
+  padding: 0 12px;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+#fill-note[data-ok="true"] {
+  color: var(--accent);
+}
+
+#fill-note[data-ok="false"] {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .login-name {
