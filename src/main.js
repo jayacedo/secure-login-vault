@@ -345,10 +345,43 @@ const forPrompt = (text) => String(text || "").replace(/[\u0000-\u001f\u007f-\u0
 
 async function askBeforeFilling({ host, name }) {
   if (!extensionState.askBeforeFill) return true;
-  if (approvalOpen || !mainWindow || mainWindow.isDestroyed()) return false;
+  return confirmInApp({
+    message: `Fill "${forPrompt(name)}" on ${forPrompt(host)}?`,
+    detail: "A browser extension asked to fill this login. Choose Fill only if you just asked for it.",
+    buttons: ["Don't fill", "Fill"]
+  });
+}
+
+// Saving from the browser is ALWAYS confirmed here (there is no setting to skip it), because
+// it changes the vault. The prompt shows the site and the username, never the password.
+async function askBeforeSaving({ host, username, name, mode }, signal) {
+  const site = forPrompt(host);
+  const user = forPrompt(username);
+  if (mode === "update") {
+    return confirmInApp({
+      message: `Update the saved password for "${forPrompt(name)}" (${user}) on ${site}?`,
+      detail: "A browser extension asked to save a changed password. Choose Update only if you just changed it.",
+      buttons: ["Don't update", "Update"],
+      signal
+    });
+  }
+  return confirmInApp({
+    message: `Add a new login for "${user}" on ${site}?`,
+    detail: "A browser extension asked to save this login. Choose Add only if you just asked for it.",
+    buttons: ["Don't add", "Add"],
+    signal
+  });
+}
+
+// One question at a time. The first button is the default and what closing the box means;
+// no answer in time is "no".
+async function confirmInApp({ message, detail, buttons, signal }) {
+  if (approvalOpen || !mainWindow || mainWindow.isDestroyed() || signal?.aborted) return false;
 
   approvalOpen = true;
   const abort = new AbortController();
+  const cancel = () => abort.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
   const timer = setTimeout(() => abort.abort(), APPROVAL_TIMEOUT_MS);
   try {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -356,24 +389,30 @@ async function askBeforeFilling({ host, name }) {
     const result = await withNativeDialog(() =>
       dialog.showMessageBox(mainWindow, {
         type: "question",
-        title: "Fill a login?",
-        message: `Fill "${forPrompt(name)}" on ${forPrompt(host)}?`,
-        detail: "A browser extension asked to fill this login. Choose Fill only if you just asked for it.",
-        buttons: ["Don't fill", "Fill"],
+        title: "Secure Login Vault",
+        message,
+        detail,
+        buttons,
         defaultId: 0,
         cancelId: 0,
         noLink: true,
         signal: abort.signal
       })
     );
-    return result && result.response === 1;
+    return !abort.signal.aborted && result && result.response === 1;
   } catch {
     return false;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
     approvalOpen = false;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(false);
   }
+}
+
+// The list in the window was loaded before the browser changed the vault; ask it to reload.
+function tellWindowCredentialsChanged() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("vault:credentials-changed");
 }
 
 function pairingStatus() {
@@ -770,8 +809,22 @@ app.whenReady().then(() => {
     handlers: createExtensionHandlers({ getAppVersion: () => app.getVersion(),
       pairing: extensionPairing,
       approve: askBeforeFilling,
+      approveSave: askBeforeSaving,
       // Respects the active-group lock like every other read; throws while locked.
-      vault: { getCredentials: () => vaultStore.getAllCredentials() }
+      vault: {
+        getCredentials: () => vaultStore.getAllCredentials(),
+        addCredential: async (data) => {
+          const saved = await vaultStore.createCredential(data);
+          tellWindowCredentialsChanged();
+          return saved;
+        },
+        // Only the password changes; everything else about the login is kept as it is.
+        updatePassword: async (id, password) => {
+          const existing = await vaultStore.getCredential(id);
+          await vaultStore.editCredential(id, { ...existing, password });
+          tellWindowCredentialsChanged();
+        }
+      }
     })
   });
   lockManager = createLockManager({

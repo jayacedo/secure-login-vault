@@ -16,7 +16,7 @@ const vm = require("vm");
 const { spawn } = require("child_process");
 const { JSDOM } = require("jsdom");
 const { testTempRoot } = require("./testTemp");
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog } = require("electron");
 
 const userData = fs.mkdtempSync(path.join(testTempRoot(), "slv-e2e-"));
 app.setPath("userData", userData);
@@ -109,7 +109,7 @@ function makeChrome({ connectNativeFor, store }) {
       id: "e2e-extension-id",
       lastError: undefined,
       onMessage: { addListener: (fn) => listeners.push(fn) },
-      connectNative: (host) => connectNativeFor(chrome)(host),
+      connectNative: (host) => { chrome.connects += 1; return connectNativeFor(chrome)(host); },
       // Used by the popup: delivered to the background worker's listener.
       sendMessage(message, callback) {
         const sender = { id: chrome.runtime.id };
@@ -121,6 +121,7 @@ function makeChrome({ connectNativeFor, store }) {
         assert.equal(keptOpen, true, "the background worker answers asynchronously");
       }
     },
+    connects: 0, // how many times the extension opened the helper
     messages: [],
     responses: [],
     // chrome.scripting.executeScript, with the page being a jsdom window: the function's text
@@ -191,6 +192,9 @@ function openPopup(chrome) {
     logins: () => Array.from(dom.window.document.querySelectorAll("#logins li")).map((li) => Array.from(li.querySelectorAll(".login-name, .login-user")).map((c) => c.textContent)),
     fillButtons: () => Array.from(dom.window.document.querySelectorAll("#logins button")),
     fillNote: () => dom.window.document.getElementById("fill-note").textContent,
+    saveVisible: () => !$("save").hidden,
+    saveNote: () => $("save-note").textContent,
+    saveButton: $("save-button"),
     pageText: () => dom.window.document.body.textContent,
     typeCode: (code) => { $("code").value = code; },
     codeValue: () => $("code").value,
@@ -408,6 +412,173 @@ async function main() {
     assert.equal(lockedResult.message, "Secure Login Vault is locked. Unlock it, then try again.");
     assert.equal(ownChrome.injections.length, 0);
     assert.equal((await inApp(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true);
+
+    ownChrome.activeTabUrl = undefined;
+  });
+
+  await check("Save: the page is read after the person asks, they confirm in the app, and the vault changes only then", async () => {
+    // Render the real desktop dashboard so its external-change subscription is exercised.
+    await win.webContents.executeJavaScript("initAuth()");
+    await waitFor(() => win.webContents.executeJavaScript("Boolean(document.querySelector('#credential-list-body'))"), 5000, "desktop dashboard");
+    // stand-in for the app's native question box (a real one needs a person to click it)
+    const prompts = [];
+    let answer = 1;
+    let answerDelay = 11000; // longer than the old 8s link / 10s helper deadlines
+    dialog.showMessageBox = async (window, options) => {
+      prompts.push(options);
+      await sleep(answerDelay);
+      answerDelay = 30;
+      return { response: answer };
+    };
+    const credentials = async () => (await inApp("credentials.getAll()")).result;
+    const form = (user, pass) => `<form id="f"><input type="text" name="log" value="${user}"><input type="password" name="pwd" value="${pass}"></form>`;
+    const saveNow = async (view) => {
+      view.saveButton.click();
+      await waitFor(() => !view.saveNote().startsWith("Saving"), 30000, "the save to finish");
+      await settle(view, "the popup after saving");
+    };
+    ownChrome.activeTabUrl = "https://example.com/login?token=SECRET-TOKEN";
+
+    // a new login
+    ownChrome.pageHtml = form("carol", "carol-PW-1");
+    let view = await popupWithAnswer();
+    assert.equal(view.saveVisible(), true, "offered on a page it can work on");
+    const before = (await credentials()).length;
+    ownChrome.messages.length = 0;
+    ownChrome.responses.length = 0;
+    ownChrome.injections.length = 0;
+    await saveNow(view);
+    assert.equal(view.saveNote(), "Saved to Secure Login Vault.");
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0].message, /carol/);
+    assert.match(prompts[0].message, /example\.com/);
+    assert.deepEqual(prompts[0].buttons, ["Don't add", "Add"]);
+    assert.equal(prompts[0].defaultId, 0, "Enter means no");
+    assert.equal(prompts[0].cancelId, 0, "closing means no");
+    assert.equal(JSON.stringify(prompts[0]).includes("carol-PW"), false, "the question never shows the password");
+    const saved = (await credentials()).find((c) => c.username === "carol");
+    assert.ok(saved, "the login is in the vault");
+    assert.deepEqual({ name: saved.websiteName, url: saved.websiteUrl, password: saved.password }, { name: "example.com", url: "https://example.com", password: "carol-PW-1" }, "only the origin is kept, never the path or token");
+    assert.equal((await credentials()).length, before + 1);
+    await waitFor(() => win.webContents.executeJavaScript("document.querySelector('#credential-list-body').textContent.includes('carol')"), 5000, "desktop list to refresh after saving");
+
+    // what the popup did and saw
+    assert.deepEqual(ownChrome.messages.filter((m) => m.type === "save-login").map((m) => Object.keys(m)), [["type"]], "the popup sends nothing but the request");
+    const injection = ownChrome.injections[0];
+    assert.deepEqual(injection.target, { tabId: injection.target.tabId, frameIds: [0] }, "the main page only");
+    assert.equal(injection.world, "ISOLATED");
+    assert.equal(injection.args[0], "https://example.com");
+    assert.equal(JSON.stringify([ownChrome.messages, ownChrome.responses]).includes("carol-PW"), false, "the password never reaches the popup");
+    assert.equal(view.pageText().includes("carol-PW"), false);
+    assert.ok(view.logins().some((l) => l[1] === "carol"), "the list now shows it");
+
+    // the same login again: nothing to do, nobody is asked
+    prompts.length = 0;
+    view = await popupWithAnswer();
+    await saveNow(view);
+    assert.equal(view.saveNote(), "This login is already saved with this password.");
+    assert.equal(prompts.length, 0);
+
+    // a changed password updates only the password
+    ownChrome.pageHtml = form("alice", "alice-NEW-PW");
+    view = await popupWithAnswer();
+    const aliceBefore = (await credentials()).find((c) => c.username === "alice" && c.websiteUrl === "https://example.com/login");
+    await saveNow(view);
+    assert.equal(view.saveNote(), "Password updated in Secure Login Vault.");
+    assert.match(prompts[0].message, /Update/);
+    assert.deepEqual(prompts[0].buttons, ["Don't update", "Update"]);
+    const aliceAfter = (await credentials()).find((c) => c.id === aliceBefore.id);
+    assert.equal(aliceAfter.password, "alice-NEW-PW");
+    assert.deepEqual({ ...aliceAfter, password: "", updatedAt: "" }, { ...aliceBefore, password: "", updatedAt: "" }, "nothing else about the login changed");
+    assert.equal((await credentials()).length, before + 1, "updated in place, not copied");
+
+    // not approved: nothing changes
+    prompts.length = 0;
+    answer = 0;
+    ownChrome.pageHtml = form("dave", "dave-PW");
+    view = await popupWithAnswer();
+    await saveNow(view);
+    assert.equal(view.saveNote(), "It was not approved in Secure Login Vault, so nothing was saved.");
+    assert.equal(prompts.length, 1);
+    assert.equal((await credentials()).some((c) => c.username === "dave"), false);
+    answer = 1;
+
+    // what the person typed is not enough yet, or not clear
+    const problems = [
+      ['<form><input type="text" name="q" value="x"></form>', "No login form was found on this page. Type your login on the page first."],
+      [form("erin", ""), "Type your password on the page first, then press Save."],
+      [form("", "some-pw"), "Type your username or email on the page first, then press Save."],
+      ['<form><input type="text" value="frank"><input type="password" value="old-pw"><input type="password" value="new-pw"></form>', "This page has several different passwords typed in (a change-password form?). Nothing was saved."]
+    ];
+    prompts.length = 0;
+    for (const [html, message] of problems) {
+      ownChrome.pageHtml = html;
+      view = await popupWithAnswer();
+      await saveNow(view);
+      assert.equal(view.saveNote(), message);
+    }
+    assert.equal(prompts.length, 0, "nobody was asked about an incomplete form");
+
+    // the page moved to another site after the tab was read: the page itself refuses
+    ownChrome.pageHtml = form("gina", "gina-PW");
+    ownChrome.pageUrl = "https://evil.test/login";
+    view = await popupWithAnswer();
+    await saveNow(view);
+    assert.equal(view.saveNote(), "The page changed, so nothing was saved.");
+    ownChrome.pageUrl = undefined;
+
+    // the address and values come from the page, never from the popup
+    ownChrome.pageHtml = form("hank", "hank-PW");
+    prompts.length = 0;
+    const lied = await new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "save-login", url: "https://evil.test", username: "mallory", password: "mallory-PW" }, resolve));
+    assert.equal(lied.ok, true);
+    const all = await credentials();
+    assert.equal(all.some((c) => c.username === "mallory" || c.websiteUrl.includes("evil")), false, "a claimed login or address is ignored");
+    assert.ok(all.find((c) => c.username === "hank" && c.websiteUrl === "https://example.com"));
+
+    // plain http pages are not offered, and not saved even if asked directly
+    ownChrome.activeTabUrl = "http://example.com/login";
+    view = await popupWithAnswer();
+    assert.equal(view.saveVisible(), false);
+    prompts.length = 0;
+    const connectsBefore = ownChrome.connects;
+    ownChrome.injections.length = 0;
+    const insecure = await new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "save-login" }, resolve));
+    assert.deepEqual(insecure, { ok: false, message: "Logins are only saved from secure (https) pages." });
+    assert.equal(ownChrome.connects, connectsBefore, "the extension did not even contact the app");
+    assert.equal(ownChrome.injections.length, 0, "and did not read the page");
+    ownChrome.activeTabUrl = "chrome://extensions/";
+    view = await popupWithAnswer();
+    assert.equal(view.saveVisible(), false);
+
+    // a locked vault: nobody is asked and nothing is written
+    ownChrome.activeTabUrl = "https://example.com/login";
+    ownChrome.pageHtml = form("ivy", "ivy-PW");
+    assert.equal((await inApp("auth.lockVault()")).ok !== false, true);
+    prompts.length = 0;
+    const lockedResult = await new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "save-login" }, resolve));
+    assert.equal(lockedResult.message, "Secure Login Vault is locked. Unlock it, then try again.");
+    assert.equal(prompts.length, 0);
+    assert.equal((await inApp(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true);
+    assert.equal((await credentials()).some((c) => c.username === "ivy"), false);
+    assert.equal((await credentials()).find((c) => c.username === "carol").password, "carol-PW-1", "saved login survives lock and unlock");
+
+    // Switching off the connection while a question is open aborts the native dialog.
+    let pendingPrompt;
+    let releasePrompt;
+    dialog.showMessageBox = (window, options) => {
+      pendingPrompt = options;
+      return new Promise((resolve) => { releasePrompt = () => resolve({ response: 1 }); });
+    };
+    ownChrome.pageHtml = form("cancelled-user", "cancelled-PW");
+    const pendingSave = new Promise((resolve) => ownChrome.runtime.sendMessage({ type: "save-login" }, resolve));
+    await waitFor(() => Boolean(pendingPrompt), 5000, "pending save confirmation");
+    assert.equal((await setBridge(false)).ok, true);
+    await waitFor(() => pendingPrompt.signal.aborted, 5000, "confirmation cancellation on disconnect");
+    releasePrompt();
+    assert.equal((await pendingSave).ok, false);
+    assert.equal((await credentials()).some((c) => c.username === "cancelled-user"), false);
+    assert.equal((await setBridge(true)).ok, true);
 
     ownChrome.activeTabUrl = undefined;
   });

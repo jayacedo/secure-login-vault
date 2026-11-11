@@ -28,6 +28,7 @@ function runHost({
   pipeName,
   allowedExtensionIds,
   requestTimeoutMs = 10000,
+  approvalRequestTimeoutMs = 40000,
   exit
 }) {
   let socket = null;
@@ -127,7 +128,7 @@ function runHost({
             setTimeout(() => {
               pending.delete(value.id);
               reply({ id: value.id, ok: false, error: "timeout" });
-            }, requestTimeoutMs)
+            }, value.type === "save-login" || value.type === "get-login" ? approvalRequestTimeoutMs : requestTimeoutMs)
           );
         }
         link.write(encodeMessage(value));

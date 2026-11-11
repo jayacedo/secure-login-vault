@@ -2463,6 +2463,7 @@ const ACTIVITY_PING_INTERVAL_MS = 5000;
 let _lastActivityPing = 0;
 let _activityListenersAttached = false;
 let _unsubscribeAutoLocked = null;
+let _unsubscribeCredentialsChanged = null;
 
 function getAutoLockDelay() {
   return parseInt(getPref(PREF_AUTO_LOCK, "0"), 10) || 0;
@@ -2499,6 +2500,12 @@ function startAutoLockWatcher() {
 
   if (!_unsubscribeAutoLocked) {
     _unsubscribeAutoLocked = window.secureLoginVault.auth.onAutoLocked(handleAutoLocked);
+  }
+  if (!_unsubscribeCredentialsChanged) {
+    _unsubscribeCredentialsChanged = window.secureLoginVault.auth.onCredentialsChanged(() => {
+      // A login was saved from the browser: show it in the list.
+      Promise.resolve(refreshCredentials()).catch(() => {});
+    });
   }
 
   if (!_activityListenersAttached) {

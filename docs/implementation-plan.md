@@ -181,3 +181,10 @@ Scope:
 ### Later Phases
 
 Phase 12 will add Windows packaging and installer verification.
+
+## Browser extension phases
+
+The browser companion uses an independent phase sequence. Connection, pairing,
+website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
+and password updates with confirmation in the desktop app. See
+[Browser extension](browser-extension.md) for current status, setup, and verification.

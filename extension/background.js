@@ -2,11 +2,12 @@
 // (and so the desktop app), and it only answers requests from this extension's own
 // pages (the popup). The pairing secret lives only here, in extension storage that
 // page scripts cannot read.
-importScripts("status.js", "pairing.js", "link.js", "fillInPage.js");
+importScripts("status.js", "pairing.js", "link.js", "fillInPage.js", "readFormInPage.js");
 
 const HOST_NAME = self.SLVStatus.HOST_NAME;
 const SECRET_KEY = "slvPairingSecret";
-const OPERATION_DEADLINE_MS = 30000; // a hard stop; every request inside has its own, shorter, timeout
+// Covers three verification requests (8s each), then a confirmation request (35s).
+const OPERATION_DEADLINE_MS = 65000;
 
 const link = self.SLVLink.createLink({
   hostName: HOST_NAME,
@@ -96,6 +97,71 @@ async function fillActiveTab(loginId) {
   }
 }
 
+// ── Saving a login ───────────────────────────────────────────────────────────
+// Only ever started by the person pressing "Save this login" in the popup, after typing their
+// login on the page. Nothing is watched or recorded in the background: the page is read once,
+// now, in its main frame, and what was read goes to the app only, which always asks the person.
+// The popup supplies nothing: not the page, not the username, not the password.
+function describeSave(result) {
+  if (result.ok) {
+    return { ok: true, message: result.mode === "update" ? "Password updated in Secure Login Vault." : "Saved to Secure Login Vault." };
+  }
+  return { ok: false, message: result.message };
+}
+
+const READ_PROBLEMS = {
+  blocked: "The page changed, so nothing was saved.",
+  "no-form": "No login form was found on this page. Type your login on the page first.",
+  empty: "Type your password on the page first, then press Save.",
+  ambiguous: "This page has several different passwords typed in (a change-password form?). Nothing was saved.",
+  "no-username": "Type your username or email on the page first, then press Save.",
+  "too-long": "The username or password is too long to save."
+};
+
+// Secure pages only (plain http only for this computer). The app checks again.
+function canSaveFrom(address) {
+  try {
+    const url = new URL(address);
+    return url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
+  } catch (error) {
+    return false;
+  }
+}
+
+async function saveActiveTab() {
+  const tab = await activeTab();
+  const origin = tab && typeof tab.url === "string" ? originOf(tab.url) : "";
+  if (!tab || !Number.isSafeInteger(tab.id) || !origin) {
+    return { ok: false, message: "Open the login page in this tab first." };
+  }
+  if (!canSaveFrom(origin)) {
+    return { ok: false, message: "Logins are only saved from secure (https) pages." };
+  }
+
+  let read;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [0] }, // the main page only, never an embedded frame
+      world: "ISOLATED",
+      func: slvReadFormInPage,
+      args: [origin]
+    });
+    read = Array.isArray(results) && results[0] ? results[0].result : null;
+  } catch (error) {
+    return { ok: false, message: "Could not read this page. Open it again and retry." };
+  }
+  if (!read || typeof read !== "object") return { ok: false, message: "Could not read this page. Open it again and retry." };
+  if (read.status !== "read") return { ok: false, message: READ_PROBLEMS[read.status] || "Could not read this page." };
+
+  let request = { url: origin, username: read.username, password: read.password };
+  read.password = "";
+  try {
+    return describeSave(await link.saveLogin(request));
+  } finally {
+    request = null;
+  }
+}
+
 // One operation at a time, so two popups cannot interleave pairing and checking.
 let queue = Promise.resolve();
 function runOperation(operation) {
@@ -136,6 +202,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === "fill" && Number.isSafeInteger(message.loginId)) {
     // Only the login's id is taken from the popup; the page and its address are read here.
     runOperation(() => fillActiveTab(message.loginId)).then(sendResponse);
+  } else if (message.type === "save-login") {
+    // No data is taken from the message: the page is read here, after the person asked.
+    runOperation(() => saveActiveTab()).then(sendResponse);
   } else {
     return false;
   }

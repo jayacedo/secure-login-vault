@@ -8,6 +8,9 @@
 //                ask the app for ONE saved login's username and password, for the page
 //                at url. Only a fully verified connection is ever asked. The result is for
 //                the background worker alone; it is never passed on to the popup.
+//   saveLogin({url, username, password})
+//                ask the app to add a login (or update its password) for the origin url.
+//                The person always confirms in the app; this only relays the request.
 // Every operation opens its own connection to the helper and closes it again.
 //
 // Nothing here trusts the app just because it answers: "connected" means the app
@@ -16,11 +19,14 @@
 // against the real app code.
 (function (root) {
   var REQUEST_TIMEOUT_MS = 8000;
+  // The desktop confirmation can remain open for 30 seconds.
+  var APPROVAL_REQUEST_TIMEOUT_MS = 35000;
 
   function createLink(deps) {
     var pairing = deps.pairing;
     var status = deps.status;
     var timeoutMs = deps.requestTimeoutMs || REQUEST_TIMEOUT_MS;
+    var approvalTimeoutMs = deps.approvalRequestTimeoutMs || APPROVAL_REQUEST_TIMEOUT_MS;
 
     function lastErrorText() {
       try {
@@ -83,7 +89,7 @@
             var timer = setTimeout(function () {
               delete waiting[id];
               resolve({ reply: { id: id, ok: false, error: "timeout" } });
-            }, timeoutMs);
+            }, type === "save-login" || type === "get-login" ? approvalTimeoutMs : timeoutMs);
             waiting[id] = { resolve: resolve, timer: timer };
             try {
               port.postMessage(Object.assign({ id: id, type: type }, fields || {}));
@@ -210,6 +216,41 @@
       }).then(function (outcome) {
         if (outcome.verified) return outcome.value;
         // Not verified: say why, in the same words as the status box.
+        return { ok: false, message: outcome.status.title + ". " + outcome.status.detail, unverified: true };
+      });
+    }
+
+    // ── saveLogin ─────────────────────────────────────────────────────────────
+    var SAVE_PROBLEMS = {
+      locked: "Secure Login Vault is locked. Unlock it, then try again.",
+      "rate-limited": "Too many saves in a minute. Wait a moment and try again.",
+      declined: "It was not approved in Secure Login Vault, so nothing was saved.",
+      unchanged: "This login is already saved with this password.",
+      changed: "The vault changed while you were deciding. Nothing was saved; try again.",
+      "insecure-page": "Logins are only saved from secure (https) pages.",
+      "unsupported-page": "Logins are only saved from secure (https) pages.",
+      "bad-url": "Logins are only saved from secure (https) pages.",
+      "bad-message": "That login could not be saved (the username or password is empty or too long)."
+    };
+
+    function saveLogin(request) {
+      var pageUrl = request && request.url;
+      var username = request && request.username;
+      var password = request && request.password;
+      if (typeof pageUrl !== "string" || !pageUrl || pageUrl.length > 2048 || typeof username !== "string" || !username || username.length > 256 || typeof password !== "string" || !password || password.length > 1024) {
+        return Promise.resolve({ ok: false, message: "That request could not be understood." });
+      }
+
+      return runVerified(function (session) {
+        return session.request("save-login", { url: pageUrl, username: username, password: password }).then(function (outcome) {
+          var reply = outcome.reply;
+          if (outcome.runtimeError || !reply) return { ok: false, message: "Could not save the login. Check again." };
+          if (reply.ok === true && (reply.mode === "add" || reply.mode === "update")) return { ok: true, mode: reply.mode };
+          var known = typeof reply.error === "string" && Object.prototype.hasOwnProperty.call(SAVE_PROBLEMS, reply.error);
+          return { ok: false, message: known ? SAVE_PROBLEMS[reply.error] : "Could not save the login. Check again." };
+        });
+      }).then(function (outcome) {
+        if (outcome.verified) return outcome.value;
         return { ok: false, message: outcome.status.title + ". " + outcome.status.detail, unverified: true };
       });
     }
@@ -396,7 +437,7 @@
       return deps.storage.clear().then(check);
     }
 
-    return { check: check, pair: pair, forget: forget, fetchLogin: fetchLogin };
+    return { check: check, pair: pair, forget: forget, fetchLogin: fetchLogin, saveLogin: saveLogin };
   }
 
   var api = { createLink: createLink, REQUEST_TIMEOUT_MS: REQUEST_TIMEOUT_MS };

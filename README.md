@@ -80,6 +80,17 @@ Branding is stored locally per install; it doesn't change the packaged app icon,
 
 **Also included:** an in-app Help & FAQ modal, an About modal, and full category/group management (add, rename, delete, with credential reassignment) from Settings.
 
+## Browser Extension
+
+The browser extension has its own phase sequence, separate from the desktop phases above.
+Phases 1-4 provide the native connection, verified pairing, matching logins, and filling.
+Phase 5 adds **Save this login**: enter a login on a page, click Save in the extension,
+then confirm in the desktop app. SLV adds a new entry or updates the matching entry's
+password, and refreshes the desktop list.
+
+See [Browser extension workflow and verification](docs/browser-extension.md) for setup,
+usage, tested behavior, and current limits.
+
 ## Requirements
 
 - Node.js LTS

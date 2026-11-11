@@ -16,6 +16,9 @@
   const loginList = document.getElementById("logins");
   const siteNote = document.getElementById("site-note");
   const fillNote = document.getElementById("fill-note");
+  const saveBox = document.getElementById("save");
+  const saveButton = document.getElementById("save-button");
+  const saveNote = document.getElementById("save-note");
 
   let pageOrigin = ""; // only the origin of the tab, never its full address
 
@@ -30,6 +33,7 @@
     pairButton.disabled = busy;
     forgetButton.disabled = busy;
     codeInput.disabled = busy;
+    saveButton.disabled = busy;
     for (const button of loginList.querySelectorAll("button")) button.disabled = busy;
   }
 
@@ -59,6 +63,7 @@
     siteNote.textContent = "";
     fillNote.textContent = "";
     delete fillNote.dataset.ok;
+    saveBox.hidden = true;
     if (status.connected !== true) return; // logins are only ever shown on a verified link
 
     const site = status.site && typeof status.site === "object" ? status.site : null;
@@ -111,6 +116,8 @@
 
     siteNote.textContent = note;
     siteBox.hidden = false;
+    // Saving is offered only on a page it could work on, and only when connected.
+    saveBox.hidden = !(pageOrigin && site && (site.state === "ok" || site.state === "locked" || site.state === "error"));
   }
 
   function showResult(status) {
@@ -166,6 +173,28 @@
     });
   }
 
+  // Nothing is sent but the request itself: the background worker reads the page, asks the app,
+  // and the person confirms in the app. The popup never sees the username or password.
+  function save() {
+    setBusy(true);
+    saveNote.dataset.ok = "";
+    saveNote.textContent = "Saving... confirm in Secure Login Vault.";
+    chrome.runtime.sendMessage({ type: "save-login" }, (result) => {
+      if (chrome.runtime.lastError || !result || typeof result !== "object") {
+        setBusy(false);
+        saveNote.dataset.ok = "false";
+        saveNote.textContent = "Could not save. Reload the extension and try again.";
+        return;
+      }
+      const ok = result.ok === true;
+      const message = String(result.message || "Could not save. Check the connection and try again.");
+      if (!ok) setBusy(false);
+      saveNote.dataset.ok = ok ? "true" : "false";
+      saveNote.textContent = message;
+      if (ok) check(); // refresh the list of saved logins; the note stays
+    });
+  }
+
   function pair() {
     const code = codeInput.value;
     codeInput.value = ""; // never kept in the popup
@@ -176,6 +205,7 @@
     ask(pageOrigin ? { type: "pair", code: code, url: pageOrigin } : { type: "pair", code: code }, "Pairing...");
   }
 
+  saveButton.addEventListener("click", save);
   recheck.addEventListener("click", check);
   pairButton.addEventListener("click", pair);
   codeInput.addEventListener("keydown", (event) => {

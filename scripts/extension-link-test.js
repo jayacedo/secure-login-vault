@@ -457,6 +457,89 @@ async function main() {
     assert.equal(browser.stats.open, 0);
   });
 
+  await check("saving a login: only from a verified app, with exactly these fields; failures say why and never show the password", async () => {
+    const credentials = [{ id: 1, websiteName: "Example", websiteUrl: "example.com", username: "alice", password: "pw-OLD" }];
+    const writes = [];
+    const vault = {
+      locked: false,
+      getCredentials: async () => {
+        if (vault.locked) throw Object.assign(new Error("Vault is locked."), { isPublic: true });
+        return credentials;
+      },
+      addCredential: async (data) => { writes.push(["add", data.username]); },
+      updatePassword: async (id) => { writes.push(["update", id]); }
+    };
+    const decisions = { approve: true };
+    await app.stop();
+    app = await startApp(pipeName, { vault, handlerOptions: { approveSave: async () => decisions.approve, saveLimits: { overall: 5 } } });
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+
+    // the happy paths: one save-login request with exactly these fields
+    app.received.length = 0;
+    const firstSave = await link.saveLogin({ url: "https://example.com", username: "carol", password: "pw-NEW" });
+    assert.deepEqual(firstSave, { ok: true, mode: "add" }, JSON.stringify(firstSave));
+    assert.deepEqual(types(app), ["ping", "auth-begin", "auth-finish", "save-login"]);
+    assert.deepEqual(Object.keys(app.received.find((r) => r.type === "save-login")).sort(), ["id", "password", "type", "url", "username"]);
+    assert.equal(browser.stats.open, 0, "the connection is closed again");
+    assert.deepEqual(await link.saveLogin({ url: "https://example.com", username: "alice", password: "pw-CHANGED" }), { ok: true, mode: "update" });
+    assert.deepEqual(writes, [["add", "carol"], ["update", 1]]);
+
+    // failures: a plain message
+    assert.deepEqual(await link.saveLogin({ url: "https://example.com", username: "alice", password: "pw-OLD" }), { ok: false, message: "This login is already saved with this password." });
+    decisions.approve = false;
+    assert.deepEqual(await link.saveLogin({ url: "https://example.com", username: "dave", password: "pw-D" }), { ok: false, message: "It was not approved in Secure Login Vault, so nothing was saved." });
+    decisions.approve = true;
+    assert.deepEqual(await link.saveLogin({ url: "http://example.com", username: "dave", password: "pw-D" }), { ok: false, message: "Logins are only saved from secure (https) pages." });
+    assert.deepEqual(await link.saveLogin({ url: "chrome://extensions", username: "dave", password: "pw-D" }), { ok: false, message: "Logins are only saved from secure (https) pages." });
+    vault.locked = true;
+    assert.deepEqual(await link.saveLogin({ url: "https://example.com", username: "dave", password: "pw-D" }), { ok: false, message: "Secure Login Vault is locked. Unlock it, then try again." });
+    vault.locked = false;
+    // (5 requests reached the limiter so far, the ones for http and chrome pages were turned away first: the next is told to wait)
+    const limited = await link.saveLogin({ url: "https://example.com", username: "dave", password: "pw-D" });
+    assert.deepEqual(limited, { ok: false, message: "Too many saves in a minute. Wait a moment and try again." });
+    assert.equal(writes.length, 2, "nothing else was written");
+  });
+
+  await check("saving a login: an unverified app never receives a password; bad requests never connect; odd answers are not trusted", async () => {
+    // an app that holds a different secret
+    await app.stop();
+    const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
+    app = await startApp(pipeName, { pairing: other, vault: { getCredentials: async () => [] } });
+    const result = await link.saveLogin({ url: "https://example.com", username: "u", password: "pw-LEAK" });
+    assert.equal(result.ok, false);
+    assert.equal(result.unverified, true);
+    assert.equal(types(app).includes("save-login"), false, "no password was sent to it");
+    assert.equal(JSON.stringify(app.received).includes("pw-LEAK"), false);
+
+    // no stored secret at all
+    await app.stop();
+    app = await startApp(pipeName, { vault: { getCredentials: async () => [] } });
+    const before = browser.secret();
+    browser.setSecret(null);
+    assert.match((await link.saveLogin({ url: "https://example.com", username: "u", password: "pw-LEAK" })).message, /Not paired/);
+    assert.equal(types(app).includes("save-login"), false);
+    browser.setSecret(before);
+
+    // requests that make no sense are not even sent
+    assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+    const opened = browser.stats.opened;
+    const ok = { url: "https://example.com", username: "u", password: "p" };
+    for (const bad of [undefined, null, {}, { ...ok, url: "" }, { ...ok, url: 5 }, { ...ok, url: "x".repeat(3000) }, { ...ok, username: "" }, { ...ok, username: 5 }, { ...ok, username: "u".repeat(257) }, { ...ok, password: "" }, { ...ok, password: { a: 1 } }, { ...ok, password: "p".repeat(1025) }]) {
+      assert.deepEqual(await link.saveLogin(bad), { ok: false, message: "That request could not be understood." }, JSON.stringify(bad));
+    }
+    assert.equal(browser.stats.opened, opened, "nothing was even connected");
+
+    // an answer with the wrong shape is not a success
+    for (const reply of [() => ({ error: "surprise" }), () => ({}), () => ({ mode: "delete" }), () => ({ error: "internal-error" })]) {
+      await app.stop();
+      app = await startApp(pipeName, { vault: { getCredentials: async () => [] }, extraHandlers: { "save-login": reply } });
+      assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+      const answer = await link.saveLogin(ok);
+      assert.deepEqual(answer.ok === true ? "unexpected success" : answer, { ok: false, message: "Could not save the login. Check again." });
+    }
+    assert.equal(browser.stats.open, 0);
+  });
+
   await check("an app that sends odd lists cannot push anything unexpected into the popup", async () => {
     await app.stop();
     const odd = [

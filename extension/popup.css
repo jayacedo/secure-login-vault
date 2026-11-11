@@ -126,6 +126,14 @@ h1 {
   border-color: var(--accent);
 }
 
+#save-note[data-ok="true"] {
+  color: var(--ok, #1a7f37);
+}
+
+#save-note[data-ok="false"] {
+  color: var(--bad, #b3261e);
+}
+
 #fill-note[data-ok="true"] {
   color: var(--accent);
 }

@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
       const handler = (_event, payload) => callback(payload);
       ipcRenderer.on("vault:auto-locked", handler);
       return () => ipcRenderer.removeListener("vault:auto-locked", handler);
+    },
+    // Fired when the vault was changed from outside the window (a login saved from the browser).
+    onCredentialsChanged: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on("vault:credentials-changed", handler);
+      return () => ipcRenderer.removeListener("vault:credentials-changed", handler);
     }
   },
 

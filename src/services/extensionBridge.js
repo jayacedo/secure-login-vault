@@ -74,7 +74,8 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     }
     connections.add(socket);
     // Per-connection state the handlers may read and set (e.g. "authenticated").
-    const context = { authenticated: false };
+    const abort = new AbortController();
+    const context = { authenticated: false, signal: abort.signal };
 
     let windowStart = Date.now();
     let windowCount = 0;
@@ -114,6 +115,8 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     socket.on("data", (chunk) => reader.push(chunk));
     socket.on("error", () => {}); // "close" follows
     socket.on("close", () => {
+      context.authenticated = false;
+      abort.abort();
       clearTimeout(firstMessageTimer);
       clearTimeout(idleTimer);
       connections.delete(socket);
