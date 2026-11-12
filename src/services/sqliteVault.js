@@ -3,6 +3,9 @@ const fs = require("fs/promises");
 const path = require("path");
 const initSqlJs = require("sql.js");
 const { writeJsonAtomic } = require("./fsUtils");
+const { buildVaultHealth } = require("./vaultHealth");
+const trash = require("./credentialTrash");
+const { collectDuplicateGroups, describeDuplicateGroup } = require("./duplicateReview");
 
 let sqlitePromise;
 
@@ -18,7 +21,9 @@ function loadSqlite() {
 
 async function createEncryptedVaultFile(filePath, key, createdAt) {
   const databaseBytes = await createInitialDatabase(createdAt);
-  const encryptedDatabase = encryptBuffer(databaseBytes, key);
+  let encryptedDatabase;
+  try { encryptedDatabase = encryptBuffer(databaseBytes, key); }
+  finally { databaseBytes.fill(0); }
   const payload = {
     format: "secure-login-vault-encrypted-sqlite",
     version: 1,
@@ -45,15 +50,20 @@ async function verifyEncryptedVaultFile(filePath, key) {
 
   const payload = JSON.parse(await fs.readFile(filePath, "utf8"));
 
+  return verifyEncryptedVaultPayload(payload, key);
+}
+
+async function verifyEncryptedVaultPayload(payload, key) {
+
   if (!isValidEncryptedDatabase(payload)) {
     throw createPublicError("Encrypted vault database is invalid.");
   }
 
   const databaseBytes = decryptBuffer(payload.encryption, key);
-  const SQL = await loadSqlite();
-  const db = new SQL.Database(databaseBytes);
-
+  let db;
   try {
+    const SQL = await loadSqlite();
+    db = new SQL.Database(databaseBytes);
     const result = db.exec("SELECT value FROM vault_meta WHERE key = 'schema_version' LIMIT 1;");
     const schemaVersion = result[0] && result[0].values[0] && result[0].values[0][0];
 
@@ -61,7 +71,7 @@ async function verifyEncryptedVaultFile(filePath, key) {
       throw createPublicError("Vault database schema is not recognized.");
     }
   } finally {
-    db.close();
+    try { db?.close(); } finally { databaseBytes.fill(0); }
   }
 
   return true;
@@ -205,7 +215,64 @@ async function getCredentialById(filePath, key, id) {
   });
 }
 
-async function addCredential(filePath, key, data) {
+async function getCredentialPasswordHistory(filePath, key, id) {
+  return withDecryptedDatabase(filePath, key, (db) => {
+    const row = queryOne(db, "SELECT id, group_name FROM credentials WHERE id = ?", [id]);
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (!row.id || (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) {
+      throw createPublicError("Credential not found.");
+    }
+    return queryAll(db,
+      "SELECT id, password, replaced_at AS replacedAt FROM credential_password_history WHERE credential_id = ? ORDER BY id DESC LIMIT 10",
+      [id]);
+  });
+}
+
+async function getVaultHealth(filePath, key) {
+  return withDecryptedDatabase(filePath, key, db => {
+    const activeGroup = getActiveGroupFilterValue(db);
+    const rows = queryAll(db,
+      "SELECT id, website_name, username, group_name, password FROM credentials" +
+      (activeGroup ? " WHERE group_name = ? COLLATE NOCASE" : ""), activeGroup ? [activeGroup] : []);
+    try { return buildVaultHealth(rows, activeGroup); }
+    finally { for (const row of rows) row.password = ""; }
+  });
+}
+
+function duplicateSnapshot(db, key) {
+  const activeGroup = getActiveGroupFilterValue(db);
+  const rows = queryAll(db, "SELECT * FROM credentials" + (activeGroup ? " WHERE group_name = ? COLLATE NOCASE" : ""), activeGroup ? [activeGroup] : []);
+  const groups = collectDuplicateGroups(rows);
+  // A keyed revision binds the full rows and scope, including fields omitted
+  // from the UI. It cannot be used as an offline password guessing fingerprint.
+  const revision = group => crypto.createHmac("sha256", key).update(JSON.stringify([activeGroup, group.rows])).digest("hex");
+  return { activeGroup, total: rows.length, groups, revision };
+}
+
+async function getDuplicateReview(filePath, key, guard = () => {}) {
+  return withDecryptedDatabase(filePath, key, db => {
+    guard();
+    const snapshot = duplicateSnapshot(db, key);
+    return { activeGroup: snapshot.activeGroup, total: snapshot.total,
+      groups: snapshot.groups.map(group => describeDuplicateGroup(group, snapshot.revision(group))) };
+  });
+}
+
+async function resolveDuplicateReview(filePath, key, choice, guard = () => {}) {
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    guard();
+    if (!choice || choice.confirmed !== true || !Number.isSafeInteger(choice.keepId) || choice.keepId <= 0 || typeof choice.revision !== "string") {
+      throw createPublicError("Choose a login to keep and confirm the review.");
+    }
+    const snapshot = duplicateSnapshot(db, key);
+    const group = snapshot.groups.find(group => group.rows.some(row => row.id === choice.keepId));
+    if (!group || snapshot.revision(group) !== choice.revision) throw createPublicError("These logins or the active group changed. Refresh the review before continuing.");
+    const removed = trash.moveToTrash(db, group.rows.filter(row => row.id !== choice.keepId));
+    return { keptId: choice.keepId, ...removed };
+  });
+}
+
+async function addCredential(filePath, key, data, options = {}) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
     validateCredentialData(data);
     const now = new Date().toISOString();
@@ -213,7 +280,15 @@ async function addCredential(filePath, key, data) {
     // When locked to a group, newly created credentials default into that
     // group so they don't silently fall outside the current lock and stay
     // invisible to the person who just created them.
-    const groupName = normalizeGroupValue(data.groupName) || activeGroup || "";
+    const explicitOrganization = Object.hasOwn(options, "expectedActiveGroup");
+    if (explicitOrganization) {
+      if (activeGroup !== options.expectedActiveGroup
+        || queryOne(db, "SELECT name FROM categories WHERE name = ?", [data.category]).name !== data.category
+        || (data.groupName && queryOne(db, "SELECT name FROM groups WHERE name = ?", [data.groupName]).name !== data.groupName)) {
+        throw createPublicError("Groups or categories changed. Save the login again.");
+      }
+    }
+    const groupName = explicitOrganization ? normalizeGroupValue(data.groupName) : normalizeGroupValue(data.groupName) || activeGroup || "";
     ensureGroupExists(db, groupName);
     const stmt = db.prepare(
       `INSERT INTO credentials
@@ -276,12 +351,30 @@ async function updateCredential(filePath, key, id, data) {
 
 async function deleteCredential(filePath, key, id) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
-    const existing = queryOne(db, "SELECT id FROM credentials WHERE id = ?", [id]);
+    const existing = queryOne(db, "SELECT * FROM credentials WHERE id = ?", [id]);
     if (!existing || !existing.id) throw createPublicError("Credential not found.");
-    const stmt = db.prepare("DELETE FROM credentials WHERE id = ?");
-    stmt.run([id]);
-    stmt.free();
-    return { deleted: true };
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (activeGroup && (existing.group_name || "").toLowerCase() !== activeGroup.toLowerCase()) throw createPublicError("Credential not found.");
+    return { ...trash.moveToTrash(db, [existing]), deleted: true };
+  });
+}
+
+async function manageCredentialTrash(filePath, key, action, id, confirmed, guard = () => {}) {
+  if (action === "list") return withDecryptedDatabase(filePath, key, db => { guard(); return trash.listTrash(db, getActiveGroupFilterValue(db)); });
+  if (action === "purge") {
+    const expired = await withDecryptedDatabase(filePath, key, db => {
+      guard();
+      return queryOne(db, "SELECT id FROM credential_trash WHERE expires_at <= ? LIMIT 1", [new Date(Date.now()).toISOString()]).id;
+    });
+    if (!expired) return { cleaned: false };
+  }
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    guard();
+    const group = getActiveGroupFilterValue(db);
+    if (action === "restore") return trash.restoreTrash(db, id, group);
+    if (action === "delete") return trash.deleteTrash(db, id, group, confirmed);
+    if (action === "purge") return { cleaned: true };
+    throw createPublicError("Unknown Trash action.");
   });
 }
 
@@ -312,11 +405,7 @@ async function deleteCredentialsByGroups(filePath, key, groupNames) {
     }
 
     const whereClause = conditions.join(" OR ");
-    const countRow = queryOne(db, `SELECT COUNT(*) AS total FROM credentials WHERE ${whereClause}`, params);
-    const stmt = db.prepare(`DELETE FROM credentials WHERE ${whereClause}`);
-    stmt.run(params);
-    stmt.free();
-    return { deleted: Number(countRow.total || 0) };
+    return trash.moveToTrash(db, queryAll(db, `SELECT * FROM credentials WHERE ${whereClause}`, params));
   });
 }
 
@@ -955,6 +1044,34 @@ function ensureGroupExists(db, name) {
 // IF NOT EXISTS and the column check is explicit, so this is safe to run on
 // every open, including vaults that were created before this feature existed.
 function ensureSchemaUpgrades(db) {
+  db.run("PRAGMA secure_delete = ON");
+  trash.ensureTrashSchema(db);
+  // History and the password change commit together in the encrypted database.
+  // Triggers cover desktop edits, browser updates and any future SQL update path.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS credential_password_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      credential_id INTEGER NOT NULL,
+      password TEXT NOT NULL,
+      replaced_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_history_credential ON credential_password_history (credential_id, id);
+    CREATE TRIGGER IF NOT EXISTS credential_password_changed
+    AFTER UPDATE OF password ON credentials
+    WHEN OLD.password IS NOT NEW.password
+    BEGIN
+      INSERT INTO credential_password_history (credential_id, password, replaced_at)
+        VALUES (OLD.id, OLD.password, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+      DELETE FROM credential_password_history WHERE credential_id = OLD.id AND id NOT IN (
+        SELECT id FROM credential_password_history WHERE credential_id = OLD.id ORDER BY id DESC LIMIT 10
+      );
+    END;
+    CREATE TRIGGER IF NOT EXISTS credential_history_deleted
+    AFTER DELETE ON credentials
+    BEGIN
+      DELETE FROM credential_password_history WHERE credential_id = OLD.id;
+    END;
+  `);
   const groupsTable = queryAll(
     db,
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'groups'"
@@ -1051,7 +1168,19 @@ function ensureSchemaUpgrades(db) {
 
 // ─── Write helper (decrypt → mutate → re-encrypt → save) ─────────────────────
 
-async function withDecryptedDatabaseWrite(filePath, key, operation) {
+const databaseWriteQueues = new Map();
+function withDecryptedDatabaseWrite(filePath, key, operation) {
+  // Concurrent browser/desktop edits must read the last committed password.
+  const name = path.resolve(filePath);
+  const previous = databaseWriteQueues.get(name) || Promise.resolve();
+  const result = previous.then(() => performDatabaseWrite(filePath, key, operation));
+  const settled = result.catch(() => {});
+  databaseWriteQueues.set(name, settled);
+  settled.then(() => { if (databaseWriteQueues.get(name) === settled) databaseWriteQueues.delete(name); });
+  return result;
+}
+
+async function performDatabaseWrite(filePath, key, operation) {
   const raw = await fs.readFile(filePath, "utf8");
   const payload = JSON.parse(raw);
 
@@ -1060,13 +1189,14 @@ async function withDecryptedDatabaseWrite(filePath, key, operation) {
   }
 
   const databaseBytes = decryptBuffer(payload.encryption, key);
-  const SQL = await loadSqlite();
-  const db = new SQL.Database(databaseBytes);
-
+  let db, updatedBytes;
   try {
+    const SQL = await loadSqlite();
+    db = new SQL.Database(databaseBytes);
     ensureSchemaUpgrades(db);
+    trash.purgeTrash(db);
     const result = operation(db);
-    const updatedBytes = Buffer.from(db.export());
+    updatedBytes = Buffer.from(db.export());
     const encryptedDatabase = encryptBuffer(updatedBytes, key);
     const updatedPayload = {
       ...payload,
@@ -1079,7 +1209,7 @@ async function withDecryptedDatabaseWrite(filePath, key, operation) {
     await writeJsonAtomic(filePath, updatedPayload);
     return result;
   } finally {
-    db.close();
+    try { db?.close(); } finally { databaseBytes.fill(0); updatedBytes?.fill(0); }
   }
 }
 
@@ -1097,7 +1227,9 @@ async function rekeyEncryptedVaultFile(filePath, oldKey, newKey) {
   const databaseBytes = decryptBuffer(payload.encryption, oldKey);
 
   // Re-encrypt with the new key
-  const reEncrypted = encryptBuffer(databaseBytes, newKey);
+  let reEncrypted;
+  try { reEncrypted = encryptBuffer(databaseBytes, newKey); }
+  finally { databaseBytes.fill(0); }
   const updatedPayload = {
     ...payload,
     updatedAt: new Date().toISOString(),
@@ -1120,14 +1252,14 @@ async function withDecryptedDatabase(filePath, key, operation) {
   }
 
   const databaseBytes = decryptBuffer(payload.encryption, key);
-  const SQL = await loadSqlite();
-  const db = new SQL.Database(databaseBytes);
-
+  let db;
   try {
+    const SQL = await loadSqlite();
+    db = new SQL.Database(databaseBytes);
     ensureSchemaUpgrades(db);
     return operation(db);
   } finally {
-    db.close();
+    try { db?.close(); } finally { databaseBytes.fill(0); }
   }
 }
 
@@ -1363,13 +1495,19 @@ module.exports = {
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,
+  verifyEncryptedVaultPayload,
   rekeyEncryptedVaultFile,
   getCredentials,
   getCredentialsForExport,
   getCredentialById,
+  getCredentialPasswordHistory,
+  getVaultHealth,
+  getDuplicateReview,
+  resolveDuplicateReview,
   addCredential,
   updateCredential,
   deleteCredential,
+  manageCredentialTrash,
   deleteCredentialsByGroups,
   toggleFavorite,
   getCategories,

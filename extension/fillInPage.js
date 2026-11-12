@@ -17,6 +17,8 @@ function slvFillInPage(expectedOrigin, credentials, options) {
     const view = doc.defaultView;
     const username = credentials && typeof credentials.username === "string" ? credentials.username : "";
     const password = credentials && typeof credentials.password === "string" ? credentials.password : "";
+    const target = opts.targetInput;
+    if (target && (target.ownerDocument !== doc || !target.isConnected || !target.form)) return { status: "blocked" };
 
     const TEXT_TYPES = ["", "text", "email", "tel"];
     const NOT_A_LOGIN_FIELD = /search|newsletter|subscribe|coupon|promo|zip|postal|captcha|otp|verif|code/i;
@@ -37,6 +39,7 @@ function slvFillInPage(expectedOrigin, credentials, options) {
     function isUsable(el) {
       return !el.disabled && !el.readOnly && !isHidden(el);
     }
+    if (target && !isUsable(target)) return { status: "blocked" };
 
     function autocompleteOf(el) {
       return (el.getAttribute("autocomplete") || "").toLowerCase();
@@ -93,7 +96,7 @@ function slvFillInPage(expectedOrigin, credentials, options) {
     function findPasswordInput() {
       const all = Array.prototype.slice
         .call(doc.querySelectorAll('input[type="password"]'))
-        .filter(isUsable);
+        .filter(input => isUsable(input) && (!target || input.form === target.form));
       const candidates = all.filter((input) => {
         if (autocompleteOf(input).indexOf("new-password") !== -1) return false;
         return all.filter((other) => other.form === input.form).length === 1;
@@ -132,10 +135,10 @@ function slvFillInPage(expectedOrigin, credentials, options) {
     // First step of a two-step login: a username/email field with no password
     // field on the page yet.
     function findUsernameOnly() {
-      if (doc.querySelector('input[type="password"]')) return null;
+      if (target ? target.form.querySelector('input[type="password"]') : doc.querySelector('input[type="password"]')) return null;
       const found = Array.prototype.slice
         .call(doc.querySelectorAll("input"))
-        .filter((input) => isTextLike(input) && isUsable(input) && looksLikeLoginName(input));
+        .filter((input) => (!target || input.form === target.form) && isTextLike(input) && isUsable(input) && looksLikeLoginName(input));
       return found.length === 1 ? found[0] : null;
     }
 
@@ -201,5 +204,15 @@ function slvFillInPage(expectedOrigin, credentials, options) {
     return result;
   }
 
+  if (options && options.inlineToken) {
+    const context = globalThis.slvInlineContext;
+    if (!context || context.token !== options.inlineToken || context.expires <= Date.now() ||
+        context.url !== location.href || !context.target?.isConnected || context.target.form !== context.form ||
+        !context.form?.isConnected || new URL(context.form.action || location.href, location.href).origin !== location.origin) {
+      return { status: "blocked" };
+    }
+    globalThis.slvInlineContext = null;
+    return fillLoginForm(document, credentials, { ...options, targetInput: context.target });
+  }
   return fillLoginForm(document, credentials, options);
 }

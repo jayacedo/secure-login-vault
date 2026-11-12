@@ -63,7 +63,7 @@ function connect(pipeName) {
         whenClosed: () => new Promise((res) => (closed ? res() : socket.once("close", res))),
         request(message, timeoutMs = 5000) {
           return new Promise((res) => {
-            const id = nonce();
+            const id = message.id || nonce();
             const timer = setTimeout(() => {
               waiting.delete(id);
               res(undefined);
@@ -83,10 +83,10 @@ function connect(pipeName) {
 
 // Pairing with the code shown in the app. Returns the app's answers, whether the app's
 // proof checked out, and the secret this side derived.
-async function pair(conn, code) {
+async function pair(conn, code, options = {}) {
   const codeBytes = decodeCode(code);
   const ne = nonce();
-  const begin = await conn.request({ type: "pair-begin", nonceE: ne });
+  const begin = await conn.request({ type: "pair-begin", nonceE: ne, ...options });
   if (!begin || begin.ok !== true) return { begin };
   const key = proofs.pairKey(codeBytes);
   const appOk = begin.appProof === proofs.app(key, "pair", ne, begin.nonceA);
@@ -97,11 +97,12 @@ async function pair(conn, code) {
 // The per-connection proof with a secret.
 async function authenticate(conn, secret) {
   const ne = nonce();
-  const begin = await conn.request({ type: "auth-begin", nonceE: ne });
-  if (!begin || begin.ok !== true) return { begin };
-  const appOk = begin.appProof === proofs.app(secret, "auth", ne, begin.nonceA);
-  const finish = await conn.request({ type: "auth-finish", nonceE: ne, nonceA: begin.nonceA, extProof: proofs.ext(secret, "auth", ne, begin.nonceA) });
-  return { begin, finish, appOk };
+  const begin = await conn.request({ type: "auth-begin", nonceE: ne, pairingId: mac(secret, "slv-pairing-id-v1") });
+  if (!begin || begin.ok !== true) return { begin, finish: begin, appOk: false };
+  const appOk = begin.appProof === proofs.app(secret, "auth-v2", ne, begin.nonceA);
+  const finish = await conn.request({ type: "auth-finish", nonceE: ne, nonceA: begin.nonceA, extProof: proofs.ext(secret, "auth-v2", ne, begin.nonceA) });
+  if (appOk && finish?.ok) require("./secureTestClient").secureClient(conn, secret, ne, begin.nonceA);
+  return { begin, finish, appOk, nonceE: ne };
 }
 
 module.exports = { connect, pair, authenticate, nonce, decodeCode };

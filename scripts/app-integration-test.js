@@ -176,17 +176,13 @@ async function main() {
   mainWindow.webContents.reload();
   await new Promise((resolve) => mainWindow.webContents.once("did-finish-load", resolve));
 
-  await check("UI: the Sign in button on a credential row opens and fills the site", async () => {
+  await check("UI: credential rows retain Copy URL and Open Website without the removed Sign in action", async () => {
     await waitForPage(
-      `!!document.querySelector('[data-action="sign-in"][data-id="${credentialId}"]')`,
-      "the Sign in button on the credential row"
+      `!!document.querySelector('[data-action="open-url"][data-id="${credentialId}"]')`,
+      "the Open Website button on the credential row"
     );
-    posts.length = 0;
-    await pageValue(`document.querySelector('[data-action="sign-in"][data-id="${credentialId}"]').click()`);
-    await waitFor(() => posts.length >= 1, 12000, "the login POST from the button");
-    assert.deepEqual(posts[0], { path: "/wp-login.php", fields: { log: "wp-admin", pwd: WP_PASS } });
-    await waitForPage(`!!document.querySelector(".toast-message")`, "the confirmation toast");
-    assert.match(await pageValue(`document.querySelector(".toast-message").textContent`), /Opening 127\.0\.0\.1/);
+    assert.equal(await pageValue(`!!document.querySelector('[data-action="copy-url"][data-id="${credentialId}"]')`), true);
+    assert.equal(await pageValue(`!!document.querySelector('[data-action="sign-in"][data-id="${credentialId}"]')`), false);
   });
 
   await check("UI: client cards show Sign in only for sites with an address and a login", async () => {

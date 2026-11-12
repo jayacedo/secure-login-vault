@@ -18,6 +18,7 @@ const DEFAULT_LIMITS = Object.freeze({
   maxMessageBytes: 64 * 1024, // requests are tiny; far below the 1 MiB framing ceiling
   maxMessagesPerSecond: 50,
   firstMessageTimeoutMs: 5000,
+  authTimeoutMs: 45000, // pinging cannot hold an unauthenticated slot indefinitely
   idleTimeoutMs: 10 * 60 * 1000
 });
 
@@ -28,6 +29,7 @@ const isValidId = (id) => id === undefined || typeof id === "string" || typeof i
 function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
   const config = { ...DEFAULT_LIMITS, ...limits };
   const connections = new Set();
+  const contexts = new Map();
   let server = null;
 
   function send(socket, message) {
@@ -41,6 +43,27 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
   }
 
   async function handleMessage(socket, context, value) {
+    if (socket.destroyed || context.signal.aborted) return;
+    if (value?.type === "secure") {
+      try {
+        if (!context.channel || !context.authenticated || !context.isPairingCurrent?.()) throw new Error("No session");
+        const body = await context.channel.open(value);
+        // Handshakes cannot be nested, and a page cannot choose a response/request ID.
+        if (!["ping", "channel-check", "find-logins", "get-login", "save-login", "inspect-login"].includes(body.type) || hasOwn(body, "id")) throw new Error("Invalid request");
+        context.secureRequest = true;
+        let result;
+        try { result = await handlers[body.type]({ ...body, id: value.id }, context); }
+        catch { result = { error: "internal-error" }; }
+        finally { context.secureRequest = false; }
+        if (socket.destroyed || context.signal.aborted || !context.isPairingCurrent()) { socket.destroy(); return; }
+        const reply = isPlainObject(result) && typeof result.error === "string"
+          ? { id: value.id, ok: false, error: result.error } : { ...(isPlainObject(result) ? result : {}), id: value.id, ok: true };
+        send(socket, await context.channel.seal(reply, value.id));
+      } catch { socket.destroy(); }
+      return;
+    }
+    // A completed session never accepts a plaintext application request or renegotiation.
+    if (context.channel) { socket.destroy(); return; }
     if (!isPlainObject(value) || !isValidId(value.id)) {
       send(socket, { ok: false, error: "bad-message" });
       return;
@@ -76,6 +99,10 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     // Per-connection state the handlers may read and set (e.g. "authenticated").
     const abort = new AbortController();
     const context = { authenticated: false, signal: abort.signal };
+    contexts.set(socket, context);
+    const authTimer = setTimeout(() => { if (!context.authenticated) socket.destroy(); }, config.authTimeoutMs);
+    let work = Promise.resolve();
+    let queued = 0;
 
     let windowStart = Date.now();
     let windowCount = 0;
@@ -105,7 +132,9 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
           return;
         }
 
-        handleMessage(socket, context, value);
+        if (++queued > 16) { socket.destroy(); return; }
+        // Serialize each connection: counters, authentication and confirmations cannot race.
+        work = work.then(() => handleMessage(socket, context, value)).catch(() => socket.destroy()).finally(() => { queued -= 1; });
       },
       onError() {
         socket.destroy(); // malformed or oversized: drop the connection
@@ -116,10 +145,13 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     socket.on("error", () => {}); // "close" follows
     socket.on("close", () => {
       context.authenticated = false;
+      context.channel?.destroy();
       abort.abort();
       clearTimeout(firstMessageTimer);
       clearTimeout(idleTimer);
+      clearTimeout(authTimer);
       connections.delete(socket);
+      contexts.delete(socket);
     });
   }
 
@@ -131,7 +163,7 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
       return new Promise((resolve, reject) => {
         const candidate = net.createServer(onConnection);
         candidate.once("error", reject);
-        candidate.listen(pipeName, () => {
+        candidate.listen({ path: pipeName, readableAll: false, writableAll: false, exclusive: true }, () => {
           candidate.removeListener("error", reject);
           candidate.on("error", () => {});
           server = candidate;
@@ -150,9 +182,13 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     },
 
     // Drops every open connection but keeps listening (e.g. after unpairing).
-    closeConnections() {
-      for (const socket of connections) socket.destroy();
-      connections.clear();
+    closeConnections(pairingId) {
+      for (const socket of connections) {
+        if (pairingId !== undefined && contexts.get(socket)?.pairingId !== pairingId) continue;
+        socket.destroy();
+        connections.delete(socket);
+        contexts.delete(socket);
+      }
     },
 
     isRunning: () => server !== null,

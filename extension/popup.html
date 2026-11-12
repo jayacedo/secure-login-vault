@@ -39,8 +39,30 @@
       </section>
 
       <button id="recheck" type="button">Check again</button>
+      <details class="offer-settings">
+        <summary>Inline fill suggestions</summary>
+        <label><input id="inline-enabled" type="checkbox" disabled /> Show SLV beside login fields</label>
+        <p class="note">Optional website access adds an account chooser to supported login forms. Choose an account to fill; SLV never submits it.</p>
+        <p id="inline-note" class="note" role="status"></p>
+      </details>
+      <details class="offer-settings">
+        <summary>Automatic save offers</summary>
+        <label><input id="offers-enabled" type="checkbox" disabled /> Offer to save submitted logins</label>
+        <p class="note">Optional website access lets SLV show Save or Update after you submit a login form.</p>
+        <button id="offers-allow" type="button" hidden>Allow offers on this site again</button>
+        <p id="offers-note" class="note" role="status"></p>
+      </details>
       <button id="forget" class="quiet" type="button" hidden>Forget pairing</button>
+      <details class="offer-settings">
+        <summary>Pairing security</summary>
+        <label><input id="session-pairing" type="checkbox" disabled /> Keep pairing only for this browser session</label>
+        <p id="session-pairing-note" class="note" role="status"></p>
+      </details>
     </main>
+    <script src="browserApi.js"></script>
     <script src="popup.js"></script>
+    <script src="offerSettings.js"></script>
+    <script src="inlineSettings.js"></script>
+    <script src="pairingSettings.js"></script>
   </body>
 </html>

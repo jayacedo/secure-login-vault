@@ -114,6 +114,28 @@ async function main() {
   const brief = (reply) => ({ ok: reply.ok, error: reply.error });
 
   try {
+    await check("inspection requires authentication, secure origin and valid input; it never prompts or writes", async () => {
+      reset();
+      const raw = await connect(pipeName);
+      const request = { type: "inspect-login", url: "https://example.com", username: "alice", password: "old-pw" };
+      assert.equal((await raw.request(request)).error, "not-authenticated");
+      raw.close();
+      const conn = await session();
+      for (const [fields, mode] of [[{}, "unchanged"], [{ password: "new-pw" }, "update"], [{ url: "https://elsewhere.test" }, "add"], [{ username: "carol" }, "add"]]) {
+        const reply = await conn.request({ ...request, ...fields });
+        assert.equal(reply.mode, mode);
+        assert.equal("password" in reply || "username" in reply, false);
+      }
+      assert.equal((await conn.request({ ...request, password: "" })).error, "bad-message");
+      assert.equal((await conn.request({ ...request, url: "http://example.com" })).error, "insecure-page");
+      state.locked = true;
+      assert.equal((await conn.request(request)).error, "locked");
+      state.locked = false;
+      for (let i = 0; i < 40; i++) await conn.request(request);
+      assert.equal((await conn.request(request)).error, "rate-limited");
+      assert.equal(state.prompts.length + state.writes.length, 0);
+    });
+
     await check("refused until the connection has proven itself", async () => {
       reset();
       const conn = await connect(pipeName);

@@ -92,7 +92,7 @@ function connect(pipeName) {
         close: () => socket.destroy(),
         request(message, timeoutMs = 5000) {
           return new Promise((res) => {
-            const id = nonce();
+            const id = message.id || nonce();
             const timer = setTimeout(() => {
               waiting.delete(id);
               res(undefined);
@@ -114,12 +114,7 @@ function connect(pipeName) {
 // The extension's side of the per-connection proof, over the wire. Returns what the
 // app answered and whether the app's proof checked out.
 async function authenticate(conn, secret) {
-  const ne = nonce();
-  const begin = await conn.request({ type: "auth-begin", nonceE: ne });
-  if (!begin || begin.ok !== true) return { begin };
-  const appOk = begin.appProof === client.appProof(secret, "auth", ne, begin.nonceA);
-  const finish = await conn.request({ type: "auth-finish", nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(secret, "auth", ne, begin.nonceA) });
-  return { begin, finish, appOk };
+  return require("./pairingTestClient").authenticate(conn, secret);
 }
 
 async function pairOverPipe(conn, code) {
@@ -146,7 +141,7 @@ async function main() {
   };
 
   // ── The code ────────────────────────────────────────────────────────────────
-  await check("a code round-trips and is shown in groups of four", () => {
+  await check("a code round-trips and is shown in groups of four", async () => {
     for (let i = 0; i < 50; i += 1) {
       const bytes = crypto.randomBytes(16);
       const raw = encodeCode(bytes);
@@ -159,7 +154,7 @@ async function main() {
     }
   });
 
-  await check("malformed codes are rejected", () => {
+  await check("malformed codes are rejected", async () => {
     const good = formatCode(encodeCode(crypto.randomBytes(16)));
     const raw = good.replace(/-/g, "");
     assert.equal(parseCode(raw.slice(1)), null, "too short");
@@ -173,7 +168,7 @@ async function main() {
     assert.equal(parseCode(`${raw.slice(0, -1)}9`), null, "non-zero padding bits");
   });
 
-  await check("codes are random and each start replaces the last", () => {
+  await check("codes are random and each start replaces the last", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const a = pairing.startPairing().code;
     const b = pairing.startPairing().code;
@@ -183,7 +178,7 @@ async function main() {
   });
 
   // ── Pairing ─────────────────────────────────────────────────────────────────
-  await check("pairing succeeds with the right code; both sides derive the same secret", () => {
+  await check("pairing succeeds with the right code; both sides derive the same secret", async () => {
     const storage = memoryStorage();
     const pairing = createPairing({ storage });
     assert.equal(pairing.isPaired(), false);
@@ -194,17 +189,17 @@ async function main() {
     assert.deepEqual(run.finish, { paired: true });
     assert.equal(pairing.isPaired(), true);
     assert.equal(pairing.isPairingActive(), false, "the code is used up");
-    assert.equal(storage.box.value.secret, run.secret.toString("hex"), "app stored what the extension derived");
+    assert.equal(storage.box.value.pairings[0].secret, run.secret.toString("hex"), "app stored what the extension derived");
   });
 
-  await check("a code works only once", () => {
+  await check("a code works only once", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const { code } = pairing.startPairing();
     assert.equal(pairDirectly(pairing, code).finish.paired, true);
     assert.equal(pairDirectly(pairing, code).begin.error, "no-pairing");
   });
 
-  await check("no code shown: pairing is refused", () => {
+  await check("no code shown: pairing is refused", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     assert.equal(pairing.pairBegin({ nonceE: nonce() }, {}).error, "no-pairing");
     pairing.startPairing();
@@ -212,7 +207,7 @@ async function main() {
     assert.equal(pairing.pairBegin({ nonceE: nonce() }, {}).error, "no-pairing");
   });
 
-  await check("a code expires", () => {
+  await check("a code expires", async () => {
     const clock = fakeClock();
     const pairing = createPairing({ storage: memoryStorage(), now: clock.now });
     const { code } = pairing.startPairing();
@@ -223,7 +218,7 @@ async function main() {
     assert.equal(pairDirectly(pairing, code).begin.error, "no-pairing");
   });
 
-  await check("a code that expires between the two messages is refused", () => {
+  await check("a code that expires between the two messages is refused", async () => {
     const clock = fakeClock();
     const pairing = createPairing({ storage: memoryStorage(), now: clock.now });
     const { code } = pairing.startPairing();
@@ -237,7 +232,7 @@ async function main() {
     assert.equal(pairing.isPaired(), false);
   });
 
-  await check("an impostor extension without the code is refused and nothing is stored", () => {
+  await check("an impostor extension without the code is refused and nothing is stored", async () => {
     const storage = memoryStorage();
     const pairing = createPairing({ storage });
     const { code } = pairing.startPairing();
@@ -251,14 +246,14 @@ async function main() {
     assert.equal(pairing.isPairingActive(), true, "one bad attempt does not kill the code");
   });
 
-  await check("a tampered proof is refused", () => {
+  await check("a tampered proof is refused", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const { code } = pairing.startPairing();
     assert.equal(pairDirectly(pairing, code, {}, { tamperProof: true }).finish.error, "bad-proof");
     assert.equal(pairing.isPaired(), false);
   });
 
-  await check("too many bad attempts burn the code, even for the real extension", () => {
+  await check("too many bad attempts burn the code, even for the real extension", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const { code } = pairing.startPairing();
     for (let i = 0; i < 10; i += 1) pairDirectly(pairing, code, {}, { tamperProof: true });
@@ -266,7 +261,7 @@ async function main() {
     assert.equal(pairDirectly(pairing, code).begin.error, "no-pairing");
   });
 
-  await check("the finish step is bound to its own connection, nonces and kind", () => {
+  await check("the finish step is bound to its own connection, nonces and kind", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const { code } = pairing.startPairing();
     const key = client.pairKey(parseCode(code));
@@ -293,7 +288,7 @@ async function main() {
     assert.equal(pairDirectly(pairing, code, {}).finish.paired, true);
   });
 
-  await check("a handshake that is not finished in time goes stale", () => {
+  await check("a handshake that is not finished in time goes stale", async () => {
     const clock = fakeClock();
     const pairing = createPairing({ storage: memoryStorage(), now: clock.now });
     const { code } = pairing.startPairing();
@@ -305,7 +300,7 @@ async function main() {
     assert.equal(pairing.pairFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(key, "pair", ne, begin.nonceA) }, ctx).error, "bad-proof");
   });
 
-  await check("malformed fields are rejected, never thrown", () => {
+  await check("malformed fields are rejected, never thrown", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     pairing.startPairing();
     const ctx = {};
@@ -314,11 +309,11 @@ async function main() {
       assert.equal(pairing.authBegin({ nonceE: bad }, ctx).error, "bad-message");
       assert.equal(pairing.pairFinish({ nonceE: nonce(), nonceA: bad, extProof: "a".repeat(64) }, ctx).error, "bad-message");
       assert.equal(pairing.pairFinish({ nonceE: nonce(), nonceA: nonce(), extProof: bad }, ctx).error, "bad-message");
-      assert.equal(pairing.authFinish({ nonceE: nonce(), nonceA: nonce(), extProof: bad }, ctx).error, "bad-message");
+      assert.equal((await pairing.authFinish({ nonceE: nonce(), nonceA: nonce(), extProof: bad }, ctx)).error, "bad-message");
     }
   });
 
-  await check("too many open handshakes: the app says busy instead of growing", () => {
+  await check("too many open handshakes: the app says busy instead of growing", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     pairing.startPairing();
     let busy = 0;
@@ -326,7 +321,7 @@ async function main() {
     assert.equal(busy, 12, "8 slots, the rest are refused");
   });
 
-  await check("a storage failure means not paired", () => {
+  await check("a storage failure means not paired", async () => {
     const storage = memoryStorage();
     storage.box.failSave = true;
     const pairing = createPairing({ storage });
@@ -336,57 +331,57 @@ async function main() {
   });
 
   // ── Per-connection proof ────────────────────────────────────────────────────
-  await check("auth before pairing says not-paired", () => {
+  await check("auth before pairing says not-paired", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     assert.equal(pairing.authBegin({ nonceE: nonce() }, {}).error, "not-paired");
-    assert.equal(pairing.authFinish({ nonceE: nonce(), nonceA: nonce(), extProof: "a".repeat(64) }, {}).error, "not-paired");
+    assert.equal((await pairing.authFinish({ nonceE: nonce(), nonceA: nonce(), extProof: "a".repeat(64) }, {})).error, "not-paired");
   });
 
-  await check("auth: right secret authenticates the connection, both ways", () => {
+  await check("auth: right secret authenticates the connection, both ways", async () => {
     const storage = memoryStorage();
     const pairing = createPairing({ storage });
     const run = pairDirectly(pairing, pairing.startPairing().code);
     const ctx = { authenticated: false };
     const ne = nonce();
     const begin = pairing.authBegin({ nonceE: ne }, ctx);
-    assert.equal(begin.appProof, client.appProof(run.secret, "auth", ne, begin.nonceA), "the app proves it holds the secret");
-    assert.deepEqual(pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(run.secret, "auth", ne, begin.nonceA) }, ctx), { authenticated: true });
+    assert.equal(begin.appProof, client.appProof(run.secret, "auth-v2", ne, begin.nonceA), "the app proves it holds the secret");
+    assert.deepEqual(await pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(run.secret, "auth-v2", ne, begin.nonceA) }, ctx), { authenticated: true });
     assert.equal(ctx.authenticated, true);
   });
 
-  await check("auth: a wrong secret never authenticates", () => {
+  await check("auth: a wrong secret never authenticates", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     pairDirectly(pairing, pairing.startPairing().code);
     const ctx = { authenticated: false };
     const ne = nonce();
     const begin = pairing.authBegin({ nonceE: ne }, ctx);
     const fake = crypto.randomBytes(32);
-    assert.notEqual(begin.appProof, client.appProof(fake, "auth", ne, begin.nonceA));
-    assert.equal(pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(fake, "auth", ne, begin.nonceA) }, ctx).error, "bad-proof");
+    assert.notEqual(begin.appProof, client.appProof(fake, "auth-v2", ne, begin.nonceA));
+    assert.equal((await pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(fake, "auth-v2", ne, begin.nonceA) }, ctx)).error, "bad-proof");
     assert.equal(ctx.authenticated, false);
   });
 
-  await check("auth: a recorded handshake cannot be replayed on another connection", () => {
+  await check("auth: a recorded handshake cannot be replayed on another connection", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const run = pairDirectly(pairing, pairing.startPairing().code);
     // a full honest handshake on connection 1, recorded by an eavesdropper
     const first = { authenticated: false };
     const ne = nonce();
     const begin = pairing.authBegin({ nonceE: ne }, first);
-    const proof = client.extProof(run.secret, "auth", ne, begin.nonceA);
-    assert.equal(pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: proof }, first).authenticated, true);
+    const proof = client.extProof(run.secret, "auth-v2", ne, begin.nonceA);
+    assert.equal((await pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: proof }, first)).authenticated, true);
 
     // replayed verbatim on a new connection
     const second = { authenticated: false };
-    assert.equal(pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: proof }, second).error, "bad-proof");
+    assert.equal((await pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: proof }, second)).error, "bad-proof");
     // replaying the old begin gets a new app nonce, so the old proof no longer fits
     const begin2 = pairing.authBegin({ nonceE: ne }, second);
     assert.notEqual(begin2.nonceA, begin.nonceA);
-    assert.equal(pairing.authFinish({ nonceE: ne, nonceA: begin2.nonceA, extProof: proof }, second).error, "bad-proof");
+    assert.equal((await pairing.authFinish({ nonceE: ne, nonceA: begin2.nonceA, extProof: proof }, second)).error, "bad-proof");
     assert.equal(second.authenticated, false);
   });
 
-  await check("a pairing handshake cannot be used as an auth handshake (or the reverse)", () => {
+  await check("a pairing handshake cannot be used as an auth handshake (or the reverse)", async () => {
     const pairing = createPairing({ storage: memoryStorage() });
     const run = pairDirectly(pairing, pairing.startPairing().code);
     const { code } = pairing.startPairing();
@@ -395,7 +390,7 @@ async function main() {
     const ne = nonce();
     const begin = pairing.pairBegin({ nonceE: ne }, ctx);
     // answer a pair-begin with an auth-finish using the real secret
-    assert.equal(pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(run.secret, "auth", ne, begin.nonceA) }, ctx).error, "bad-proof");
+    assert.equal((await pairing.authFinish({ nonceE: ne, nonceA: begin.nonceA, extProof: client.extProof(run.secret, "auth-v2", ne, begin.nonceA) }, ctx)).error, "bad-proof");
     assert.equal(ctx.authenticated, false);
     // answer an auth-begin with a pair-finish
     const ne2 = nonce();
@@ -404,7 +399,7 @@ async function main() {
   });
 
   // ── Remembering and forgetting ──────────────────────────────────────────────
-  await check("the pairing survives a restart; unpair forgets it", () => {
+  await check("the pairing survives a restart; unpair forgets it", async () => {
     const storage = memoryStorage();
     const first = createPairing({ storage });
     pairDirectly(first, first.startPairing().code);
@@ -417,7 +412,7 @@ async function main() {
     assert.equal(first.authBegin({ nonceE: nonce() }, {}).error, "not-paired");
   });
 
-  await check("unreadable or malformed stored data means not paired", () => {
+  await check("unreadable or malformed stored data means not paired", async () => {
     for (const value of [{ secret: "nothex" }, { secret: "ab" }, { secret: 5 }, {}, "x", []]) {
       assert.equal(createPairing({ storage: memoryStorage(value) }).isPaired(), false, JSON.stringify(value));
     }
@@ -425,7 +420,7 @@ async function main() {
     assert.equal(createPairing({ storage: throwing }).isPaired(), false);
   });
 
-  await check("a storage object is required", () => {
+  await check("a storage object is required", async () => {
     assert.throws(() => createPairing({}), /storage/);
     assert.throws(() => createPairing({ storage: { load() {} } }), /storage/);
   });
@@ -435,14 +430,14 @@ async function main() {
   const storage = memoryStorage();
   const pairing = createPairing({ storage });
   const handlers = createExtensionHandlers({ getAppVersion: () => "9.9.9", pairing });
-  handlers.secret = requireAuth(() => ({ value: "only for authenticated connections" }));
+  handlers["channel-check"] = requireAuth(() => ({ value: "only for authenticated connections" }));
   const bridge = createExtensionBridge({ pipeName, handlers });
   await bridge.start();
 
   try {
     await check("pipe: protected requests are refused before authentication", async () => {
       const conn = await connect(pipeName);
-      const refused = await conn.request({ type: "secret" });
+      const refused = await conn.request({ type: "channel-check" });
       assert.deepEqual({ ok: refused.ok, error: refused.error }, { ok: false, error: "not-authenticated" });
       assert.equal((await conn.request({ type: "ping" })).ok, true, "ping stays open");
       conn.close();
@@ -466,7 +461,7 @@ async function main() {
       const run = await authenticate(conn, secret);
       assert.equal(run.appOk, true, "the extension verified the app");
       assert.equal(run.finish.ok, true);
-      const reply = await conn.request({ type: "secret" });
+      const reply = await conn.request({ type: "channel-check" });
       assert.equal(reply.ok, true);
       assert.equal(reply.value, "only for authenticated connections");
       conn.close();
@@ -476,7 +471,7 @@ async function main() {
       const authed = await connect(pipeName);
       await authenticate(authed, secret);
       const other = await connect(pipeName);
-      assert.equal((await other.request({ type: "secret" })).error, "not-authenticated");
+      assert.equal((await other.request({ type: "channel-check" })).error, "not-authenticated");
       authed.close();
       other.close();
     });
@@ -486,7 +481,7 @@ async function main() {
       const run = await authenticate(conn, crypto.randomBytes(32));
       assert.equal(run.appOk, false);
       assert.equal(run.finish.ok, false);
-      assert.equal((await conn.request({ type: "secret" })).error, "not-authenticated");
+      assert.equal((await conn.request({ type: "channel-check" })).error, "not-authenticated");
       conn.close();
     });
 
@@ -495,16 +490,18 @@ async function main() {
       const fakeApp = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
       const ne = nonce();
       const begin = fakeApp.authBegin({ nonceE: ne }, {});
-      assert.notEqual(begin.appProof, client.appProof(secret, "auth", ne, begin.nonceA));
+      assert.notEqual(begin.appProof, client.appProof(secret, "auth-v2", ne, begin.nonceA));
     });
 
-    await check("pipe: a second pairing replaces the first secret", async () => {
+    await check("pipe: a second pairing preserves the first secret", async () => {
       const conn = await connect(pipeName);
       const run = await pairOverPipe(conn, pairing.startPairing().code);
       assert.equal(run.finish.paired, true);
       assert.notDeepEqual(run.secret, secret);
-      assert.equal((await authenticate(conn, secret)).finish.ok, false, "the old secret is dead");
-      assert.equal((await authenticate(conn, run.secret)).finish.ok, true);
+      assert.equal((await authenticate(conn, secret)).finish.ok, true, "the first browser stays paired");
+      const second = await connect(pipeName);
+      assert.equal((await authenticate(second, run.secret)).finish.ok, true);
+      second.close();
       secret = run.secret;
       conn.close();
     });
@@ -512,7 +509,7 @@ async function main() {
     await check("pipe: unpairing ends the access and drops open connections", async () => {
       const conn = await connect(pipeName);
       assert.equal((await authenticate(conn, secret)).finish.ok, true);
-      assert.equal((await conn.request({ type: "secret" })).ok, true);
+      assert.equal((await conn.request({ type: "channel-check" })).ok, true);
 
       pairing.unpair();
       bridge.closeConnections();
@@ -522,7 +519,7 @@ async function main() {
       const again = await connect(pipeName);
       const run = await authenticate(again, secret);
       assert.equal(run.begin.error, "not-paired");
-      assert.equal((await again.request({ type: "secret" })).error, "not-authenticated");
+      assert.equal((await again.request({ type: "channel-check" })).error, "not-authenticated");
       again.close();
     });
 

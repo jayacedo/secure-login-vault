@@ -113,7 +113,7 @@ async function main() {
   assert.equal(parseRegValue(""), null);
 
   // ── Browsers and keys ──────────────────────────────────────────────────────
-  assert.deepEqual(BROWSERS.map((b) => b.id), ["chrome", "edge"]);
+  assert.deepEqual(BROWSERS.map((b) => b.id), ["chrome", "edge", "firefox"]);
   assert.equal(registration.registryKey(BROWSERS[0], HOST_NAME), "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.securelogin.vault");
   assert.equal(registration.registryKey(BROWSERS[1], HOST_NAME), "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.securelogin.vault");
   assert.ok(BROWSERS.every((b) => b.keyRoot.startsWith("HKCU\\")), "per-user keys only, never HKLM");
@@ -127,10 +127,10 @@ async function main() {
 
     // nothing yet
     let report = await status({ installDir, allowedExtensionIds: IDS, runReg: reg.runReg });
-    assert.deepEqual(report.browsers.map((b) => [b.browser, b.registered, b.ok]), [["chrome", false, false], ["edge", false, false]]);
+    assert.deepEqual(report.browsers.map((b) => [b.browser, b.registered, b.ok]), [["chrome", false, false], ["edge", false, false], ["firefox", false, false]]);
 
     const result = await register(args);
-    assert.deepEqual(result.registered, ["chrome", "edge"]);
+    assert.deepEqual(result.registered, ["chrome", "edge", "firefox"]);
     assert.equal(result.launcherPath, path.join(installDir, "com.securelogin.vault.bat"));
     assert.equal(result.manifestPath, path.join(installDir, "com.securelogin.vault.json"));
 
@@ -142,7 +142,7 @@ async function main() {
 
     // exactly two registry writes, for the right keys, with the manifest path as data and no shell involved
     const adds = reg.calls.filter((c) => c[0] === "add");
-    assert.equal(adds.length, 2);
+    assert.equal(adds.length, 3);
     assert.deepEqual(adds[0], ["add", registration.registryKey(BROWSERS[0], HOST_NAME), "/ve", "/t", "REG_SZ", "/d", result.manifestPath, "/f"]);
     assert.deepEqual(adds[1], ["add", registration.registryKey(BROWSERS[1], HOST_NAME), "/ve", "/t", "REG_SZ", "/d", result.manifestPath, "/f"]);
 
@@ -151,12 +151,12 @@ async function main() {
 
     // registering again is harmless and refreshes the files
     await register(args);
-    assert.equal(reg.values.size, 2);
+    assert.equal(reg.values.size, 3);
 
     // status notices problems
     fs.writeFileSync(result.manifestPath, JSON.stringify({ ...manifest, allowed_origins: ["chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba/"] }));
     report = await status({ installDir, allowedExtensionIds: IDS, runReg: reg.runReg });
-    assert.ok(report.browsers.every((b) => b.problems.includes("allowed extensions differ from this version")));
+    assert.ok(report.browsers.filter(b => b.browser !== "firefox").every((b) => b.problems.includes("allowed extensions differ from this version")));
 
     await register(args);
     fs.rmSync(result.launcherPath);
@@ -174,7 +174,7 @@ async function main() {
     const bystander = path.join(installDir, "keep-me.txt");
     fs.writeFileSync(bystander, "not ours");
     const removed = await unregister({ installDir, runReg: reg.runReg });
-    assert.deepEqual(removed.removed, ["chrome", "edge"]);
+    assert.deepEqual(removed.removed, ["chrome", "edge", "firefox"]);
     assert.equal(reg.values.size, 0);
     assert.equal(fs.existsSync(result.manifestPath), false);
     assert.equal(fs.existsSync(result.launcherPath), false);
@@ -224,7 +224,7 @@ async function main() {
     try {
       const result = await register({ installDir, ...sources, allowedExtensionIds: IDS, hostName });
       for (const browser of BROWSERS) {
-        assert.equal(parseRegValue(query(browser)), result.manifestPath, `${browser.id}: real registry holds the manifest path`);
+        assert.equal(parseRegValue(query(browser)), browser.id === "firefox" ? result.firefoxManifestPath : result.manifestPath, `${browser.id}: real registry holds the manifest path`);
       }
       const report = await status({ installDir, allowedExtensionIds: IDS, hostName });
       assert.ok(report.browsers.every((b) => b.ok), JSON.stringify(report));

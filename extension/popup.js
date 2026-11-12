@@ -3,6 +3,7 @@
 // textContent; nothing is built from markup. The code is never stored by the popup:
 // it goes to the background worker and the field is cleared straight away.
 (function () {
+  const extensionApi = globalThis.SLVApi || chrome;
   const statusBox = document.getElementById("status");
   const title = document.getElementById("status-title");
   const detail = document.getElementById("status-detail");
@@ -41,8 +42,8 @@
   // anything that is not an http(s) page. Needs only the activeTab permission.
   function currentOrigin(callback) {
     try {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tab = !chrome.runtime.lastError && Array.isArray(tabs) ? tabs[0] : null;
+      extensionApi.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = !extensionApi.runtime.lastError && Array.isArray(tabs) ? tabs[0] : null;
         if (!tab || typeof tab.url !== "string") return callback("");
         try {
           const url = new URL(tab.url);
@@ -123,7 +124,7 @@
   function showResult(status) {
     setBusy(false);
 
-    if (chrome.runtime.lastError || !status || typeof status !== "object") {
+    if (extensionApi.runtime.lastError || !status || typeof status !== "object") {
       show("problem", "No answer", "The extension could not check the connection. Reload the extension and try again.");
       pairingBox.hidden = true;
       forgetButton.hidden = true;
@@ -145,7 +146,7 @@
   function ask(message, pendingTitle) {
     setBusy(true);
     show("checking", pendingTitle, "");
-    chrome.runtime.sendMessage(message, showResult);
+    extensionApi.runtime.sendMessage(message, showResult);
   }
 
   function check() {
@@ -161,9 +162,9 @@
     setBusy(true);
     fillNote.dataset.ok = "";
     fillNote.textContent = "Filling...";
-    chrome.runtime.sendMessage({ type: "fill", loginId: loginId }, (result) => {
+    extensionApi.runtime.sendMessage({ type: "fill", loginId: loginId }, (result) => {
       setBusy(false);
-      if (chrome.runtime.lastError || !result || typeof result !== "object") {
+      if (extensionApi.runtime.lastError || !result || typeof result !== "object") {
         fillNote.dataset.ok = "false";
         fillNote.textContent = "Could not fill. Reload the extension and try again.";
         return;
@@ -179,8 +180,8 @@
     setBusy(true);
     saveNote.dataset.ok = "";
     saveNote.textContent = "Saving... confirm in Secure Login Vault.";
-    chrome.runtime.sendMessage({ type: "save-login" }, (result) => {
-      if (chrome.runtime.lastError || !result || typeof result !== "object") {
+    extensionApi.runtime.sendMessage({ type: "save-login" }, (result) => {
+      if (extensionApi.runtime.lastError || !result || typeof result !== "object") {
         setBusy(false);
         saveNote.dataset.ok = "false";
         saveNote.textContent = "Could not save. Reload the extension and try again.";

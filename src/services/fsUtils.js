@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const fs = require("fs/promises");
+const { beforeVaultCommit } = require("./vaultOperationContext");
 
 // Writes JSON via a uniquely named temp file + rename. The temp name is unique
 // per call so a leftover file from an earlier crash can never block a save, and
@@ -10,6 +11,7 @@ async function writeJsonAtomic(filePath, value) {
 
   try {
     await fs.writeFile(temporaryPath, json, { encoding: "utf8", flag: "wx" });
+    beforeVaultCommit();
     await fs.rename(temporaryPath, filePath);
   } catch (error) {
     await fs.rm(temporaryPath, { force: true }).catch(() => {});

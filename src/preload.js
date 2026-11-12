@@ -25,13 +25,20 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   vault: {
+    checkHealth: () => ipcRenderer.invoke("vault:check-health"),
     getDashboardData: () => ipcRenderer.invoke("vault:get-dashboard-data")
   },
 
   credentials: {
+    getDuplicates: () => ipcRenderer.invoke("vault:duplicates-list"),
+    resolveDuplicates: choice => ipcRenderer.invoke("vault:duplicates-resolve", choice),
+    getDeleted:     () => ipcRenderer.invoke("vault:trash-list"),
+    restoreDeleted: id => ipcRenderer.invoke("vault:trash-restore", id),
+    deletePermanently: (id, confirmed) => ipcRenderer.invoke("vault:trash-delete", id, confirmed),
     getAll:         ()          => ipcRenderer.invoke("vault:get-credentials"),
     getAllForExport: ()         => ipcRenderer.invoke("vault:get-credentials-for-export"),
     getOne:         (id)        => ipcRenderer.invoke("vault:get-credential", id),
+    getPasswordHistory: (id)    => ipcRenderer.invoke("vault:get-password-history", id),
     add:            (data)      => ipcRenderer.invoke("vault:add-credential", data),
     update:         (id, d)     => ipcRenderer.invoke("vault:update-credential", id, d),
     remove:         (id)        => ipcRenderer.invoke("vault:delete-credential", id),
@@ -83,15 +90,22 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   settings: {
+    getAutomaticBackups: () => ipcRenderer.invoke("vault:auto-backup-status"),
+    configureAutomaticBackups: (options) => ipcRenderer.invoke("vault:auto-backup-configure", options),
+    chooseAutomaticBackupFolder: () => ipcRenderer.invoke("vault:auto-backup-folder"),
+    runAutomaticBackup: () => ipcRenderer.invoke("vault:auto-backup-now"),
     changeMasterPassword: (payload) => ipcRenderer.invoke("vault:change-master-password", payload),
     setPasswordHint:      (payload) => ipcRenderer.invoke("vault:set-password-hint", payload),
     getExtensionBridge:   ()        => ipcRenderer.invoke("vault:get-extension-bridge"),
+    getBrowserSetup:      ()        => ipcRenderer.invoke("vault:get-browser-setup"),
+    setupBrowserExtension: ()       => ipcRenderer.invoke("vault:setup-browser-extension"),
+    openExtensionFolder: (browser) => ipcRenderer.invoke("vault:open-extension-folder", browser),
     setExtensionBridge:   (payload) => ipcRenderer.invoke("vault:set-extension-bridge", payload),
     setExtensionAskBeforeFill: (payload) => ipcRenderer.invoke("vault:set-extension-ask-before-fill", payload),
     getExtensionPairing:  ()        => ipcRenderer.invoke("vault:get-extension-pairing"),
     startExtensionPairing: ()       => ipcRenderer.invoke("vault:start-extension-pairing"),
     cancelExtensionPairing: ()      => ipcRenderer.invoke("vault:cancel-extension-pairing"),
-    unpairExtension:      ()        => ipcRenderer.invoke("vault:unpair-extension"),
+    unpairExtension:      (id)      => ipcRenderer.invoke("vault:unpair-extension", id),
     createRecoveryKey:    (payload) => ipcRenderer.invoke("vault:create-recovery-key", payload),
     resetWithRecoveryKey: (payload) => ipcRenderer.invoke("vault:reset-with-recovery-key", payload),
     getAppInfo:           ()        => ipcRenderer.invoke("app:get-info"),

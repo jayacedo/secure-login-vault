@@ -1,5 +1,6 @@
 // ── Phase 10: Preference keys (must be at top — used before initTheme() call) ─
 const PREF_THEME         = "slv_theme";          // "light" | "dark" | "system"
+const PREF_TEXT_SIZE     = "slv_text_size";      // "small" | "default" | "large"
 const PREF_AUTO_LOCK     = "slv_auto_lock";       // seconds, 0 = off
 const PREF_BACKGROUND_LOCK = "slv_background_lock_grace"; // seconds, 0 = instant
 const PREF_CLIPBOARD     = "slv_clipboard_clear"; // seconds, 0 = off
@@ -10,11 +11,13 @@ const PREF_BRAND_NAME    = "slv_brand_name";   // string, defaults to DEFAULT_BR
 const PREF_BRAND_LOGO    = "slv_brand_logo";   // data URI, optional custom logo image
 const PREF_BRAND_ACCENT  = "slv_brand_accent"; // "#rrggbb", optional accent color override
 const DEFAULT_BRAND_NAME = "Secure Login Vault";
+let brandAccentPreview = null;
 
 const appShell = document.querySelector("#app-shell");
 
 // ── Phase 10: apply saved theme immediately to avoid flash ────────────────────
 initTheme();
+applyTextSize(getTextSize());
 
 // ── White-label: apply saved name/logo/accent immediately, same as theme ─────
 applyBranding();
@@ -47,6 +50,9 @@ document.addEventListener("keydown", (e) => {
       "#category-delete-modal-overlay",
       "#category-rename-modal-overlay",
       "#credential-modal-overlay",
+      "#vault-health-overlay",
+      "#credential-trash-overlay",
+      "#duplicate-review-overlay",
       "#client-modal-overlay",
       "#categories-modal-overlay",
       "#groups-modal-overlay",
@@ -58,6 +64,11 @@ document.addEventListener("keydown", (e) => {
       const el = document.querySelector(selector);
       if (el && el.classList.contains("is-open")) {
         el.classList.remove("is-open");
+        if (selector === "#credential-modal-overlay") closeCredentialModal();
+        if (selector === "#vault-health-overlay") closeVaultHealth();
+        if (selector === "#credential-trash-overlay") closeCredentialTrash();
+        if (selector === "#duplicate-review-overlay") closeDuplicateReview();
+        if (selector === "#settings-modal-overlay") closeSettingsModal();
 
         // Re-surface settings if categories sub-modal was closed that way
         if (selector === "#categories-modal-overlay" && _categoriesModalReopenSettings) {
@@ -393,7 +404,12 @@ function renderDashboard(state) {
       <section class="credential-panel" aria-labelledby="credential-list-title">
         <div class="panel-header">
           <h2 id="credential-list-title">Credentials</h2>
-          <span id="credential-count-label">${dashboardData.credentials.length} items</span>
+          <div class="health-dashboard-actions">
+            <span id="credential-count-label">${dashboardData.credentials.length} items</span>
+            <button class="icon-text-button" type="button" id="check-vault-health-btn">${renderShieldIcon()}<span>Check vault health</span></button>
+            <button class="icon-text-button" type="button" id="recently-deleted-btn">${renderTrashIcon()}<span>Recently Deleted</span></button>
+            <button class="icon-text-button" type="button" id="review-duplicates-btn">Review duplicates</button>
+          </div>
         </div>
         <div class="credential-table" role="table" aria-label="Credential list">
           <div class="credential-row credential-row-head" role="row">
@@ -413,6 +429,9 @@ function renderDashboard(state) {
 
   document.querySelector("#lock-vault-button").addEventListener("click", handleLockVault);
   document.querySelector("#add-credential-btn").addEventListener("click", () => openCredentialModal(null));
+  document.querySelector("#check-vault-health-btn").addEventListener("click", () => { vaultHealthFilter = "all"; openVaultHealth(); });
+  document.querySelector("#recently-deleted-btn").addEventListener("click", openCredentialTrash);
+  document.querySelector("#review-duplicates-btn").addEventListener("click", openDuplicateReview);
   document.querySelector("#manage-categories-btn").addEventListener("click", openManageCategoriesModal);
   document.querySelector("#open-client-vault-btn").addEventListener("click", () => renderClientVault(state));
   document.querySelector("#active-group-banner-clear").addEventListener("click", async () => {
@@ -497,13 +516,6 @@ function renderCredentialRow(credential, query = "") {
                   data-id="${credential.id}"
                   data-value="${escapeHtml(credential.websiteUrl || '')}">
             ${renderExternalLinkIcon()}
-          </button>
-          <button class="icon-button row-action-btn signin-action"
-                  type="button" title="Sign in (opens the site and fills your login)"
-                  aria-label="Sign in to ${escapeHtml(credential.websiteName || "this site")}"
-                  data-action="sign-in"
-                  data-id="${credential.id}">
-            ${renderSignInIcon()}
           </button>
         </span>` : ""}
       </span>
@@ -684,9 +696,10 @@ function bindCredentialActions() {
 
     if (action === "delete") {
       const name = btn.dataset.name;
-      if (confirm(`Delete "${name}"? This cannot be undone.`)) {
+      if (confirm(`Move "${name}" to Recently Deleted? You can restore it for 30 days.`)) {
         const res = await window.secureLoginVault.credentials.remove(id);
-        if (res.ok) refreshCredentials();
+        if (res.ok) { refreshCredentials(); showToast("Moved to Recently Deleted. Recover it within 30 days."); }
+        else showToast(res.message || "Could not delete the login.");
       }
     }
 
@@ -719,9 +732,6 @@ function bindCredentialActions() {
       if (val) window.open(resolveWebsiteUrl(val), "_blank");
     }
 
-    if (action === "sign-in") {
-      runSignIn({ kind: "credential", id }, btn);
-    }
   });
 }
 
@@ -1055,6 +1065,11 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  closeDuplicateReview();
+  closeCredentialTrash();
+  closeSettingsModal();
+  closeVaultHealth();
+  closeCredentialModal();
   await window.secureLoginVault.auth.lockVault();
 
   // Reset search state on lock
@@ -1415,6 +1430,190 @@ function openQrLightbox(dataUri) {
 
 // ─── Credential Modal ─────────────────────────────────────────────────────────
 
+let trashRequest = 0;
+function closeCredentialTrash() {
+  trashRequest++;
+  const overlay = document.querySelector("#credential-trash-overlay");
+  if (overlay) { overlay.classList.remove("is-open"); overlay.replaceChildren(); }
+  document.querySelector("#recently-deleted-btn")?.focus();
+}
+
+async function openCredentialTrash() {
+  const request = ++trashRequest;
+  let overlay = document.querySelector("#credential-trash-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div"); overlay.id = "credential-trash-overlay"; overlay.className = "modal-overlay";
+    overlay.addEventListener("keydown", event => {
+      if (event.key !== "Tab") return;
+      const buttons = [...overlay.querySelectorAll("button:not(:disabled)")];
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    });
+    document.body.append(overlay);
+  }
+  overlay.innerHTML = `<div class="modal-container trash-container" role="dialog" aria-modal="true" aria-labelledby="trash-title">
+    <div class="modal-header"><h2 id="trash-title">Recently Deleted</h2><button class="modal-close-btn" id="trash-close" type="button" aria-label="Close Recently Deleted">${renderCloseIcon()}</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">Deleted logins stay encrypted for 30 days. Restore brings back the login and its password history. Expired items are removed while SLV is unlocked.</p>
+      <p class="modal-hint">Restoring keeps separate entries; it does not merge matching logins. Original groups and categories are recreated if needed. Older backups keep their own copies.</p>
+      <p id="trash-scope" class="modal-hint"></p>
+      <div id="trash-results" aria-busy="true"><p role="status">Loading deleted logins...</p></div>
+      <p id="trash-status" role="status" aria-live="polite"></p>
+    </div>
+    <div class="modal-footer"><button class="secondary-button" id="trash-refresh" type="button">Refresh</button><button class="primary-button" id="trash-done" type="button">Close</button></div>
+  </div>`;
+  overlay.classList.add("is-open");
+  overlay.querySelector("#trash-close").addEventListener("click", closeCredentialTrash);
+  overlay.querySelector("#trash-done").addEventListener("click", closeCredentialTrash);
+  overlay.querySelector("#trash-refresh").addEventListener("click", openCredentialTrash);
+  overlay.querySelector("#trash-close").focus();
+  const results = overlay.querySelector("#trash-results"), status = overlay.querySelector("#trash-status");
+  let busy = false;
+  const mutate = async (id, permanent) => {
+    if (busy) return;
+    busy = true;
+    overlay.querySelectorAll("[data-trash-action], #trash-refresh").forEach(button => { button.disabled = true; });
+    status.textContent = permanent ? "Deleting permanently..." : "Restoring login...";
+    try {
+      const response = permanent ? await window.secureLoginVault.credentials.deletePermanently(id, true) : await window.secureLoginVault.credentials.restoreDeleted(id);
+      if (request !== trashRequest) return;
+      if (!response.ok) throw new Error(response.message || "Could not update Recently Deleted.");
+      await refreshCredentials();
+      if (request !== trashRequest) return;
+      showToast(permanent ? "Login permanently deleted." : "Login and password history restored.");
+      await openCredentialTrash();
+    } catch (error) {
+      if (request === trashRequest) { status.textContent = error.message; status.setAttribute("role", "alert"); }
+    } finally {
+      busy = false;
+      if (request === trashRequest) overlay.querySelectorAll("[data-trash-action], #trash-refresh").forEach(button => { button.disabled = false; });
+    }
+  };
+  try {
+    const response = await window.secureLoginVault.credentials.getDeleted();
+    if (request !== trashRequest) return;
+    if (!response.ok) throw new Error(response.message || "Could not load Recently Deleted.");
+    const report = response.result;
+    overlay.querySelector("#trash-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All credential groups. Client Vault is excluded.";
+    results.replaceChildren();
+    const count = document.createElement("p"); count.textContent = report.entries.length ? `${report.entries.length} deleted ${report.entries.length === 1 ? "login" : "logins"}` : "No recently deleted logins.";
+    results.append(count);
+    for (const entry of report.entries) {
+      const row = document.createElement("article"); row.className = "trash-entry"; row.dataset.trashId = entry.id;
+      const info = document.createElement("div"); info.className = "trash-entry-info";
+      const name = document.createElement("strong"); name.textContent = entry.websiteName;
+      const owner = document.createElement("p"); owner.className = "modal-hint";
+      owner.textContent = [entry.username || "No username", entry.groupName || "Unassigned", entry.category || "Other"].join(" · ");
+      const date = document.createElement("p"); date.className = "modal-hint";
+      date.textContent = `Deleted ${new Date(entry.deletedAt).toLocaleDateString()} · ${Math.max(1, Math.ceil((Date.parse(entry.expiresAt) - Date.now()) / 86400000))} days left`;
+      info.append(name, owner, date);
+      const actions = document.createElement("div"); actions.className = "trash-entry-actions";
+      const restore = document.createElement("button"); restore.type = "button"; restore.className = "secondary-button"; restore.textContent = "Restore"; restore.dataset.trashAction = "restore";
+      restore.addEventListener("click", () => mutate(entry.id, false));
+      const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary-button trash-delete"; remove.textContent = "Delete permanently"; remove.dataset.trashAction = "delete";
+      remove.addEventListener("click", () => {
+        if (busy) return;
+        actions.replaceChildren();
+        const warning = document.createElement("p"); warning.className = "modal-hint"; warning.textContent = `Permanently delete "${entry.websiteName}" and its password history? This cannot be undone.`;
+        const yes = document.createElement("button"); yes.type = "button"; yes.className = "danger-button"; yes.textContent = "Confirm permanent delete"; yes.dataset.trashAction = "confirm";
+        const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary-button"; cancel.textContent = "Cancel"; cancel.dataset.trashAction = "cancel";
+        yes.addEventListener("click", () => mutate(entry.id, true));
+        cancel.addEventListener("click", () => { actions.replaceChildren(restore, remove); remove.focus(); });
+        actions.append(warning, yes, cancel); cancel.focus();
+      });
+      actions.append(restore, remove); row.append(info, actions); results.append(row);
+    }
+  } catch (error) {
+    if (request === trashRequest) { results.textContent = error.message; results.setAttribute("role", "alert"); }
+  } finally { if (request === trashRequest) results.setAttribute("aria-busy", "false"); }
+}
+
+let vaultHealthRequest = 0;
+let vaultHealthFilter = "all";
+let returnToVaultHealth = false;
+
+function closeVaultHealth() {
+  vaultHealthRequest++;
+  returnToVaultHealth = false;
+  const overlay = document.querySelector("#vault-health-overlay");
+  if (overlay) { overlay.classList.remove("is-open"); overlay.replaceChildren(); }
+  document.querySelector("#check-vault-health-btn")?.focus();
+}
+
+async function openVaultHealth() {
+  const request = ++vaultHealthRequest;
+  let overlay = document.querySelector("#vault-health-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "vault-health-overlay";
+    overlay.className = "modal-overlay";
+    document.body.append(overlay);
+  }
+  overlay.innerHTML = `<div class="modal-container vault-health-container" role="dialog" aria-modal="true" aria-labelledby="vault-health-title">
+    <div class="modal-header"><h2 id="vault-health-title">Vault Health</h2><button class="modal-close-btn" id="health-close" type="button" aria-label="Close Vault Health">${renderCloseIcon()}</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">Local checks for short or obvious passwords and exact reuse. No passwords are sent online. These checks do not look for breaches or guarantee password strength.</p>
+      <p id="health-scope" class="modal-hint"></p>
+      <div id="health-results" aria-busy="true"><p role="status">Checking saved logins…</p></div>
+    </div>
+    <div class="modal-footer"><button class="secondary-button" type="button" id="health-refresh">Check again</button><button class="primary-button" type="button" id="health-done">Close</button></div>
+  </div>`;
+  overlay.classList.add("is-open");
+  overlay.querySelector("#health-close").addEventListener("click", closeVaultHealth);
+  overlay.querySelector("#health-done").addEventListener("click", closeVaultHealth);
+  overlay.querySelector("#health-refresh").addEventListener("click", openVaultHealth);
+  overlay.querySelector("#health-close").focus();
+  const results = overlay.querySelector("#health-results");
+  try {
+    const response = await window.secureLoginVault.vault.checkHealth();
+    if (request !== vaultHealthRequest || !overlay.classList.contains("is-open")) return;
+    if (!response.ok) throw new Error(response.message || "Could not check vault health. Try again.");
+    const report = response.result;
+    overlay.querySelector("#health-scope").textContent = (report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All credential groups.") + " Current passwords only; password history and Client Vault are excluded.";
+    results.innerHTML = `<div class="health-summary" aria-label="Check summary">
+      <div><strong>${report.total}</strong><span>Checked</span></div>
+      <div><strong>${report.weak}</strong><span>Weak</span></div>
+      <div><strong>${report.reused}</strong><span>Reused</span></div>
+      <div><strong>${report.affected}</strong><span>Need attention</span></div>
+    </div><p class="modal-hint">Weak means fewer than 12 characters or a common, repeating or sequential pattern. An entry can appear in both counts.</p>
+    <div class="health-filters" role="group" aria-label="Filter health results">
+      <button type="button" class="secondary-button" data-health-filter="all">All issues</button>
+      <button type="button" class="secondary-button" data-health-filter="weak">Weak</button>
+      <button type="button" class="secondary-button" data-health-filter="reused">Reused</button>
+    </div><p id="health-list-status" role="status"></p><div id="health-list"></div>
+    <p class="modal-hint">Change a password on its website first, then update the saved login in SLV.</p>`;
+    const render = () => {
+      for (const button of results.querySelectorAll("[data-health-filter]")) button.setAttribute("aria-pressed", String(button.dataset.healthFilter === vaultHealthFilter));
+      const entries = report.entries.filter(entry => vaultHealthFilter === "all" || entry[vaultHealthFilter]);
+      results.querySelector("#health-list-status").textContent = !report.total ? "No saved logins to check yet." : !report.affected ? "No issues found by these basic checks." : entries.length ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} to review.` : "No entries match this filter.";
+      const list = results.querySelector("#health-list");
+      list.replaceChildren();
+      for (const entry of entries) {
+        const row = document.createElement("div"); row.className = "health-entry";
+        const info = document.createElement("div"); info.className = "health-entry-info";
+        const title = document.createElement("strong"); title.textContent = entry.websiteName;
+        const owner = document.createElement("span"); owner.className = "modal-hint";
+        owner.textContent = [entry.username || "No username", entry.groupName || "Unassigned"].join(" · ");
+        const reasons = document.createElement("ul");
+        for (const reason of [...entry.reasons, ...(entry.reused ? [`Same password as ${entry.reusedWith} other ${entry.reusedWith === 1 ? "entry" : "entries"} in this check`] : [])]) {
+          const item = document.createElement("li"); item.textContent = reason; reasons.append(item);
+        }
+        info.append(title, owner, reasons);
+        const edit = document.createElement("button"); edit.className = "secondary-button"; edit.type = "button";
+        edit.textContent = "Edit"; edit.dataset.healthEdit = entry.id; edit.setAttribute("aria-label", `Edit ${entry.websiteName}`);
+        edit.addEventListener("click", () => { closeVaultHealth(); returnToVaultHealth = true; openCredentialModal(entry.id); });
+        row.append(info, edit); list.append(row);
+      }
+    };
+    for (const button of results.querySelectorAll("[data-health-filter]")) button.addEventListener("click", () => { vaultHealthFilter = button.dataset.healthFilter; render(); });
+    render();
+  } catch (error) {
+    if (request === vaultHealthRequest) { results.textContent = error.message; results.setAttribute("role", "alert"); }
+  } finally { if (request === vaultHealthRequest) results.setAttribute("aria-busy", "false"); }
+}
+
+let credentialModalRequest = 0;
 function getOrCreateModalOverlay() {
   let overlay = document.querySelector("#credential-modal-overlay");
   if (!overlay) {
@@ -1431,6 +1630,7 @@ function getOrCreateModalOverlay() {
 }
 
 async function openCredentialModal(editId) {
+  const request = ++credentialModalRequest;
   const overlay = getOrCreateModalOverlay();
   const isEdit = editId !== null && editId !== undefined;
 
@@ -1443,6 +1643,9 @@ async function openCredentialModal(editId) {
     window.secureLoginVault.groups.getAll(),
     isEdit ? window.secureLoginVault.credentials.getOne(editId) : Promise.resolve(null)
   ]);
+
+  if (request !== credentialModalRequest) return;
+  if (isEdit && !credRes?.ok) { showToast(credRes?.message || "Could not open this credential.", "error"); closeCredentialModal(); return; }
 
   if (catRes.ok) categories = catRes.result;
   if (groupRes.ok) groups = groupRes.result;
@@ -1521,6 +1724,12 @@ async function openCredentialModal(editId) {
             </button>
           </span>
         </label>
+
+        ${isEdit ? `<details class="password-history" id="password-history">
+          <summary>Password history</summary>
+          <p class="modal-hint">Latest 10 previous passwords, saved from changes made after this update. Use puts a password in this form; Update Credential saves it in SLV. It does not change the website password.</p>
+          <div id="password-history-list" aria-live="polite"></div>
+        </details>` : ""}
 
         <div class="gen-panel" id="gen-panel">
           <div class="gen-header">
@@ -1613,12 +1822,79 @@ async function openCredentialModal(editId) {
   setupPasswordToggles(overlay);
   setupPasswordGenerator(overlay);
   setupQrUploadField(overlay, "m-qr");
-  setTimeout(() => overlay.querySelector("#m-website-name").focus(), 50);
+  if (isEdit) setupPasswordHistory(overlay, editId);
+  setTimeout(() => overlay.querySelector("#m-website-name")?.focus(), 50);
 }
 
 function closeCredentialModal() {
+  credentialModalRequest++;
   const overlay = document.querySelector("#credential-modal-overlay");
-  if (overlay) overlay.classList.remove("is-open");
+  if (overlay) {
+    overlay.classList.remove("is-open");
+    overlay.replaceChildren();
+  }
+  if (returnToVaultHealth) { returnToVaultHealth = false; openVaultHealth(); }
+  if (returnToDuplicateReview) { returnToDuplicateReview = false; openDuplicateReview(); }
+}
+
+function setupPasswordHistory(overlay, credentialId) {
+  const details = overlay.querySelector("#password-history");
+  const list = overlay.querySelector("#password-history-list");
+  let request = 0;
+  details.addEventListener("toggle", async () => {
+    const current = ++request;
+    list.replaceChildren();
+    if (!details.open) return;
+    list.textContent = "Loading history…";
+    try {
+      const response = await window.secureLoginVault.credentials.getPasswordHistory(credentialId);
+      if (current !== request || !details.open || !details.isConnected || !overlay.classList.contains("is-open")) return;
+      if (!response.ok) throw new Error(response.message || "Could not load password history.");
+      list.replaceChildren();
+      if (!response.result.length) { list.textContent = "No previous passwords saved yet."; return; }
+      for (const entry of response.result) {
+        const row = document.createElement("div");
+        row.className = "password-history-row";
+        const date = document.createElement("span");
+        date.className = "modal-hint";
+        date.textContent = "Replaced " + new Date(entry.replacedAt).toLocaleString();
+        const controls = document.createElement("div");
+        controls.className = "password-history-controls";
+        const input = document.createElement("input");
+        input.className = "modal-input";
+        input.type = "password";
+        input.readOnly = true;
+        input.autocomplete = "off";
+        input.setAttribute("aria-label", date.textContent);
+        input.value = entry.password;
+        const show = document.createElement("button");
+        show.type = "button";
+        show.className = "secondary-button";
+        show.textContent = "Show";
+        show.setAttribute("aria-pressed", "false");
+        show.addEventListener("click", () => {
+          const reveal = input.type === "password";
+          input.type = reveal ? "text" : "password";
+          show.textContent = reveal ? "Hide" : "Show";
+          show.setAttribute("aria-pressed", String(reveal));
+        });
+        const use = document.createElement("button");
+        use.type = "button";
+        use.className = "secondary-button";
+        use.textContent = "Use";
+        use.addEventListener("click", () => {
+          overlay.querySelector("#m-password").value = input.value;
+          overlay.querySelector("#m-password").focus();
+          showToast("Previous password selected. Click Update Credential to save it in SLV.", "info");
+        });
+        controls.append(input, show, use);
+        row.append(date, controls);
+        list.append(row);
+      }
+    } catch (error) {
+      if (current === request && details.open && details.isConnected) list.textContent = error.message;
+    }
+  });
 }
 
 async function submitCredentialModal(editId) {
@@ -2325,6 +2601,10 @@ function applyTheme(theme) {
   } else {
     root.setAttribute("data-theme", "light");
   }
+  const swatch = document.querySelector("#brand-accent-input");
+  if (swatch && brandAccentPreview === null && !getBrandAccent()) {
+    swatch.value = getComputedStyle(root).getPropertyValue("--accent").trim();
+  }
 }
 
 function initTheme() {
@@ -2348,6 +2628,15 @@ function initTheme() {
 // The window/taskbar icon (Windows) also follows the custom logo now, via
 // the branding.setWindowIcon IPC bridge — main.js applies it with
 // BrowserWindow.setIcon() since that can't be done from the renderer.
+
+function getTextSize() {
+  const value = getPref(PREF_TEXT_SIZE, "default");
+  return ["small", "default", "large"].includes(value) ? value : "default";
+}
+
+function applyTextSize(value) {
+  document.documentElement.dataset.textSize = ["small", "default", "large"].includes(value) ? value : "default";
+}
 
 function getBrandName() {
   return getPref(PREF_BRAND_NAME, DEFAULT_BRAND_NAME);
@@ -2373,19 +2662,21 @@ function renderBrandMark(extraClass = "") {
   return `<div class="${cls}" aria-hidden="true"><span></span></div>`;
 }
 
-function applyBranding() {
-  const name = getBrandName();
-  document.title = name;
-
+function applyAccentColor(accent) {
   const root = document.documentElement;
-  const accent = getBrandAccent();
-  if (accent) {
+  if (/^#[0-9a-f]{6}$/i.test(accent || "")) {
     root.style.setProperty("--accent", accent);
     root.style.setProperty("--accent-strong", shadeColor(accent, -15));
   } else {
     root.style.removeProperty("--accent");
     root.style.removeProperty("--accent-strong");
   }
+}
+
+function applyBranding() {
+  const name = getBrandName();
+  document.title = name;
+  applyAccentColor(brandAccentPreview ?? getBrandAccent());
 
   // Best-effort: also update the native window title bar, if the preload
   // bridge exposes it. Older builds without this IPC channel just keep
@@ -2486,6 +2777,11 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  closeDuplicateReview();
+  closeCredentialTrash();
+  closeSettingsModal();
+  closeVaultHealth();
+  closeCredentialModal();
   if (payload && payload.reason === "inactivity") {
     showToast("Vault locked due to inactivity", "info");
   }
@@ -2505,6 +2801,7 @@ function startAutoLockWatcher() {
     _unsubscribeCredentialsChanged = window.secureLoginVault.auth.onCredentialsChanged(() => {
       // A login was saved from the browser: show it in the list.
       Promise.resolve(refreshCredentials()).catch(() => {});
+      if (document.querySelector("#vault-health-overlay.is-open")) openVaultHealth();
     });
   }
 
@@ -2537,7 +2834,43 @@ function getOrCreateSettingsOverlay() {
   return overlay;
 }
 
+// Remember navigation for this app session, without persisting form data.
+let activeSettingsSection = "general";
+
+function setupSettingsNavigation(overlay) {
+  const tabs = [...overlay.querySelectorAll("[data-settings-tab]")];
+  const body = overlay.querySelector(".settings-modal-body");
+  function select(tab, focus = false) {
+    activeSettingsSection = tab.dataset.settingsTab;
+    for (const item of tabs) {
+      const selected = item === tab;
+      item.setAttribute("aria-selected", String(selected));
+      item.tabIndex = selected ? 0 : -1;
+      overlay.querySelector("#" + item.getAttribute("aria-controls")).hidden = !selected;
+    }
+    body.scrollTop = 0;
+    if (focus) tab.focus();
+  }
+  tabs.forEach((tab) => tab.addEventListener("click", () => select(tab)));
+  overlay.querySelector(".settings-navigation").addEventListener("keydown", (event) => {
+    const current = tabs.indexOf(document.activeElement);
+    if (current < 0) return;
+    let next;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") next = (current + 1) % tabs.length;
+    if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = (current + tabs.length - 1) % tabs.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = tabs.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    select(tabs[next], true);
+  });
+  select(tabs.find((tab) => tab.dataset.settingsTab === activeSettingsSection) || tabs[0]);
+}
+
 async function openSettingsModal() {
+  applyTextSize(getTextSize());
+  brandAccentPreview = null;
+  applyAccentColor(getBrandAccent());
   const overlay = getOrCreateSettingsOverlay();
 
   // Load app info for the "About" section
@@ -2548,13 +2881,14 @@ async function openSettingsModal() {
   } catch { /* swallow */ }
 
   const currentTheme    = getPref(PREF_THEME, "light");
+  const currentTextSize = getTextSize();
   const currentAutoLock = getPref(PREF_AUTO_LOCK, "0");
   const currentBackgroundLock = getPref(PREF_BACKGROUND_LOCK, "10");
   const currentClip     = getPref(PREF_CLIPBOARD, "30");
   const currentBackupFolder = getPref(PREF_BACKUP_FOLDER, "");
   const currentBrandName   = getBrandName();
   const currentBrandLogo   = getBrandLogo();
-  const currentBrandAccent = getBrandAccent();
+  const currentBrandAccent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
 
   overlay.innerHTML = `
     <div class="modal-container settings-modal-container" role="dialog" aria-modal="true" aria-labelledby="settings-modal-heading">
@@ -2564,9 +2898,18 @@ async function openSettingsModal() {
           ${renderCloseIcon()}
         </button>
       </div>
-      <div class="modal-body settings-modal-body">
-
-        <!-- ── Branding (white-label) ──────────────────────────── -->
+      <div class="settings-workspace">
+        <nav class="settings-navigation" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+          <button class="settings-nav-button" type="button" role="tab" id="settings-tab-general" aria-controls="settings-panel-general" aria-selected="true" tabindex="0" data-settings-tab="general">${renderSettingsIcon()}<span>General</span></button>
+          <button class="settings-nav-button" type="button" role="tab" id="settings-tab-security" aria-controls="settings-panel-security" aria-selected="false" tabindex="-1" data-settings-tab="security">${renderShieldIcon()}<span>Security</span></button>
+          <button class="settings-nav-button" type="button" role="tab" id="settings-tab-browsers" aria-controls="settings-panel-browsers" aria-selected="false" tabindex="-1" data-settings-tab="browsers">${renderLinkIcon()}<span>Browsers</span></button>
+          <button class="settings-nav-button" type="button" role="tab" id="settings-tab-organization" aria-controls="settings-panel-organization" aria-selected="false" tabindex="-1" data-settings-tab="organization">${renderFolderIcon()}<span>Organization</span></button>
+          <button class="settings-nav-button" type="button" role="tab" id="settings-tab-data" aria-controls="settings-panel-data" aria-selected="false" tabindex="-1" data-settings-tab="data">${renderDownloadIcon()}<span>Backup &amp; Data</span></button>
+          <button class="settings-nav-button" type="button" role="tab" id="settings-tab-about" aria-controls="settings-panel-about" aria-selected="false" tabindex="-1" data-settings-tab="about">${renderInfoIcon()}<span>About</span></button>
+        </nav>
+        <div class="modal-body settings-modal-body">
+        <div class="settings-panel" role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general" tabindex="0">
+          <div class="settings-panel-heading"><h3>General</h3><p>Branding and appearance.</p></div>
         <section class="settings-section">
           <h3 class="settings-section-title">Branding</h3>
           <p class="settings-section-hint">
@@ -2623,10 +2966,11 @@ async function openSettingsModal() {
           <div class="settings-row">
             <div class="settings-row-label">
               <span class="settings-row-name">Accent Color</span>
-              <span class="settings-row-hint">Used for buttons, links, and highlights across the app.</span>
+              <span class="settings-row-hint">Preview buttons, links, and highlights as you choose. Apply saves; closing without applying restores the saved color.</span>
             </div>
             <div class="settings-row-control settings-backup-folder-control">
               <input type="color" id="brand-accent-input" class="brand-accent-swatch"
+                     aria-label="Accent color"
                      value="${currentBrandAccent || "#1f7a68"}" />
               <div class="settings-backup-folder-btns">
                 <button class="primary-button settings-action-btn" type="button" id="brand-accent-save-btn">Apply</button>
@@ -2635,8 +2979,6 @@ async function openSettingsModal() {
             </div>
           </div>
         </section>
-
-        <!-- ── Appearance ────────────────────────────────────── -->
         <section class="settings-section">
           <h3 class="settings-section-title">Appearance</h3>
 
@@ -2653,9 +2995,24 @@ async function openSettingsModal() {
               </div>
             </div>
           </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <label class="settings-row-name" for="text-size-select">Text size</label>
+              <span class="settings-row-hint">Preview as you choose. Apply saves; closing without applying restores the saved size.</span>
+            </div>
+            <div class="settings-row-control settings-text-size-control">
+              <select class="settings-select" id="text-size-select">
+                <option value="small" ${currentTextSize === "small" ? "selected" : ""}>Small</option>
+                <option value="default" ${currentTextSize === "default" ? "selected" : ""}>Default</option>
+                <option value="large" ${currentTextSize === "large" ? "selected" : ""}>Large</option>
+              </select>
+              <button class="primary-button settings-action-btn" type="button" id="text-size-apply-btn">Apply</button>
+            </div>
+          </div>
         </section>
-
-        <!-- ── Security ──────────────────────────────────────── -->
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-panel-security" aria-labelledby="settings-tab-security" tabindex="0" hidden>
+          <div class="settings-panel-heading"><h3>Security</h3><p>Control how your vault is protected.</p></div>
         <section class="settings-section">
           <h3 class="settings-section-title">Security</h3>
 
@@ -2703,70 +3060,6 @@ async function openSettingsModal() {
                 <option value="30" ${currentClip === "30" ? "selected" : ""}>30 seconds</option>
                 <option value="60" ${currentClip === "60" ? "selected" : ""}>1 minute</option>
               </select>
-            </div>
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Browser Extension</span>
-              <span class="settings-row-hint" id="extension-bridge-hint">Lets the Secure Login Vault browser extension connect to this app. Off by default.</span>
-            </div>
-            <div class="settings-row-control">
-              <select class="settings-select" id="extension-bridge-select" disabled>
-                <option value="off" selected>Off</option>
-                <option value="on">On</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Ask Before Filling</span>
-              <span class="settings-row-hint" id="extension-ask-hint">When On, each time the browser extension wants to fill a login, you confirm it in this app first.</span>
-            </div>
-            <div class="settings-row-control">
-              <select class="settings-select" id="extension-ask-select" disabled>
-                <option value="off" selected>Off</option>
-                <option value="on">On</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="settings-row" id="extension-pair-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Pair Browser</span>
-              <span class="settings-row-hint" id="extension-pair-hint">Checking...</span>
-            </div>
-            <div class="settings-row-control extension-pair-buttons">
-              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-copy-btn" hidden>Copy code</button>
-              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-cancel-btn" hidden>Cancel</button>
-              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-btn" disabled>Pair browser</button>
-              <button class="secondary-button settings-action-btn" type="button" id="extension-unpair-btn" hidden>Unpair</button>
-            </div>
-            <div class="extension-pair-code-box" id="extension-pair-code-box" hidden>
-              <span class="extension-pair-code" id="extension-pair-code" aria-label="Pairing code"></span>
-              <span class="settings-row-hint" id="extension-pair-countdown"></span>
-            </div>
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Default Backup Folder</span>
-              <span class="settings-row-hint">Where encrypted backups are saved by default.</span>
-            </div>
-            <div class="settings-row-control settings-backup-folder-control">
-              <span class="settings-backup-folder-path" id="backup-folder-display">
-                ${currentBackupFolder ? escapeHtml(currentBackupFolder) : "System default (Save dialog)"}
-              </span>
-              <div class="settings-backup-folder-btns">
-                <button class="secondary-button settings-action-btn" type="button" id="backup-folder-pick-btn">
-                  ${renderFolderIcon()} <span>Choose...</span>
-                </button>
-                <button class="secondary-button settings-action-btn" type="button" id="backup-folder-clear-btn"
-                  ${currentBackupFolder ? "" : "disabled"}>
-                  ${renderCloseIcon()} <span>Clear</span>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -2864,8 +3157,93 @@ async function openSettingsModal() {
             </div>
           </div>
         </section>
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-panel-browsers" aria-labelledby="settings-tab-browsers" tabindex="0" hidden>
+          <div class="settings-panel-heading"><h3>Browsers</h3><p>Manage browser access to your vault.</p></div>
+        <div class="settings-browser-status" role="status">
+          ${renderShieldIcon()}
+          <div><h4 id="extension-setup-title">Browser helper</h4><p class="settings-row-hint" id="extension-setup-hint">Checking browser setup...</p></div>
+        </div>
+          <div class="settings-row" id="extension-pair-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Paired Browsers</span>
+              <span class="settings-row-hint" id="extension-pair-hint">Checking...</span>
+            </div>
+            <div class="settings-row-control extension-pair-buttons">
+              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-copy-btn" hidden>Copy code</button>
+              <button class="secondary-button settings-action-btn" type="button" id="extension-pair-cancel-btn" hidden>Cancel</button>
+              <button class="primary-button settings-action-btn" type="button" id="extension-pair-btn" disabled>Add browser</button>
+            </div>
+            <div class="extension-pair-code-box" id="extension-pair-code-box" hidden>
+              <span class="extension-pair-code" id="extension-pair-code" aria-label="Pairing code"></span>
+              <span class="settings-row-hint" id="extension-pair-countdown"></span>
+            </div>
+            <ul class="extension-paired-list" id="extension-paired-list" aria-label="Paired browsers"></ul>
+          </div>
 
-        <!-- ── Categories ────────────────────────────────────── -->
+        <section class="settings-section"><h3 class="settings-section-title">Browser preferences</h3>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Allow Browser Access</span>
+              <span class="settings-row-hint" id="extension-bridge-hint">Lets the Secure Login Vault browser extension connect to this app. Off by default.</span>
+            </div>
+            <div class="settings-row-control">
+              <select class="settings-select" id="extension-bridge-select" disabled>
+                <option value="off" selected>Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Ask Before Filling</span>
+              <span class="settings-row-hint" id="extension-ask-hint">When On, each time the browser extension wants to fill a login, you confirm it in this app first.</span>
+            </div>
+            <div class="settings-row-control">
+              <select class="settings-select" id="extension-ask-select" disabled>
+                <option value="off" selected>Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+          </div>
+
+        </section>
+        <details class="settings-installation" id="extension-installation"><summary>Installation &amp; troubleshooting</summary>
+          <div class="settings-row extension-setup-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Set Up Browser Extension</span>
+            </div>
+            <div class="settings-row-control extension-setup-buttons">
+              <button class="secondary-button settings-action-btn" type="button" id="extension-setup-btn" disabled>Set Up Browser Extension</button>
+              <button class="secondary-button settings-action-btn" type="button" id="extension-folder-btn" disabled>Open Extension Folder</button>
+              <button class="secondary-button settings-action-btn" type="button" id="extension-firefox-folder-btn" disabled>Open Firefox Folder</button>
+            </div>
+            <div class="extension-setup-guide" id="extension-setup-guide" hidden>
+              <details class="extension-browser-guide"><summary>Chrome / Edge</summary>
+              <ol>
+                <li>Open <strong>chrome://extensions</strong> in Chrome, or <strong>edge://extensions</strong> in Edge.</li>
+                <li>Turn on <strong>Developer mode</strong>, choose <strong>Load unpacked</strong>, and select the folder below.</li>
+                <li>Use <strong>Add browser</strong> above, then paste the code into the extension.</li>
+              </ol>
+              <label for="extension-folder-path">Chrome / Edge extension folder</label>
+              <input class="extension-folder-path" id="extension-folder-path" readonly aria-label="Extension folder path" />
+              </details>
+              <details class="extension-browser-guide"><summary>Firefox</summary>
+              <p class="settings-row-hint"><strong>Firefox 140 or later:</strong> open <strong>about:debugging#/runtime/this-firefox</strong>, choose <strong>Load Temporary Add-on</strong>, then select <strong>manifest.json</strong> in the Firefox folder below. Pair using a new code. Temporary add-ons must be loaded again after Firefox restarts. Permanent installation requires a Mozilla-signed add-on.</p>
+              <label for="extension-firefox-folder-path">Firefox extension folder</label>
+              <input class="extension-folder-path" id="extension-firefox-folder-path" readonly aria-label="Firefox extension folder path" />
+              </details>
+              <p class="settings-row-hint">Chrome, Edge and Firefox can stay paired together. Add each browser using a separate code; they share your saved logins.</p>
+              <p class="settings-row-hint">After an SLV update, reload the extension on your browser's extensions page. If you move or reinstall SLV elsewhere, run setup again.</p>
+            </div>
+          </div>
+
+        </details>
+        <div class="settings-browser-remove"><button class="settings-unpair-all" type="button" id="extension-unpair-btn" hidden>Unpair all</button></div>
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-panel-organization" aria-labelledby="settings-tab-organization" tabindex="0" hidden>
+          <div class="settings-panel-heading"><h3>Organization</h3><p>Keep your credentials easy to find.</p></div>
         <section class="settings-section">
           <h3 class="settings-section-title">Categories</h3>
           <p class="settings-section-hint">
@@ -2877,8 +3255,6 @@ async function openSettingsModal() {
             </button>
           </div>
         </section>
-
-        <!-- ── Groups ─────────────────────────────────── -->
         <section class="settings-section">
           <h3 class="settings-section-title">Groups</h3>
           <p class="settings-section-hint">
@@ -2908,14 +3284,56 @@ async function openSettingsModal() {
             </button>
           </div>
         </section>
-
-        <!-- ── Import & Export ───────────────────────────────── -->
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-panel-data" aria-labelledby="settings-tab-data" tabindex="0" hidden>
+          <div class="settings-panel-heading"><h3>Backup &amp; Data</h3><p>Back up, import and export your vault.</p></div>
+        <section class="settings-section">
+          <h3 class="settings-section-title">Automatic encrypted backups</h3>
+          <p class="settings-section-hint">Once every 24 hours while SLV is open and unlocked. A missed backup runs after your next unlock.</p>
+          <div class="settings-row">
+            <div class="settings-row-label"><label class="settings-row-name" for="auto-backup-enabled">Automatic Backups</label><span class="settings-row-hint">Choose a folder, then turn this on to create the first backup.</span></div>
+            <select class="settings-select" id="auto-backup-enabled" disabled><option value="off">Off</option><option value="on">On</option></select>
+          </div>
+          <div class="settings-row settings-auto-backup-folder">
+            <div class="settings-row-label"><span class="settings-row-name">Automatic Backup Folder</span><span class="settings-row-hint">A different drive helps protect against drive failure.</span></div>
+            <div class="settings-row-control settings-backup-folder-control"><span class="settings-backup-folder-path" id="auto-backup-folder">Not chosen</span><button class="secondary-button settings-action-btn" id="auto-backup-choose" type="button">Choose folder…</button></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"><label class="settings-row-name" for="auto-backup-keep">Keep Latest</label><span class="settings-row-hint">Older automatic copies are removed only after a successful backup. Manual backups are kept.</span></div>
+            <select class="settings-select" id="auto-backup-keep" disabled><option value="7">7 backups</option><option value="14">14 backups</option><option value="30">30 backups</option></select>
+          </div>
+          <p class="settings-section-hint" id="auto-backup-last">No automatic backup yet.</p>
+          <p class="form-message" id="auto-backup-status" role="status"></p>
+          <div class="settings-action-row"><button class="secondary-button settings-action-btn" type="button" id="auto-backup-now" disabled>Back up now</button></div>
+          <p class="settings-section-hint">Restore these .slvbackup files with Restore from Backup below. Use the master password that was in effect when the backup was created.</p>
+        </section>
         <section class="settings-section">
           <h3 class="settings-section-title">Import &amp; Export</h3>
           <p class="settings-section-hint">
             Import credentials from a CSV, JSON, or KeePass CSV export. Export your
             vault as CSV, JSON, or a fully encrypted backup file.
           </p>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Manual Backup Folder</span>
+              <span class="settings-row-hint">Where encrypted backups are saved by default.</span>
+            </div>
+            <div class="settings-row-control settings-backup-folder-control">
+              <span class="settings-backup-folder-path" id="backup-folder-display">
+                ${currentBackupFolder ? escapeHtml(currentBackupFolder) : "System default (Save dialog)"}
+              </span>
+              <div class="settings-backup-folder-btns">
+                <button class="secondary-button settings-action-btn" type="button" id="backup-folder-pick-btn">
+                  ${renderFolderIcon()} <span>Choose...</span>
+                </button>
+                <button class="secondary-button settings-action-btn" type="button" id="backup-folder-clear-btn"
+                  ${currentBackupFolder ? "" : "disabled"}>
+                  ${renderCloseIcon()} <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
 
           <div class="settings-subgroup">
             <h4 class="settings-subgroup-title">Import</h4>
@@ -2959,10 +3377,11 @@ async function openSettingsModal() {
             </p>
           </div>
 
-          <p class="form-message" id="settings-status" style="display:none"></p>
-        </section>
 
-        <!-- ── About ─────────────────────────────────────────── -->
+        </section>
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-panel-about" aria-labelledby="settings-tab-about" tabindex="0" hidden>
+          <div class="settings-panel-heading"><h3>About</h3><p>App information and help.</p></div>
         <section class="settings-section">
           <h3 class="settings-section-title">About</h3>
           <div class="settings-info-grid">
@@ -2980,9 +3399,11 @@ async function openSettingsModal() {
             </button>
           </div>
         </section>
-
+        </div>
+        </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer settings-footer">
+        <p class="form-message" id="settings-status" role="status" aria-live="polite" style="display:none"></p>
         <button class="secondary-button" type="button" id="settings-done-btn">Close</button>
       </div>
     </div>
@@ -2991,6 +3412,8 @@ async function openSettingsModal() {
   overlay.classList.add("is-open");
 
   // ── Close ────────────────────────────────────────────────────────────────────
+  setupSettingsNavigation(overlay);
+  setupAutomaticBackups(overlay);
   overlay.querySelector("#settings-close-btn").addEventListener("click", closeSettingsModal);
   overlay.querySelector("#settings-done-btn").addEventListener("click", closeSettingsModal);
 
@@ -3070,21 +3493,43 @@ async function openSettingsModal() {
   });
 
   // ── Branding: Accent Color ─────────────────────────────────────────────────────
+  const accentInput = overlay.querySelector("#brand-accent-input");
+  const previewAccent = () => {
+    brandAccentPreview = accentInput.value;
+    applyAccentColor(brandAccentPreview);
+    setSettingsStatus("Previewing accent color. Click Apply to save.");
+  };
+  accentInput.addEventListener("input", previewAccent);
+  accentInput.addEventListener("change", previewAccent);
   overlay.querySelector("#brand-accent-save-btn").addEventListener("click", () => {
     const value = overlay.querySelector("#brand-accent-input").value;
     setPref(PREF_BRAND_ACCENT, value);
-    applyBranding();
+    brandAccentPreview = null;
+    applyAccentColor(value);
     setSettingsStatus("Accent color applied.");
   });
 
   overlay.querySelector("#brand-accent-reset-btn").addEventListener("click", () => {
     setPref(PREF_BRAND_ACCENT, "");
-    applyBranding();
-    overlay.querySelector("#brand-accent-input").value = "#1f7a68";
+    brandAccentPreview = null;
+    applyAccentColor("");
+    accentInput.value = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
     setSettingsStatus("Accent color reset to default.");
   });
 
   // ── Theme segmented control ──────────────────────────────────────────────────
+  const textSizeSelect = overlay.querySelector("#text-size-select");
+  textSizeSelect.addEventListener("change", () => {
+    applyTextSize(textSizeSelect.value);
+    setSettingsStatus("Previewing text size. Click Apply beside Text size to save.");
+  });
+  overlay.querySelector("#text-size-apply-btn").addEventListener("click", () => {
+    const value = textSizeSelect.value;
+    if (!["small", "default", "large"].includes(value)) return;
+    setPref(PREF_TEXT_SIZE, value);
+    applyTextSize(value);
+    setSettingsStatus("Text size saved.");
+  });
   overlay.querySelectorAll(".seg-btn[data-theme]").forEach((btn) => {
     btn.addEventListener("click", () => {
       overlay.querySelectorAll(".seg-btn[data-theme]").forEach((b) => b.classList.remove("is-active"));
@@ -3142,6 +3587,7 @@ async function openSettingsModal() {
   });
 
   setupExtensionPairing(overlay);
+  setupBrowserInstallation(overlay);
 
   // ── Clipboard clear select ───────────────────────────────────────────────────
   overlay.querySelector("#clipboard-clear-select").addEventListener("change", (e) => {
@@ -3212,7 +3658,60 @@ async function openSettingsModal() {
   overlay.querySelector("#settings-restore-btn").addEventListener("click", runRestoreFlow);
 }
 
+function setupAutomaticBackups(overlay) {
+  const api = window.secureLoginVault.settings;
+  const enabled = overlay.querySelector("#auto-backup-enabled");
+  const keep = overlay.querySelector("#auto-backup-keep");
+  const choose = overlay.querySelector("#auto-backup-choose");
+  const now = overlay.querySelector("#auto-backup-now");
+  const message = overlay.querySelector("#auto-backup-status");
+  let state;
+  function render(value) {
+    state = value;
+    enabled.value = value.enabled ? "on" : "off";
+    keep.value = String(value.keep);
+    overlay.querySelector("#auto-backup-folder").textContent = value.folder || "Not chosen";
+    overlay.querySelector("#auto-backup-last").textContent = value.lastSuccess
+      ? "Last successful backup: " + new Date(value.lastSuccess).toLocaleString()
+      : "No automatic backup yet.";
+    message.textContent = value.error || (value.enabled ? "Daily backups are on. SLV must be open and unlocked." : "Automatic backups are off.");
+    message.className = value.error ? "form-message is-error" : "form-message";
+    enabled.disabled = !value.folder;
+    keep.disabled = false;
+    choose.disabled = false;
+    now.disabled = !value.enabled;
+  }
+  async function perform(operation) {
+    enabled.disabled = keep.disabled = choose.disabled = now.disabled = true;
+    message.textContent = "Working…";
+    try {
+      const response = await operation();
+      if (!response.ok) throw new Error(response.message || "Could not update automatic backups.");
+      render(response.result);
+    } catch (error) {
+      if (state) render(state);
+      else choose.disabled = false;
+      message.textContent = error.message;
+      message.className = "form-message is-error";
+    }
+  }
+  const refresh = () => perform(() => api.getAutomaticBackups());
+  choose.addEventListener("click", () => perform(() => api.chooseAutomaticBackupFolder()));
+  now.addEventListener("click", () => perform(() => api.runAutomaticBackup()));
+  const configure = () => {
+    const options = { enabled: enabled.value === "on", keep: Number(keep.value) };
+    perform(() => api.configureAutomaticBackups(options));
+  };
+  enabled.addEventListener("change", configure);
+  keep.addEventListener("change", configure);
+  overlay.querySelector("#settings-tab-data").addEventListener("click", refresh);
+  refresh();
+}
+
 function closeSettingsModal() {
+  applyTextSize(getTextSize());
+  brandAccentPreview = null;
+  applyAccentColor(getBrandAccent());
   const overlay = document.querySelector("#settings-modal-overlay");
   if (overlay) overlay.classList.remove("is-open");
 }
@@ -4064,6 +4563,57 @@ async function runChangeMasterPassword() {
 //
 // The one-time code is created by the main process and shown here only once; it is
 // placed in the page with textContent. Closing Settings cancels an unused code.
+function setupBrowserInstallation(overlay) {
+  const api = window.secureLoginVault.settings;
+  const hint = overlay.querySelector("#extension-setup-hint");
+  const setupButton = overlay.querySelector("#extension-setup-btn");
+  const folderButton = overlay.querySelector("#extension-folder-btn");
+  const firefoxButton = overlay.querySelector("#extension-firefox-folder-btn");
+  const guide = overlay.querySelector("#extension-setup-guide");
+  const folderPath = overlay.querySelector("#extension-folder-path");
+  function render(status) {
+    setupButton.disabled = folderButton.disabled = firefoxButton.disabled = !status.supported;
+    overlay.querySelector("#extension-setup-title").textContent = status.ready ? "Browser helper installed" : "Browser setup";
+    guide.hidden = !status.supported;
+    folderPath.value = status.extensionPath || "";
+    overlay.querySelector("#extension-firefox-folder-path").value = status.firefoxExtensionPath || "";
+    hint.textContent = status.message || (status.ready
+      ? "Ready for Chrome, Edge and Firefox. Add each browser with its own pairing code."
+      : "Run setup once to connect Chrome, Edge or Firefox to this copy of SLV. No separate Node.js installation is needed.");
+  }
+  api.getBrowserSetup().then((res) => render(res.ok ? res.result : { message: res.message || "Could not check browser setup." }))
+    .catch(() => render({ message: "Could not check browser setup. Reopen Settings to retry." }));
+  setupButton.addEventListener("click", async () => {
+    setupButton.disabled = folderButton.disabled = firefoxButton.disabled = true;
+    hint.textContent = "Setting up the browser connection...";
+    try {
+      const res = await api.setupBrowserExtension();
+      if (!res.ok) throw new Error(res.message || "Browser setup failed.");
+      render(res.result);
+      overlay.querySelector("#extension-installation").open = true;
+      showExtensionBridgeStatus(res.result.bridge);
+      hint.textContent = res.result.folderOpened
+        ? "Setup complete. The Chrome/Edge folder is open. For Firefox, use Open Firefox Folder and follow the instructions below."
+        : "Setup complete. Use the folder path below to load the extension.";
+    } catch (error) {
+      setupButton.disabled = folderButton.disabled = firefoxButton.disabled = false;
+      hint.textContent = error.message || "Browser setup failed. Try again.";
+    }
+  });
+  folderButton.addEventListener("click", async () => {
+    try {
+      const res = await api.openExtensionFolder();
+      if (!res.ok) hint.textContent = res.message;
+    } catch { hint.textContent = "Could not open the extension folder."; }
+  });
+  firefoxButton.addEventListener("click", async () => {
+    try {
+      const res = await api.openExtensionFolder("firefox");
+      if (!res.ok) hint.textContent = res.message;
+    } catch { hint.textContent = "Could not open the Firefox extension folder."; }
+  });
+}
+
 function setupExtensionPairing(overlay) {
   const api = window.secureLoginVault.settings;
   const el = (id) => overlay.querySelector(id);
@@ -4075,6 +4625,47 @@ function setupExtensionPairing(overlay) {
   const copyBtn = el("#extension-pair-copy-btn");
   const cancelBtn = el("#extension-pair-cancel-btn");
   const unpairBtn = el("#extension-unpair-btn");
+  const pairedList = el("#extension-paired-list");
+  let renderedBrowsers = "";
+  function renderBrowsers(browsers) {
+    const signature = JSON.stringify(browsers);
+    if (signature === renderedBrowsers) return;
+    renderedBrowsers = signature;
+    pairedList.replaceChildren();
+    for (const browser of browsers) {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = browser.name;
+      const detail = document.createElement("small");
+      detail.textContent = browser.createdAt ? "Paired " + new Date(browser.createdAt).toLocaleString() : "Preserved from your previous SLV version";
+      label.append(title, detail);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary-button settings-action-btn";
+      button.textContent = "Unpair";
+      button.dataset.pairingId = browser.id;
+      button.setAttribute("aria-label", "Unpair " + browser.name);
+      let armedUntil = 0;
+      button.addEventListener("click", async () => {
+        if (Date.now() >= armedUntil) {
+          armedUntil = Date.now() + 4000;
+          button.textContent = "Click again to unpair";
+          setTimeout(() => { if (button.isConnected && Date.now() >= armedUntil) button.textContent = "Unpair"; }, 4100);
+          return;
+        }
+        button.disabled = true;
+        try {
+          const res = await api.unpairExtension(browser.id);
+          if (!res.ok) throw new Error(res.message || "Could not unpair this browser.");
+          render(res.result, browser.name + " unpaired. Other browsers stay connected.");
+        } catch (error) { hint.textContent = error.message; button.disabled = false; }
+      });
+      item.append(label, button);
+      pairedList.append(item);
+    }
+    pairedList.hidden = browsers.length === 0;
+  }
 
   let expiresAt = 0;
   let ticker = null;
@@ -4085,7 +4676,7 @@ function setupExtensionPairing(overlay) {
     clearInterval(ticker);
     ticker = null;
   };
-  const isOpen = () => document.body.contains(overlay);
+  const isOpen = () => overlay.classList.contains("is-open") && codeText.isConnected;
 
   function render(status, message) {
     showingCode = Boolean(status.codeActive) && Boolean(codeText.textContent);
@@ -4095,14 +4686,15 @@ function setupExtensionPairing(overlay) {
     cancelBtn.hidden = !showingCode;
     pairBtn.hidden = showingCode;
     unpairBtn.hidden = showingCode || !status.paired;
-    pairBtn.textContent = status.paired ? "Pair again" : "Pair browser";
+    pairBtn.textContent = "Add browser";
     pairBtn.disabled = status.encryptionAvailable === false;
+    renderBrowsers(status.browsers || []);
 
     if (message) hint.textContent = message;
     else if (status.encryptionAvailable === false) hint.textContent = "Not available: Windows encryption is not available for this account.";
     else if (showingCode) hint.textContent = "Paste this code into the Secure Login Vault extension. It works once.";
-    else if (status.paired) hint.textContent = "Paired. Your browser extension is linked to this app.";
-    else hint.textContent = "Not paired. Turn Browser Extension On, press Pair browser, then paste the code into the extension.";
+    else if (status.paired) hint.textContent = "Each browser has its own pairing. Your saved logins are shared.";
+    else hint.textContent = "No browsers paired. Turn Allow Browser Access on, then choose Add browser.";
   }
 
   async function refresh(message) {
@@ -4131,7 +4723,7 @@ function setupExtensionPairing(overlay) {
           render(status, "Paired. Your browser extension is linked to this app.");
           showToast("Browser paired", "info");
         } else {
-          render(status, "The code expired or was cancelled. Press Pair browser for a new one.");
+          render(status, "The code expired or was cancelled. Choose Add browser for a new one.");
         }
       }
     }, 1000);
@@ -4167,20 +4759,20 @@ function setupExtensionPairing(overlay) {
   // Two clicks: the first arms the button, the second does it.
   unpairBtn.addEventListener("click", async () => {
     if (!unpairArmedTimer) {
-      unpairBtn.textContent = "Click again to unpair";
+      unpairBtn.textContent = "Click again to unpair all";
       unpairArmedTimer = setTimeout(() => {
         unpairArmedTimer = null;
-        unpairBtn.textContent = "Unpair";
+        unpairBtn.textContent = "Unpair all";
       }, 4000);
       return;
     }
     clearTimeout(unpairArmedTimer);
     unpairArmedTimer = null;
-    unpairBtn.textContent = "Unpair";
+    unpairBtn.textContent = "Unpair all";
     const res = await api.unpairExtension();
     if (res.ok) {
       showToast("Browser unpaired", "info");
-      await refresh("Not paired. Turn Browser Extension On, press Pair browser, then paste the code into the extension.");
+      await refresh("No browsers paired. Turn Allow Browser Access on, then choose Add browser.");
     } else {
       showToast(res.message || "Could not unpair.", "error", 5000);
     }
@@ -4362,7 +4954,7 @@ async function openImportModeModal(rows, triggerBtn) {
           </button>
           <button type="button" class="danger-button import-mode-btn" id="import-mode-replace-btn" ${existingCount === 0 ? "disabled" : ""}>
             <strong>Replace</strong>
-            <span>Delete the ${existingCount} existing credential${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"} first, then import. Cannot be undone.</span>
+            <span>Move the ${existingCount} existing credential${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"} to Recently Deleted, then import. Recover displaced logins within 30 days.</span>
           </button>
         </div>
       </div>
@@ -5071,269 +5663,7 @@ function cryptoRandInt(max) {
 // starts clean. Follows the same overlay/container/header/body/footer
 // pattern as the Settings and Manage Categories modals.
 
-const FAQ_SECTIONS = [
-  {
-    title: "Getting Started",
-    items: [
-      {
-        q: "What is my master password, and why do I need it every time?",
-        a: "Your master password is the one key that unlocks your entire vault. " +
-           "Secure Login Vault doesn't store it anywhere — it's used to unlock the " +
-           "encryption on your data each time you open the app. That's exactly why " +
-           "it needs to be entered every session: there's no \"behind the scenes\" " +
-           "copy of it for the app to check against."
-      },
-      {
-        q: "I forgot my master password. Can you recover it for me?",
-        a: "The app can't show you your old password — it's never saved in a form " +
-           "that could be read back. But if you created a recovery key, you can " +
-           "set a new master password without losing anything: on the login screen " +
-           "click \"Forgot password?\", enter your recovery key, and choose a new " +
-           "password. If you didn't create a recovery key, a lost password means " +
-           "the vault can't be opened, and neither can its backups, since they " +
-           "need the same password. Try the password hint on the login screen " +
-           "first, and keep a written copy of your password or recovery key " +
-           "somewhere safe and offline."
-      },
-      {
-        q: "What is a recovery key, and should I create one?",
-        a: "A recovery key is a long, random code (like XXXX-XXXX-XXXX-…) that can " +
-           "reset your master password if you ever forget it. Yes — we recommend " +
-           "one. It's offered when you create a vault, and you can make or replace " +
-           "it any time in Settings → Security → Recovery Key. It's shown only " +
-           "once, so write it down or print it and keep it offline, separate from " +
-           "your computer and not inside this vault. Anyone who has your recovery " +
-           "key and your vault file can open your vault, so guard it like the " +
-           "master password itself. Creating a new key makes the old one stop " +
-           "working."
-      },
-      {
-        q: "What is the password hint?",
-        a: "An optional reminder you can add when creating a vault or in Settings → " +
-           "Security → Password Hint. If you set one, a \"Show password hint\" link " +
-           "appears on the login screen. Because it has to be readable before the " +
-           "vault is unlocked, anyone using your computer can see it — make it a " +
-           "vague nudge only you would understand, never the password itself. The " +
-           "app refuses a hint that contains your password. A hint helps you " +
-           "remember a password; it can't recover one you've lost."
-      },
-      {
-        q: "Why does the app say \"At least 12 characters\" when creating a password?",
-        a: "Both your master password and any change to it require a minimum length " +
-           "of 12 characters. Short passwords are far easier to guess or crack, and " +
-           "since this single password protects everything in your vault, it's worth " +
-           "making it long and memorable rather than short and complex."
-      }
-    ]
-  },
-  {
-    title: "Security & Encryption",
-    items: [
-      {
-        q: "How is my data actually protected?",
-        a: "Everything is protected in layers. Your master password is never stored — " +
-           "instead, the app keeps a one-way scrambled version of it (so it can " +
-           "check you typed the right one, without ever knowing the original). A " +
-           "separate, slower scrambling process turns your password into the actual " +
-           "encryption key, and that key locks your entire credential database using " +
-           "a strong, modern encryption standard (AES-256 — the same level of " +
-           "encryption used by banks and governments). If you set up a recovery key, " +
-           "the database is locked with a random key that is itself protected two " +
-           "ways — by your master password and by your recovery key — which is " +
-           "what makes a password reset possible. Without the right master " +
-           "password or recovery key, the stored data is unreadable noise."
-      },
-      {
-        q: "Is anything ever stored as plain, readable text?",
-        a: "Not your credentials. Website passwords, your master password, your " +
-           "recovery key, and the encryption keys are never written to disk in " +
-           "readable form. The only things readable without unlocking the vault " +
-           "are non-sensitive details like the app version and where the vault " +
-           "file lives on your computer — plus your password hint, if you chose to " +
-           "set one, because it has to show on the login screen."
-      },
-      {
-        q: "Does the app connect to the internet or send my data anywhere?",
-        a: "No. Secure Login Vault is built to work fully offline. Your vault file " +
-           "lives only on your computer, and nothing is uploaded, synced, or sent to " +
-           "any server. The only network-style actions are ones you trigger yourself, " +
-           "like opening a saved website link in your browser."
-      },
-      {
-        q: "What happens if someone copies my vault file?",
-        a: "Having the file alone isn't enough — it's encrypted, so without your " +
-           "master password it can't be opened or read. That said, treat the vault " +
-           "file (and any backups) the way you'd treat a physical key: don't leave " +
-           "copies somewhere a stranger could grab them, and don't email it to " +
-           "yourself over an unsecured connection. Never store your recovery key " +
-           "next to the vault file or a backup — together, the two open it."
-      },
-      {
-        q: "Why does the app lock itself?",
-        a: "Two settings in Settings → Security do this. Auto-Lock locks the vault " +
-           "after a period of inactivity (5, 10, 30 minutes, 1 hour, or never). " +
-           "Lock on Minimize locks it when you minimize the window " +
-           "or switch to another program and stay away longer than the grace " +
-           "period you choose (instantly, 10 or 30 seconds, 1 minute, or never). " +
-           "Either way, anyone who sits down at your computer would need your " +
-           "master password. Picking a file in the Import, Export or Backup " +
-           "windows doesn't count as leaving, so it won't lock you out mid-task."
-      },
-      {
-        q: "Why did my copied password disappear from my clipboard?",
-        a: "That's intentional — it's the Clipboard Auto-Clear setting. After you " +
-           "copy a password, the app wipes it from your clipboard a short time later " +
-           "(15s, 30s, or 1 minute, configurable in Settings → Security) so it " +
-           "doesn't linger somewhere another app could accidentally read it. If you " +
-           "need more time, paste it right after copying, or increase the timeout " +
-           "in Settings."
-      }
-    ]
-  },
-  {
-    title: "Backup & Restore",
-    items: [
-      {
-        q: "What's the difference between an Encrypted Backup, CSV, and JSON export?",
-        a: "An Encrypted Backup (.slvbackup) is a full, password-protected snapshot " +
-           "of your vault — the safest way to back things up, since it stays " +
-           "encrypted the whole time. CSV and JSON exports are plain, readable files " +
-           "useful for moving data into a spreadsheet or another tool, but they are " +
-           "NOT encrypted, so anyone who opens that file can read your saved " +
-           "credentials. Use CSV/JSON only for migration, and delete the file " +
-           "afterward."
-      },
-      {
-        q: "Where do my backups get saved?",
-        a: "By default, you'll be asked where to save each backup. You can set a " +
-           "default backup folder in Settings → Security so it's quicker next time. " +
-           "Either way, it's worth keeping a copy somewhere other than your main " +
-           "hard drive too — like a USB drive or external storage — in case your " +
-           "computer is lost, stolen, or fails."
-      },
-      {
-        q: "What happens if I restore a backup?",
-        a: "Restoring completely replaces everything currently in your vault with " +
-           "what's in the backup file. Anything added since that backup was made " +
-           "will be lost. This can't be undone, so if you're unsure, export your " +
-           "current vault first before restoring an older one."
-      },
-      {
-        q: "Do I need my master password to restore a backup?",
-        a: "Yes — an encrypted backup was locked with a master password at the time " +
-           "it was made, and you'll need that same password to unlock and restore it."
-      }
-    ]
-  },
-  {
-    title: "Import & Export",
-    items: [
-      {
-        q: "What can I import into my vault?",
-        a: "You can bring in credentials from a CSV file, a JSON file, or a CSV " +
-           "exported from KeePass. The app reads the file, matches up the columns, " +
-           "and adds the credentials to your vault."
-      },
-      {
-        q: "Will importing create duplicates if I run it twice?",
-        a: "Each import adds new credential entries — it doesn't automatically check " +
-           "whether a similar entry already exists. If you accidentally import the " +
-           "same file twice, you may end up with duplicates that you'll need to " +
-           "remove manually. It's a good habit to double-check before re-importing " +
-           "a file."
-      },
-      {
-        q: "Is it safe to export to CSV or JSON?",
-        a: "The export itself is safe, but the resulting file is not encrypted — " +
-           "anyone who opens it can read every password in plain text. Only export " +
-           "to CSV/JSON when you genuinely need to (like moving to a new tool), " +
-           "store the file somewhere secure in the meantime, and delete it once " +
-           "you're done."
-      }
-    ]
-  },
-  {
-    title: "Everyday Use",
-    items: [
-      {
-        q: "How do I organize my credentials?",
-        a: "Use Categories (like WordPress, Hosting, or Email) to group similar " +
-           "logins, and Favorites to pin the ones you use most so they show up at " +
-           "the top. You can manage your category list anytime from Settings → " +
-           "Categories — add new ones, rename them, or delete ones you no longer " +
-           "need."
-      },
-      {
-        q: "Why don't I see copy/edit/delete buttons on a credential until I hover over it?",
-        a: "That's intentional — it keeps the list clean and readable instead of " +
-           "crowding every row with icons all the time. Move your mouse over a " +
-           "credential row (or over the username/password field specifically) and " +
-           "the relevant action buttons fade into view. On a touchscreen or " +
-           "trackpad, tapping the row works the same way."
-      },
-      {
-        q: "What does the search bar actually search through?",
-        a: "Typing in the search bar searches across website name, URL, username, " +
-           "email, notes, tags, and category all at once, and it's case-insensitive " +
-           "— so you don't need to remember the exact spelling or capitalization."
-      },
-      {
-        q: "Can I change my master password without losing my saved logins?",
-        a: "Yes. Settings → Security → Change Master Password re-locks your vault " +
-           "with the new password without ever exposing your stored credentials in " +
-           "the process. You'll need to confirm your current password first. Your " +
-           "recovery key keeps working after a change, but your old password hint " +
-           "is replaced by the new one you enter (or removed if you leave it " +
-           "empty), since it described the old password. Older backups still " +
-           "need the password they were made with."
-      },
-      {
-        q: "Can I move my vault file to a different folder or drive?",
-        a: "Yes, the database location can be changed from Settings. The app copies " +
-           "the vault to the new location, verifies the copy is intact, and only " +
-           "then removes the original — so you're never left without a working " +
-           "copy mid-move."
-      }
-    ]
-  },
-  {
-    title: "Troubleshooting",
-    items: [
-      {
-        q: "The app won't accept my master password, but I'm sure it's correct.",
-        a: "Double-check Caps Lock and your keyboard layout, since the password " +
-           "field doesn't reveal typos. If you're using the Show/Hide password " +
-           "toggle, confirm what's actually typed matches what you intended, and " +
-           "try the \"Show password hint\" link if the login screen has one. If " +
-           "you created a recovery key, click \"Forgot password?\" on the login " +
-           "screen to set a new password. Without a recovery key, the only way " +
-           "back in is a backup made with a password you do remember."
-      },
-      {
-        q: "Something in the app looks visually off — a button or icon in the wrong place.",
-        a: "Try closing and reopening the relevant screen, since most display " +
-           "glitches clear up when a panel is rebuilt. If it persists, restarting " +
-           "the app usually resolves it. This doesn't affect the safety of your " +
-           "encrypted data — it's strictly cosmetic."
-      },
-      {
-        q: "My import didn't bring in all my credentials.",
-        a: "This is usually a formatting issue in the source file — an unexpected " +
-           "column order, missing headers, or a few accidental quote marks or " +
-           "commas inside a field. Try opening the file in a spreadsheet program " +
-           "first to check that rows look clean and consistent before importing " +
-           "again."
-      },
-      {
-        q: "Opening a website from the app doesn't open my browser.",
-        a: "The app hands the link off to whatever browser is set as your " +
-           "computer's default. If nothing opens, check your system's default " +
-           "browser setting, and make sure the saved URL is a complete, valid " +
-           "address (for example, starting with https://)."
-      }
-    ]
-  }
-];
+const FAQ_SECTIONS = globalThis.SLVHelpSections;
 
 function getOrCreateHelpOverlay() {
   let overlay = document.querySelector("#help-modal-overlay");

@@ -68,6 +68,38 @@ async function main() {
     assert.equal(result.submitted, false);
   });
 
+  await check("inline fills only its selected form and consumes its context", () => {
+    const dom = openPage('<form><input name="firstUser"><input type="password" name="firstPass"></form><form><input name="secondUser"><input type="password" name="secondPass"></form>');
+    const target = dom.window.document.querySelector('[name="secondPass"]');
+    dom.window.slvInlineContext = { token: "chosen", expires: Date.now() + 60000, target, form: target.form, url: dom.window.location.href };
+    const fill = loadIntoPage(dom);
+    assert.equal(fill("https://example.com", CREDENTIALS, { ...OPTIONS, inlineToken: "chosen" }).status, "filled");
+    assert.deepEqual(values(dom), { firstUser: "", firstPass: "", secondUser: CREDENTIALS.username, secondPass: CREDENTIALS.password });
+    assert.equal(dom.window.slvInlineContext, null);
+    assert.equal(fill("https://example.com", CREDENTIALS, { ...OPTIONS, inlineToken: "chosen" }).status, "blocked");
+    dom.window.close();
+  });
+
+  await check("inline rejects expired, replaced, moved or redirected targets", () => {
+    for (const scenario of ["expired", "token", "removed", "replaced", "moved", "action", "navigation", "hidden"]) {
+      const dom = openPage(PAGES.classic + '<form id="other"></form>');
+      const target = dom.window.document.querySelector('[type="password"]');
+      const context = { token: "chosen", expires: Date.now() + 60000, target, form: target.form, url: dom.window.location.href };
+      dom.window.slvInlineContext = context;
+      if (scenario === "expired") context.expires = 0;
+      if (scenario === "token") context.token = "other";
+      if (scenario === "removed") target.remove();
+      if (scenario === "replaced") target.replaceWith(target.cloneNode());
+      if (scenario === "moved") dom.window.document.querySelector("#other").append(target);
+      if (scenario === "action") context.form.action = "https://evil.test/";
+      if (scenario === "navigation") dom.window.history.replaceState({}, "", "/other");
+      if (scenario === "hidden") target.hidden = true;
+      assert.equal(loadIntoPage(dom)("https://example.com", CREDENTIALS, { ...OPTIONS, inlineToken: "chosen" }).status, "blocked", scenario);
+      assert.equal(target.value, "");
+      dom.window.close();
+    }
+  });
+
   await check("a page that is not the expected origin is never touched", () => {
     for (const [pageUrl, expected] of [
       ["https://evil.test/login", "https://example.com"],

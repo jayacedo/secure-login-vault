@@ -1,8 +1,10 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
+const { pathToFileURL } = require("url");
 const { createVaultStore } = require("./services/vaultStore");
-const { isSafeExternalUrl, createPathGrants } = require("./services/ipcGuards");
+const { isSafeExternalUrl, createPathGrants, isTrustedAppSender } = require("./services/ipcGuards");
+const { runVaultOperation, assertVaultOperationActive, beforeVaultCommit } = require("./services/vaultOperationContext");
 const { createLockManager, normalizePolicy } = require("./services/lockManager");
 const { writeJsonAtomic } = require("./services/fsUtils");
 const { buildLoginTarget, describeTargetProblem } = require("./services/siteLogin");
@@ -12,6 +14,9 @@ const { createExtensionHandlers } = require("./services/extensionHandlers");
 const { createPairing } = require("./services/extensionPairing");
 const { createPairingStorage } = require("./services/pairingStorage");
 const { getPipeName } = require("./native-host/pipeName");
+const { createBrowserSetup } = require("./services/browserSetup");
+const browserSavePrompt = require("./services/browserSavePrompt");
+const { createAutomaticBackups } = require("./services/automaticBackups");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -22,8 +27,48 @@ let loginWindows;
 let extensionBridge;
 let extensionPairing;
 let pairingStorage;
+let browserSetup;
+let automaticBackups;
+let trashMaintenance;
 let pairingExpiresAt = 0;
 const pathGrants = createPathGrants();
+// One writer process per user-data profile. The native helper runs separately
+// through its own entry point and does not acquire this desktop lock.
+const ownsDesktopInstance = app.requestSingleInstanceLock();
+if (!ownsDesktopInstance) app.quit();
+app.on("second-instance", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show(); mainWindow.focus();
+  }
+});
+const appPageUrl = pathToFileURL(path.join(__dirname, "renderer", "index.html")).href;
+const lockedRequests = new Set([
+  "vault:get-state", "vault:create", "vault:unlock", "vault:lock", "vault:pick-restore-file", "vault:restore-backup",
+  "vault:reset-with-recovery-key", "vault:set-lock-policy", "app:get-info", "app:set-window-title", "app:set-window-icon",
+  "vault:get-extension-bridge", "vault:get-browser-setup", "vault:get-extension-pairing"
+]);
+function handleAppRequest(channel, handler) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    const trusted = () => isTrustedAppSender(event, mainWindow, appPageUrl);
+    if (!trusted()) return { ok: false, message: "Open this action in Secure Login Vault." };
+    const epoch = vaultStore.getOperationEpoch();
+    const protectedRequest = !lockedRequests.has(channel);
+    const check = () => {
+      if (!trusted() || (protectedRequest && (!vaultStore.isUnlocked() || epoch !== vaultStore.getOperationEpoch()))) {
+        throw createPublicError("Vault is locked or its session changed. Try again after unlocking.");
+      }
+    };
+    const context = { check, buffers: new Set(), committing: false };
+    try {
+      check();
+      const result = await runVaultOperation(context, () => handler(event, ...args));
+      check();
+      return result;
+    } catch (error) { return { ok: false, message: error?.isPublic ? error.message : "Vault operation failed." }; }
+    finally { for (const buffer of context.buffers) buffer.fill(0); }
+  });
+}
 
 // Native dialogs take focus from the window; keep that from triggering the
 // background auto-lock while the user is picking a file (time-limited, see
@@ -31,7 +76,9 @@ const pathGrants = createPathGrants();
 async function withNativeDialog(openDialog) {
   lockManager.pauseBackground();
   try {
-    return await openDialog();
+    const result = await openDialog();
+    assertVaultOperationActive();
+    return result;
   } finally {
     lockManager.resumeBackground();
   }
@@ -137,147 +184,182 @@ function createMainWindow() {
 
 function registerAuthHandlers() {
   // ─── Auth & vault lifecycle ─────────────────────────────────────────────────
-  ipcMain.handle("vault:get-state", async () => {
+  handleAppRequest("vault:get-state", async () => {
     return vaultStore.getState();
   });
 
-  ipcMain.handle("vault:create", async (_event, payload) => {
+  handleAppRequest("vault:create", async (_event, payload) => {
     const response = await handleVaultOperation(() => vaultStore.createVault(payload));
-    if (response.ok) lockManager.setUnlocked(true);
+    if (response.ok) { lockManager.setUnlocked(true); automaticBackups.run().catch(() => {}); }
     return response;
   });
 
-  ipcMain.handle("vault:unlock", async (_event, payload) => {
+  handleAppRequest("vault:unlock", async (_event, payload) => {
     const response = await handleVaultOperation(() => vaultStore.unlockVault(payload));
-    if (response.ok) lockManager.setUnlocked(true);
+    if (response.ok) {
+      lockManager.setUnlocked(true);
+      vaultStore.purgeDeletedCredentials().catch(() => {});
+      automaticBackups.run().catch(() => {});
+    }
     return response;
   });
 
-  ipcMain.handle("vault:lock", async () => {
+  handleAppRequest("vault:lock", async () => {
+    pathGrants.clear();
+    saveApprovalAbort?.abort();
     lockManager.setUnlocked(false);
     extensionPairing.cancelPairing(); // an unused pairing code does not outlive the unlock
     loginWindows.closeAll();
     return vaultStore.lockVault();
   });
 
-  ipcMain.handle("vault:get-dashboard-data", async () => {
+  handleAppRequest("vault:get-dashboard-data", async () => {
     return handleVaultOperation(() => vaultStore.getDashboardData());
   });
 
   // ─── Phase 5: Credential CRUD ───────────────────────────────────────────────
-  ipcMain.handle("vault:get-credentials", async () => {
+  handleAppRequest("vault:get-credentials", async () => {
     return handleVaultOperation(() => vaultStore.getAllCredentials());
   });
 
-  ipcMain.handle("vault:get-credentials-for-export", async () => {
+  handleAppRequest("vault:get-credentials-for-export", async () => {
     return handleVaultOperation(() => vaultStore.getAllCredentialsForExport());
   });
 
-  ipcMain.handle("vault:get-credential", async (_event, id) => {
+  handleAppRequest("vault:get-credential", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.getCredential(id));
   });
 
-  ipcMain.handle("vault:add-credential", async (_event, data) => {
+  handleAppRequest("vault:get-password-history", (event, id) => handleVaultOperation(() => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw createPublicError("Open the credential in SLV.");
+    }
+    return vaultStore.getPasswordHistory(id);
+  }));
+
+  handleAppRequest("vault:check-health", event => handleVaultOperation(() => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw createPublicError("Open Vault Health in SLV.");
+    }
+    return vaultStore.checkVaultHealth();
+  }));
+
+  handleAppRequest("vault:add-credential", async (_event, data) => {
     return handleVaultOperation(() => vaultStore.createCredential(data));
   });
 
-  ipcMain.handle("vault:update-credential", async (_event, id, data) => {
+  handleAppRequest("vault:update-credential", async (_event, id, data) => {
     return handleVaultOperation(() => vaultStore.editCredential(id, data));
   });
 
-  ipcMain.handle("vault:delete-credential", async (_event, id) => {
+  handleAppRequest("vault:delete-credential", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.removeCredential(id));
   });
 
-  ipcMain.handle("vault:delete-credentials-by-groups", async (_event, groupNames) => {
+  for (const [channel, operation] of [
+    ["vault:duplicates-list", () => vaultStore.getDuplicateReview()],
+    ["vault:duplicates-resolve", choice => vaultStore.resolveDuplicateReview(choice)],
+    ["vault:trash-list", () => vaultStore.getDeletedCredentials()],
+    ["vault:trash-restore", id => vaultStore.restoreDeletedCredential(id)],
+    ["vault:trash-delete", (id, confirmed) => vaultStore.permanentlyDeleteCredential(id, confirmed)]
+  ]) {
+    handleAppRequest(channel, (event, ...args) => handleVaultOperation(() => {
+      if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+        throw createPublicError("Open the review in SLV.");
+      }
+      return operation(...args);
+    }));
+  }
+
+  handleAppRequest("vault:delete-credentials-by-groups", async (_event, groupNames) => {
     return handleVaultOperation(() => vaultStore.removeCredentialsByGroups(groupNames));
   });
 
-  ipcMain.handle("vault:toggle-favorite", async (_event, id) => {
+  handleAppRequest("vault:toggle-favorite", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.toggleCredentialFavorite(id));
   });
 
-  ipcMain.handle("vault:get-categories", async () => {
+  handleAppRequest("vault:get-categories", async () => {
     return handleVaultOperation(() => vaultStore.getAllCategories());
   });
 
   // ─── Category management ────────────────────────────────────────────────────
-  ipcMain.handle("vault:get-categories-with-usage", async () => {
+  handleAppRequest("vault:get-categories-with-usage", async () => {
     return handleVaultOperation(() => vaultStore.getCategoriesWithUsage());
   });
 
-  ipcMain.handle("vault:add-category", async (_event, name) => {
+  handleAppRequest("vault:add-category", async (_event, name) => {
     return handleVaultOperation(() => vaultStore.createCategory(name));
   });
 
-  ipcMain.handle("vault:rename-category", async (_event, currentName, newName) => {
+  handleAppRequest("vault:rename-category", async (_event, currentName, newName) => {
     return handleVaultOperation(() => vaultStore.editCategory(currentName, newName));
   });
 
-  ipcMain.handle("vault:delete-category", async (_event, name, reassignTo) => {
+  handleAppRequest("vault:delete-category", async (_event, name, reassignTo) => {
     return handleVaultOperation(() => vaultStore.removeCategory(name, reassignTo));
   });
 
   // ─── Phase 6: Live Search ───────────────────────────────────────────────────
-  ipcMain.handle("vault:search-credentials", async (_event, options) => {
+  handleAppRequest("vault:search-credentials", async (_event, options) => {
     return handleVaultOperation(() => vaultStore.searchVaultCredentials(options));
   });
 
   // ─── Group management ───────────────────────────────────────────────────────
-  ipcMain.handle("vault:get-groups", async () => {
+  handleAppRequest("vault:get-groups", async () => {
     return handleVaultOperation(() => vaultStore.getAllGroups());
   });
 
-  ipcMain.handle("vault:get-groups-with-usage", async () => {
+  handleAppRequest("vault:get-groups-with-usage", async () => {
     return handleVaultOperation(() => vaultStore.getGroupsWithUsage());
   });
 
-  ipcMain.handle("vault:add-group", async (_event, name) => {
+  handleAppRequest("vault:add-group", async (_event, name) => {
     return handleVaultOperation(() => vaultStore.createGroup(name));
   });
 
-  ipcMain.handle("vault:rename-group", async (_event, currentName, newName) => {
+  handleAppRequest("vault:rename-group", async (_event, currentName, newName) => {
     return handleVaultOperation(() => vaultStore.editGroup(currentName, newName));
   });
 
-  ipcMain.handle("vault:delete-group", async (_event, name) => {
+  handleAppRequest("vault:delete-group", async (_event, name) => {
     return handleVaultOperation(() => vaultStore.removeGroup(name));
   });
 
-  ipcMain.handle("vault:get-active-group", async () => {
+  handleAppRequest("vault:get-active-group", async () => {
     return handleVaultOperation(() => vaultStore.getCurrentActiveGroup());
   });
 
-  ipcMain.handle("vault:set-active-group", async (_event, name) => {
+  handleAppRequest("vault:set-active-group", async (_event, name) => {
     return handleVaultOperation(() => vaultStore.setCurrentActiveGroup(name));
   });
 
   // ─── Client Vault CRUD ──────────────────────────────────────────────────────
-  ipcMain.handle("vault:get-clients", async () => {
+  handleAppRequest("vault:get-clients", async () => {
     return handleVaultOperation(() => vaultStore.getAllClients());
   });
 
-  ipcMain.handle("vault:get-client", async (_event, id) => {
+  handleAppRequest("vault:get-client", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.getClient(id));
   });
 
-  ipcMain.handle("vault:add-client", async (_event, data) => {
+  handleAppRequest("vault:add-client", async (_event, data) => {
     return handleVaultOperation(() => vaultStore.createClient(data));
   });
 
-  ipcMain.handle("vault:update-client", async (_event, id, data) => {
+  handleAppRequest("vault:update-client", async (_event, id, data) => {
     return handleVaultOperation(() => vaultStore.editClient(id, data));
   });
 
-  ipcMain.handle("vault:delete-client", async (_event, id) => {
+  handleAppRequest("vault:delete-client", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.removeClient(id));
   });
 
-  ipcMain.handle("vault:toggle-client-favorite", async (_event, id) => {
+  handleAppRequest("vault:toggle-client-favorite", async (_event, id) => {
     return handleVaultOperation(() => vaultStore.toggleClientFav(id));
   });
 
-  ipcMain.handle("vault:search-clients", async (_event, options) => {
+  handleAppRequest("vault:search-clients", async (_event, options) => {
     return handleVaultOperation(() => vaultStore.searchVaultClients(options));
   });
 }
@@ -338,6 +420,7 @@ async function loadExtensionSettings() {
 // declines by itself after a while. SLV_APPROVAL_TIMEOUT_MS only exists so tests need
 // not wait; it can only shorten the time.
 let approvalOpen = false;
+let saveApprovalAbort = null;
 const APPROVAL_TIMEOUT_MS = Math.min(30000, Math.max(200, Number(process.env.SLV_APPROVAL_TIMEOUT_MS) || 30000));
 
 // What is shown comes from saved data, so strip anything that could reorder or hide text.
@@ -365,12 +448,30 @@ async function askBeforeSaving({ host, username, name, mode }, signal) {
       signal
     });
   }
-  return confirmInApp({
-    message: `Add a new login for "${user}" on ${site}?`,
-    detail: "A browser extension asked to save this login. Choose Add only if you just asked for it.",
-    buttons: ["Don't add", "Add"],
-    signal
-  });
+  if (approvalOpen || !mainWindow || mainWindow.isDestroyed() || signal?.aborted) return false;
+  approvalOpen = true;
+  const abort = new AbortController();
+  saveApprovalAbort = abort;
+  const cancel = () => abort.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    const [groups, categories, activeGroup] = await Promise.all([
+      vaultStore.getAllGroups(), vaultStore.getAllCategories(), vaultStore.getCurrentActiveGroup()
+    ]);
+    if (abort.signal.aborted) return false;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.flashFrame(true);
+    return await withNativeDialog(() => browserSavePrompt.showSaveLoginPrompt({
+      parent: mainWindow, host: site, username: user, groups, categories, activeGroup,
+      signal: abort.signal, timeoutMs: APPROVAL_TIMEOUT_MS
+    }));
+  } catch { return false; }
+  finally {
+    signal?.removeEventListener("abort", cancel);
+    if (saveApprovalAbort === abort) saveApprovalAbort = null;
+    approvalOpen = false;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(false);
+  }
 }
 
 // One question at a time. The first button is the default and what closing the box means;
@@ -419,6 +520,7 @@ function pairingStatus() {
   const codeActive = extensionPairing.isPairingActive();
   return {
     paired: extensionPairing.isPaired(),
+    browsers: extensionPairing.list(),
     codeActive,
     expiresAt: codeActive ? pairingExpiresAt : 0,
     encryptionAvailable: pairingStorage.isAvailable()
@@ -426,12 +528,29 @@ function pairingStatus() {
 }
 
 function registerExtensionHandlers() {
+  handleAppRequest("vault:get-browser-setup", () => handleVaultOperation(() => browserSetup.status()));
+  handleAppRequest("vault:setup-browser-extension", () => handleVaultOperation(async () => {
+    if (!(await vaultStore.getState()).isUnlocked) throw createPublicError("Unlock the vault first.");
+    const result = await browserSetup.setup();
+    if (!(await startExtensionBridge())) throw createPublicError(extensionState.error);
+    await writeJsonAtomic(extensionSettingsPath(), { enabled: true, askBeforeFill: extensionState.askBeforeFill });
+    extensionState.enabled = true;
+    // Registration is complete even when Explorer cannot be opened.
+    let folderOpened = true;
+    try { await browserSetup.openFolder(); } catch { folderOpened = false; }
+    return { ...result, folderOpened, bridge: extensionStatus() };
+  }));
+  handleAppRequest("vault:open-extension-folder", (_event, browser) => handleVaultOperation(async () => {
+    if (!(await vaultStore.getState()).isUnlocked) throw createPublicError("Unlock the vault first.");
+    return browserSetup.openFolder(browser);
+  }));
+
   // Pairing is only ever started from the unlocked app, by the person at the screen.
-  ipcMain.handle("vault:get-extension-pairing", async () => {
+  handleAppRequest("vault:get-extension-pairing", async () => {
     return handleVaultOperation(async () => pairingStatus());
   });
 
-  ipcMain.handle("vault:start-extension-pairing", async () => {
+  handleAppRequest("vault:start-extension-pairing", async () => {
     return handleVaultOperation(async () => {
       if (!(await vaultStore.getState()).isUnlocked) {
         throw createPublicError("Unlock the vault first.");
@@ -448,30 +567,32 @@ function registerExtensionHandlers() {
     });
   });
 
-  ipcMain.handle("vault:cancel-extension-pairing", async () => {
+  handleAppRequest("vault:cancel-extension-pairing", async () => {
     return handleVaultOperation(async () => {
       extensionPairing.cancelPairing();
       return pairingStatus();
     });
   });
 
-  ipcMain.handle("vault:unpair-extension", async () => {
+  handleAppRequest("vault:unpair-extension", async (_event, pairingId) => {
     return handleVaultOperation(async () => {
+      if (!(await vaultStore.getState()).isUnlocked) throw createPublicError("Unlock the vault first.");
+      if (pairingId !== undefined && (typeof pairingId !== "string" || !/^[0-9a-f]{64}$/.test(pairingId))) throw createPublicError("Choose a paired browser.");
       try {
-        extensionPairing.unpair();
+        extensionPairing.unpair(pairingId);
       } catch {
         throw createPublicError("The pairing could not be removed. Close other programs using the app data folder and try again.");
       }
-      extensionBridge.closeConnections(); // anything already connected loses its access now
+      extensionBridge.closeConnections(pairingId); // only the selected browser loses access
       return pairingStatus();
     });
   });
 
-  ipcMain.handle("vault:get-extension-bridge", async () => {
+  handleAppRequest("vault:get-extension-bridge", async () => {
     return handleVaultOperation(async () => extensionStatus());
   });
 
-  ipcMain.handle("vault:set-extension-bridge", async (_event, payload) => {
+  handleAppRequest("vault:set-extension-bridge", async (_event, payload) => {
     return handleVaultOperation(async () => {
       if (!payload || typeof payload.enabled !== "boolean") {
         throw createPublicError("Choose On or Off.");
@@ -494,7 +615,7 @@ function registerExtensionHandlers() {
   });
 
   // Optional: confirm in the app every time the browser extension wants to fill a login.
-  ipcMain.handle("vault:set-extension-ask-before-fill", async (_event, payload) => {
+  handleAppRequest("vault:set-extension-ask-before-fill", async (_event, payload) => {
     return handleVaultOperation(async () => {
       if (!payload || typeof payload.enabled !== "boolean") {
         throw createPublicError("Choose On or Off.");
@@ -509,7 +630,7 @@ function registerExtensionHandlers() {
 function registerLoginHandlers() {
   // "Sign in": the renderer only says which saved entry; the main process reads
   // the credentials itself, so the password never goes through the page.
-  ipcMain.handle("vault:open-login-window", async (_event, payload) => {
+  handleAppRequest("vault:open-login-window", async (_event, payload) => {
     return handleVaultOperation(async () => {
       const request = payload && typeof payload === "object" ? payload : {};
       const id = Number(request.id);
@@ -531,6 +652,7 @@ function registerLoginHandlers() {
         throw createPublicError(describeTargetProblem(target.reason));
       }
 
+      assertVaultOperationActive();
       const opened = loginWindows.open({ ...target, submit: true });
       return { opened: true, host: opened.host };
     });
@@ -540,7 +662,7 @@ function registerLoginHandlers() {
 function registerImportExportHandlers() {
   // ─── Phase 9: Import ────────────────────────────────────────────────────────
 
-  ipcMain.handle("vault:pick-import-file", async () => {
+  handleAppRequest("vault:pick-import-file", async () => {
     const result = await withNativeDialog(() =>
       dialog.showOpenDialog(mainWindow, {
         title: "Select a file to import",
@@ -572,7 +694,7 @@ function registerImportExportHandlers() {
 
   // ─── Phase 9: Export ────────────────────────────────────────────────────────
 
-  ipcMain.handle("vault:pick-export-path", async (_event, { defaultName, format }) => {
+  handleAppRequest("vault:pick-export-path", async (_event, { defaultName, format }) => {
     const filterMap = {
       csv: { name: "CSV", extensions: ["csv"] },
       json: { name: "JSON", extensions: ["json"] },
@@ -597,20 +719,27 @@ function registerImportExportHandlers() {
     return { ok: true, result: { canceled: false, filePath: result.filePath } };
   });
 
-  ipcMain.handle("vault:write-export-file", async (_event, { filePath, content } = {}) => {
+  handleAppRequest("vault:write-export-file", async (_event, { filePath, content } = {}) => {
     return handleVaultOperation(async () => {
       if (!pathGrants.has("export", filePath) || typeof content !== "string") {
         throw createPublicError("Choose where to save the file first.");
       }
       pathGrants.revoke("export", filePath);
-      await fs.writeFile(filePath, content, "utf8");
+      // Stage plaintext exports and recheck the originating unlocked session
+      // immediately before publishing them. Cancelled temp files are removed.
+      const temporary = `${filePath}.${require("crypto").randomBytes(6).toString("hex")}.tmp`;
+      try {
+        await fs.writeFile(temporary, content, { encoding: "utf8", flag: "wx" });
+        beforeVaultCommit();
+        await fs.rename(temporary, filePath);
+      } finally { await fs.rm(temporary, { force: true }).catch(() => {}); }
       return { written: true, filePath };
     });
   });
 
   // ─── Phase 9: Encrypted Backup & Restore ───────────────────────────────────
 
-  ipcMain.handle("vault:create-backup", async (_event, { filePath } = {}) => {
+  handleAppRequest("vault:create-backup", async (_event, { filePath } = {}) => {
     return handleVaultOperation(async () => {
       if (!pathGrants.has("export", filePath)) {
         throw createPublicError("Choose where to save the backup first.");
@@ -620,7 +749,7 @@ function registerImportExportHandlers() {
     });
   });
 
-  ipcMain.handle("vault:pick-restore-file", async () => {
+  handleAppRequest("vault:pick-restore-file", async () => {
     const result = await withNativeDialog(() =>
       dialog.showOpenDialog(mainWindow, {
         title: "Select an encrypted backup to restore",
@@ -637,7 +766,7 @@ function registerImportExportHandlers() {
     return { ok: true, result: { canceled: false, filePath: result.filePaths[0] } };
   });
 
-  ipcMain.handle("vault:restore-backup", async (_event, { filePath, masterPassword } = {}) => {
+  handleAppRequest("vault:restore-backup", async (_event, { filePath, masterPassword } = {}) => {
     return handleVaultOperation(async () => {
       if (!pathGrants.has("restore", filePath)) {
         throw createPublicError("Choose a backup file first.");
@@ -645,6 +774,7 @@ function registerImportExportHandlers() {
       // Kept after a failed attempt (e.g. wrong password) so the user can
       // retry; revoked once the restore succeeds.
       const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
+      pathGrants.clear();
       lockManager.setUnlocked(false); // restore locks the vault
       loginWindows.closeAll();
       pathGrants.revoke("restore", filePath);
@@ -672,7 +802,7 @@ async function loadLockPolicy() {
 function registerLockPolicyHandlers() {
   // The renderer reports its settings; the main process validates, stores and
   // enforces them. Persisted so the policy applies from the next launch too.
-  ipcMain.handle("vault:set-lock-policy", async (_event, payload) => {
+  handleAppRequest("vault:set-lock-policy", async (_event, payload) => {
     return handleVaultOperation(async () => {
       let policy;
       try {
@@ -688,35 +818,57 @@ function registerLockPolicyHandlers() {
 
   // Fire-and-forget user-activity ping that restarts the inactivity timer.
   ipcMain.on("vault:activity", (event) => {
-    if (mainWindow && event.sender === mainWindow.webContents) {
+    if (isTrustedAppSender(event, mainWindow, appPageUrl)) {
       lockManager.noteActivity();
     }
   });
 }
 
 function registerSettingsHandlers() {
+  const backupOperation = (event, operation) => handleVaultOperation(async () => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw createPublicError("Open Settings in SLV.");
+    if (!(await vaultStore.getState()).isUnlocked) throw createPublicError("Unlock the vault first.");
+    return operation();
+  });
+  handleAppRequest("vault:auto-backup-status", event => backupOperation(event, () => automaticBackups.status()));
+  handleAppRequest("vault:auto-backup-configure", (event, options) => backupOperation(event, async () => {
+    await automaticBackups.configure(options);
+    return automaticBackups.run();
+  }));
+  handleAppRequest("vault:auto-backup-now", event => backupOperation(event, () => automaticBackups.run({ force: true })));
+  handleAppRequest("vault:auto-backup-folder", event => backupOperation(event, async () => {
+    const result = await withNativeDialog(() => dialog.showOpenDialog(mainWindow, {
+      title: "Choose a folder for automatic encrypted backups", properties: ["openDirectory", "createDirectory"]
+    }));
+    if (result.canceled || !result.filePaths[0]) return automaticBackups.status();
+    return automaticBackups.chooseFolder(result.filePaths[0]);
+  }));
   // ─── Phase 10: Settings ─────────────────────────────────────────────────────
 
-  ipcMain.handle("vault:change-master-password", async (_event, payload) => {
+  handleAppRequest("vault:change-master-password", async (_event, payload) => {
     return handleVaultOperation(() => vaultStore.changeMasterPassword(payload));
   });
 
-  ipcMain.handle("vault:set-password-hint", async (_event, payload) => {
+  handleAppRequest("vault:set-password-hint", async (_event, payload) => {
     return handleVaultOperation(() => vaultStore.setPasswordHint(payload));
   });
 
-  ipcMain.handle("vault:create-recovery-key", async (_event, payload) => {
+  handleAppRequest("vault:create-recovery-key", async (_event, payload) => {
     return handleVaultOperation(() => vaultStore.createRecoveryKey(payload || {}));
   });
 
   // Works while the vault is locked; leaves it locked (the user logs in next).
-  ipcMain.handle("vault:reset-with-recovery-key", async (_event, payload) => {
+  handleAppRequest("vault:reset-with-recovery-key", async (_event, payload) => {
     const response = await handleVaultOperation(() => vaultStore.resetWithRecoveryKey(payload || {}));
-    if (response.ok) lockManager.setUnlocked(false);
+    if (response.ok) {
+      pathGrants.clear();
+      lockManager.setUnlocked(false);
+      loginWindows.closeAll();
+    }
     return response;
   });
 
-  ipcMain.handle("app:get-info", async () => {
+  handleAppRequest("app:get-info", async () => {
     return handleVaultOperation(async () => ({
       version: app.getVersion(),
       userData: app.getPath("userData"),
@@ -724,7 +876,7 @@ function registerSettingsHandlers() {
     }));
   });
 
-  ipcMain.handle("app:pick-folder", async () => {
+  handleAppRequest("app:pick-folder", async () => {
     const result = await withNativeDialog(() =>
       dialog.showOpenDialog(mainWindow, {
         title: "Select Folder",
@@ -741,7 +893,7 @@ function registerSettingsHandlers() {
   // to match a custom app name set in Settings. Renderer-supplied, so keep
   // this a simple, harmless string op with a sane length cap — it can only
   // ever change window chrome text, never anything security-sensitive.
-  ipcMain.handle("app:set-window-title", async (_event, title) => {
+  handleAppRequest("app:set-window-title", async (_event, title) => {
     if (typeof title !== "string" || !title.trim()) return { ok: false };
     if (!mainWindow) return { ok: false };
     mainWindow.setTitle(title.trim().slice(0, 100));
@@ -753,7 +905,7 @@ function registerSettingsHandlers() {
   // at window-creation time. Renderer-supplied, so validate it's actually
   // image data before handing it to nativeImage; anything else (including an
   // empty string, when no custom logo is set) falls back to the packaged icon.
-  ipcMain.handle("app:set-window-icon", async (_event, dataUri) => {
+  handleAppRequest("app:set-window-icon", async (_event, dataUri) => {
     if (!mainWindow) return { ok: false };
 
     if (typeof dataUri === "string" && dataUri.startsWith("data:image/")) {
@@ -789,8 +941,23 @@ async function handleVaultOperation(operation) {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!ownsDesktopInstance) return;
   vaultStore = createVaultStore(app.getPath("userData"));
+  automaticBackups = createAutomaticBackups({ configPath: path.join(app.getPath("userData"), "automatic-backups.json"), vault: vaultStore });
+  await automaticBackups.load();
+  automaticBackups.start();
+  trashMaintenance = setInterval(() => vaultStore.purgeDeletedCredentials().catch(() => {}), 60 * 60 * 1000);
+  trashMaintenance.unref();
+  browserSetup = createBrowserSetup({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: path.join(__dirname, ".."),
+    runtimePath: process.execPath,
+    localAppData: process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local"),
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+    openPath: (folder) => shell.openPath(folder)
+  });
   loginWindows = createLoginWindows({
     openExternal: openExternalSafely,
     onBlur: handleAppWindowBlur,
@@ -813,8 +980,9 @@ app.whenReady().then(() => {
       // Respects the active-group lock like every other read; throws while locked.
       vault: {
         getCredentials: () => vaultStore.getAllCredentials(),
-        addCredential: async (data) => {
-          const saved = await vaultStore.createCredential(data);
+        addCredential: async (data, organization) => {
+          if (!organization) throw new Error("Browser save needs an organization choice.");
+          const saved = await vaultStore.createBrowserCredential(data, organization);
           tellWindowCredentialsChanged();
           return saved;
         },
@@ -829,6 +997,8 @@ app.whenReady().then(() => {
   });
   lockManager = createLockManager({
     onLock: (reason) => {
+      pathGrants.clear();
+      saveApprovalAbort?.abort();
       vaultStore.lockVault();
       extensionPairing.cancelPairing(); // an unused code does not outlive the unlock
       loginWindows.closeAll();
@@ -855,6 +1025,8 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  automaticBackups?.stop();
+  clearInterval(trashMaintenance);
   if (extensionBridge) {
     extensionBridge.stop();
   }

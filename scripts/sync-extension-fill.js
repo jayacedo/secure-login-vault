@@ -34,6 +34,16 @@ function slvFillInPage(expectedOrigin, credentials, options) {
 
 ${inner}
 
+  if (options && options.inlineToken) {
+    const context = globalThis.slvInlineContext;
+    if (!context || context.token !== options.inlineToken || context.expires <= Date.now() ||
+        context.url !== location.href || !context.target?.isConnected || context.target.form !== context.form ||
+        !context.form?.isConnected || new URL(context.form.action || location.href, location.href).origin !== location.origin) {
+      return { status: "blocked" };
+    }
+    globalThis.slvInlineContext = null;
+    return fillLoginForm(document, credentials, { ...options, targetInput: context.target });
+  }
   return fillLoginForm(document, credentials, options);
 }
 `;

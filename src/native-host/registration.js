@@ -2,13 +2,14 @@ const fs = require("fs/promises");
 const path = require("path");
 const { execFile, spawn } = require("child_process");
 const { encodeMessage, createMessageReader } = require("./framing");
+const { ALLOWED_FIREFOX_IDS } = require("./config");
 
-// Registers the browser helper (host.js) with Chrome and Edge so the extension can
+// Registers the browser helper (host.js) with Chrome, Edge and Firefox so the extension can
 // start it. For each browser that means:
 //   1. a launcher (.bat) that runs the helper with the app's own Electron in
 //      plain-Node mode, so no separate Node install is needed;
 //   2. a manifest (.json) that names the launcher and lists the ONLY extension
-//      allowed to use it ("allowed_origins");
+//      allowed to use it ("allowed_origins", or "allowed_extensions" for Firefox);
 //   3. a per-user registry value pointing the browser at that manifest.
 // Everything is per user (HKCU, %LOCALAPPDATA%): no administrator rights.
 //
@@ -21,7 +22,8 @@ const HOST_DESCRIPTION = "Secure Login Vault browser helper";
 
 const BROWSERS = [
   { id: "chrome", label: "Google Chrome", keyRoot: "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts" },
-  { id: "edge", label: "Microsoft Edge", keyRoot: "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts" }
+  { id: "edge", label: "Microsoft Edge", keyRoot: "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts" },
+  { id: "firefox", label: "Mozilla Firefox", keyRoot: "HKCU\\Software\\Mozilla\\NativeMessagingHosts" }
 ];
 
 const EXTENSION_ID = /^[a-p]{32}$/;
@@ -43,7 +45,7 @@ function registryKey(browser, hostName) {
   return `${browser.keyRoot}\\${hostName}`;
 }
 
-function buildHostManifest({ launcherPath, allowedExtensionIds, hostName = HOST_NAME }) {
+function buildHostManifest({ launcherPath, allowedExtensionIds, hostName = HOST_NAME, firefox = false }) {
   assertHostName(hostName);
   assertUsablePath(launcherPath, "The launcher");
 
@@ -51,7 +53,7 @@ function buildHostManifest({ launcherPath, allowedExtensionIds, hostName = HOST_
     throw new Error("At least one allowed extension is required.");
   }
   for (const id of allowedExtensionIds) {
-    if (typeof id !== "string" || !EXTENSION_ID.test(id)) {
+    if (typeof id !== "string" || !(firefox ? ALLOWED_FIREFOX_IDS.includes(id) : EXTENSION_ID.test(id))) {
       throw new Error("An extension ID is not valid.");
     }
   }
@@ -61,7 +63,7 @@ function buildHostManifest({ launcherPath, allowedExtensionIds, hostName = HOST_
     description: HOST_DESCRIPTION,
     path: launcherPath,
     type: "stdio",
-    allowed_origins: allowedExtensionIds.map((id) => `chrome-extension://${id}/`)
+    ...(firefox ? { allowed_extensions: [...allowedExtensionIds] } : { allowed_origins: allowedExtensionIds.map((id) => `chrome-extension://${id}/`) })
   };
 }
 
@@ -100,10 +102,10 @@ function parseRegValue(stdout) {
   return null;
 }
 
-function filesFor(installDir, hostName) {
+function filesFor(installDir, hostName, firefox = false) {
   return {
     launcherPath: path.join(installDir, `${hostName}.bat`),
-    manifestPath: path.join(installDir, `${hostName}.json`)
+    manifestPath: path.join(installDir, `${hostName}${firefox ? ".firefox" : ""}.json`)
   };
 }
 
@@ -146,17 +148,23 @@ async function register({
   await fs.mkdir(installDir, { recursive: true });
   await writeFileAtomic(launcherPath, launcher);
   await writeFileAtomic(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const firefoxManifestPath = filesFor(installDir, hostName, true).manifestPath;
+  if (browsers.some(browser => browser.id === "firefox")) {
+    const firefoxManifest = buildHostManifest({ launcherPath, allowedExtensionIds: ALLOWED_FIREFOX_IDS, hostName, firefox: true });
+    await writeFileAtomic(firefoxManifestPath, `${JSON.stringify(firefoxManifest, null, 2)}\n`);
+  }
 
   const registered = [];
   for (const browser of browsers) {
-    const result = await runReg(["add", registryKey(browser, hostName), "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"]);
+    const browserManifest = browser.id === "firefox" ? firefoxManifestPath : manifestPath;
+    const result = await runReg(["add", registryKey(browser, hostName), "/ve", "/t", "REG_SZ", "/d", browserManifest, "/f"]);
     if (!result.ok) {
       throw new Error(`Could not register with ${browser.label}.`);
     }
     registered.push(browser.id);
   }
 
-  return { launcherPath, manifestPath, registered };
+  return { launcherPath, manifestPath, firefoxManifestPath, registered };
 }
 
 async function unregister({ installDir, hostName = HOST_NAME, runReg = defaultRunReg, browsers = BROWSERS }) {
@@ -175,10 +183,11 @@ async function unregister({ installDir, hostName = HOST_NAME, runReg = defaultRu
     removed.push(browser.id);
   }
 
-  // Only the two files this module creates, and the folder if that leaves it empty.
+  // Only the launcher and manifests this module creates, and an empty folder.
   const { launcherPath, manifestPath } = filesFor(installDir, hostName);
   await fs.rm(launcherPath, { force: true });
   await fs.rm(manifestPath, { force: true });
+  await fs.rm(filesFor(installDir, hostName, true).manifestPath, { force: true });
   await fs.rmdir(installDir).catch(() => {});
 
   return { removed };
@@ -186,6 +195,8 @@ async function unregister({ installDir, hostName = HOST_NAME, runReg = defaultRu
 
 async function status({
   installDir,
+  runtimePath,
+  hostScriptPath,
   allowedExtensionIds,
   hostName = HOST_NAME,
   runReg = defaultRunReg,
@@ -204,28 +215,40 @@ async function status({
   }
 
   const launcherExists = await exists(launcherPath);
+  let launcherMatches = true;
+  if (runtimePath && hostScriptPath) {
+    const actual = await fs.readFile(launcherPath, "utf8").catch(() => "");
+    launcherMatches = actual === buildLauncher({ runtimePath, hostScriptPath });
+  }
   const report = [];
 
   for (const browser of browsers) {
+    const browserManifestPath = filesFor(installDir, hostName, browser.id === "firefox").manifestPath;
+    const browserManifest = browser.id === "firefox"
+      ? await fs.readFile(browserManifestPath, "utf8").then(JSON.parse, () => null).catch(() => null)
+      : manifest;
     const query = await runReg(["query", registryKey(browser, hostName), "/ve"]);
     const registeredPath = query.ok ? parseRegValue(query.stdout) : null;
     const problems = [];
 
     if (!registeredPath) problems.push("not registered");
-    else if (path.resolve(registeredPath).toLowerCase() !== path.resolve(manifestPath).toLowerCase()) {
+    else if (path.resolve(registeredPath).toLowerCase() !== path.resolve(browserManifestPath).toLowerCase()) {
       problems.push("registered, but pointing at a different helper");
     }
-    if (registeredPath && !manifest) problems.push("manifest file is missing or unreadable");
-    if (manifest) {
-      const origins = Array.isArray(manifest.allowed_origins) ? manifest.allowed_origins : [];
-      if (JSON.stringify([...origins].sort()) !== JSON.stringify([...expectedOrigins].sort())) {
+    if (registeredPath && !browserManifest) problems.push("manifest file is missing or unreadable");
+    if (browserManifest) {
+      const origins = (browser.id === "firefox" ? browserManifest.allowed_extensions : browserManifest.allowed_origins) || [];
+      const expected = browser.id === "firefox" ? ALLOWED_FIREFOX_IDS : expectedOrigins;
+      if (!Array.isArray(origins) || JSON.stringify([...origins].sort()) !== JSON.stringify([...expected].sort())) {
         problems.push("allowed extensions differ from this version");
       }
-      if (path.resolve(String(manifest.path)).toLowerCase() !== path.resolve(launcherPath).toLowerCase()) {
+      if (browserManifest.name !== hostName || browserManifest.type !== "stdio" ||
+          path.resolve(String(browserManifest.path)).toLowerCase() !== path.resolve(launcherPath).toLowerCase()) {
         problems.push("manifest points at a different launcher");
       }
     }
     if (registeredPath && !launcherExists) problems.push("launcher file is missing");
+    if (registeredPath && launcherExists && !launcherMatches) problems.push("helper points at another SLV installation; run setup again");
 
     report.push({ browser: browser.id, label: browser.label, registered: Boolean(registeredPath), ok: problems.length === 0, problems });
   }

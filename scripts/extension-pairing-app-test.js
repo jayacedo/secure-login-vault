@@ -37,6 +37,7 @@ async function main() {
   await app.whenReady();
   await waitFor(() => BrowserWindow.getAllWindows().length > 0, 15000, "the app window");
   const win = BrowserWindow.getAllWindows()[0];
+  win.webContents.setBackgroundThrottling(false);
   if (win.webContents.isLoading()) await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
 
   const inApp = (code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`);
@@ -60,7 +61,7 @@ async function main() {
 
   await check("starts unpaired with Windows encryption available", async () => {
     const s = await status();
-    assert.deepEqual(s, { paired: false, codeActive: false, expiresAt: 0, encryptionAvailable: true });
+    assert.deepEqual(s, { paired: false, browsers: [], codeActive: false, expiresAt: 0, encryptionAvailable: true });
   });
 
   await check("a code cannot be started while the vault is locked", async () => {
@@ -268,11 +269,15 @@ async function main() {
     assert.equal((await conn.request({ type: "get-login", loginId: alice.id, url: "https://evil-example.com" })).error, "no-match");
     assert.equal(prompts.length, promptsBefore);
 
-    // a second request while a prompt is open is declined at once, with no second prompt
+    // Connections process encrypted messages in order. A concurrent request from another
+    // authenticated connection must still be refused while the first prompt is open.
+    const concurrent = await connect(pipeName);
+    assert.equal((await authenticate(concurrent, secret)).finish.ok, true);
     hang = true;
     const first = ask();
     await sleep(200);
-    const second = await ask();
+    const second = await concurrent.request({ type: "get-login", loginId: alice.id, url: "https://example.com" });
+    concurrent.close();
     assert.equal(second.error, "declined");
     assert.equal(prompts.length, promptsBefore + 1, "one prompt at a time");
     assert.equal((await first).error, "declined", "and the first gives up by itself");
@@ -294,11 +299,12 @@ async function main() {
   // "visible" means really on screen (display:none counts as not visible), not just the hidden attribute
   const visible = (selector) => ui(`const e = document.querySelector(${JSON.stringify(selector)}); return Boolean(e) && e.getClientRects().length > 0;`);
 
-  await check("Settings shows the paired state with Pair again and Unpair", async () => {
-    await ui("await openSettingsModal(); return true;");
+  await check("Settings shows the paired state with Add browser and Unpair", async () => {
+    await ui("await initAuth(); return true;");
+    await ui("await openSettingsModal(); document.querySelector('#settings-tab-browsers').click(); return true;");
     await waitFor(async () => (await q("#extension-pair-hint")) !== "Checking...", 5000, "the pairing hint");
-    assert.match(await q("#extension-pair-hint"), /^Paired\./);
-    assert.equal(await q("#extension-pair-btn"), "Pair again");
+    assert.match(await q("#extension-pair-hint"), /own pairing|Paired\./);
+    assert.equal(await q("#extension-pair-btn"), "Add browser");
     assert.equal(await visible("#extension-unpair-btn"), true);
     assert.equal(await visible("#extension-pair-code-box"), false);
   });
@@ -315,7 +321,7 @@ async function main() {
     assert.equal((await bridge()).enabled, true, "the connection setting is untouched");
 
     // reopening Settings shows what is saved
-    await ui("document.querySelector('#settings-modal-overlay').remove(); await openSettingsModal(); return true;");
+    await ui("document.querySelector('#settings-modal-overlay').remove(); await openSettingsModal(); document.querySelector('#settings-tab-browsers').click(); return true;");
     await waitFor(async () => (await q("#extension-bridge-hint")) !== "Lets the Secure Login Vault browser extension connect to this app. Off by default.", 5000, "the status to load");
     assert.equal(await q("#extension-ask-select", "value"), "on");
 
@@ -324,7 +330,7 @@ async function main() {
     assert.equal(await q("#extension-ask-select", "value"), "off");
   });
 
-  await check("Settings: Pair again shows the code, Copy and Cancel", async () => {
+  await check("Settings: Add browser shows the code, Copy and Cancel", async () => {
     await click("#extension-pair-btn");
     await waitFor(() => visible("#extension-pair-code-box"), 5000, "the code box");
     assert.match(await q("#extension-pair-code"), /^([A-Z2-9]{4}-){6}[A-Z2-9]{2}$/);
@@ -362,26 +368,54 @@ async function main() {
     await click("#extension-pair-btn");
     await waitFor(() => visible("#extension-pair-code-box"), 5000, "the code box");
     assert.equal((await status()).codeActive, true);
-    await ui(`document.querySelector("#settings-modal-overlay").remove(); return true;`);
+    await ui(`closeSettingsModal(); return true;`);
     await waitFor(async () => !(await status()).codeActive, 6000, "the code to be withdrawn");
   });
 
+  await check("Settings lists independent browsers and selectively unpairs one", async () => {
+    const second = await connect(pipeName);
+    const started = (await api("settings.startExtensionPairing()")).result;
+    const firefox = await pair(second, started.code, { browserName: "Firefox" });
+    assert.equal(firefox.finish.paired, true);
+    assert.equal((await authenticate(second, firefox.secret)).finish.ok, true);
+    const first = await connect(pipeName);
+    assert.equal((await authenticate(first, secret)).finish.ok, true);
+    const saved = createPairing({ storage: createPairingStorage({ filePath: pairingFile, safeStorage }) });
+    assert.ok(saved.list().length >= 2, "all pairings persist through DPAPI");
+    await ui("await openSettingsModal(); document.querySelector('#settings-tab-browsers').click(); return true;");
+    await waitFor(() => ui('return document.querySelectorAll("#extension-paired-list li").length >= 2;'), 5000, "paired list");
+    const id = (await status()).browsers.find(browser => browser.name === "Firefox").id;
+    const selector = '#extension-paired-list button[data-pairing-id="' + id + '"]';
+    await waitFor(async () => (await q("#extension-setup-hint")) !== "Checking browser setup...", 5000, "browser setup layout to settle");
+    await ui("document.querySelector('#extension-pair-row').scrollIntoView({behavior:'instant',block:'start'}); return true;");
+    await sleep(150);
+    fs.writeFileSync(path.join(testTempRoot(), "multi-browser-settings.png"), (await win.webContents.capturePage()).toPNG());
+    await click(selector);
+    assert.equal(second.isClosed(), false, "first click only arms removal");
+    await click(selector);
+    await waitFor(() => second.isClosed(), 5000, "only Firefox connection closes");
+    assert.equal((await first.request({ type: "channel-check" })).ok, true);
+    assert.equal((await status()).browsers.some(browser => browser.id === id), false);
+    assert.equal((await api('settings.unpairExtension("bad")')).ok, false);
+    first.close(); second.close();
+  });
+
   await check("Settings: Unpair needs two clicks, then ends the link and drops connections", async () => {
-    await ui("await openSettingsModal(); return true;");
+    await ui("await openSettingsModal(); document.querySelector('#settings-tab-browsers').click(); return true;");
     await waitFor(async () => (await q("#extension-pair-hint")) !== "Checking...", 5000, "the pairing hint");
     const conn = await connect(pipeName);
     assert.equal((await authenticate(conn, secret)).finish.ok, true);
 
     await click("#extension-unpair-btn");
-    assert.equal(await q("#extension-unpair-btn"), "Click again to unpair");
+    assert.equal(await q("#extension-unpair-btn"), "Click again to unpair all");
     assert.equal((await status()).paired, true, "one click does nothing yet");
 
     await click("#extension-unpair-btn");
     await waitFor(async () => !(await status()).paired, 5000, "unpairing");
     await waitFor(() => conn.isClosed(), 5000, "the open connection to be dropped");
-    await waitFor(async () => /^Not paired/.test(await q("#extension-pair-hint")), 5000, "the hint to update");
+    await waitFor(async () => /^No browsers paired/.test(await q("#extension-pair-hint")), 5000, "the hint to update");
     assert.equal(await visible("#extension-unpair-btn"), false);
-    assert.equal(await q("#extension-pair-btn"), "Pair browser");
+    assert.equal(await q("#extension-pair-btn"), "Add browser");
     assert.equal(fs.existsSync(pairingFile), false, "the stored secret is deleted");
 
     const again = await connect(pipeName);
@@ -399,9 +433,8 @@ async function main() {
     conn.close();
     await waitFor(() => visible("#extension-unpair-btn"), 6000, "the Unpair button");
     await click("#extension-unpair-btn");
-    assert.equal(await q("#extension-unpair-btn"), "Click again to unpair");
-    await sleep(4400);
-    assert.equal(await q("#extension-unpair-btn"), "Unpair");
+    assert.equal(await q("#extension-unpair-btn"), "Click again to unpair all");
+    await waitFor(async () => (await q("#extension-unpair-btn")) === "Unpair all", 10000, "the Unpair all button to disarm");
     assert.equal((await status()).paired, true);
   });
 

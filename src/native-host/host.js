@@ -1,7 +1,7 @@
 // Entry point the browser launches for native messaging. See hostRelay.js.
 const { runHost } = require("./hostRelay");
 const { getPipeName } = require("./pipeName");
-const { ALLOWED_EXTENSION_IDS } = require("./config");
+const { ALLOWED_EXTENSION_IDS, ALLOWED_FIREFOX_IDS } = require("./config");
 
 runHost({
   stdin: process.stdin,
@@ -11,6 +11,7 @@ runHost({
   // variable) so tests can use their own pipe. A browser never sets it.
   pipeName: getPipeName(process.env.SLV_PIPE_USER || undefined),
   allowedExtensionIds: ALLOWED_EXTENSION_IDS,
+  allowedFirefoxIds: ALLOWED_FIREFOX_IDS,
   exit(code) {
     // Let pending writes flush; a short fallback timer guarantees we do exit.
     process.exitCode = code;

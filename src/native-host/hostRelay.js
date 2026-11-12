@@ -1,4 +1,5 @@
 const net = require("net");
+const path = require("path");
 const { encodeMessage, createMessageReader } = require("./framing");
 
 // The browser helper's whole job: take framed JSON messages from the browser
@@ -21,12 +22,21 @@ function isAllowedOrigin(origin, allowedExtensionIds) {
   return Boolean(match && Array.isArray(allowedExtensionIds) && allowedExtensionIds.includes(match[1]));
 }
 
+function isAllowedCaller(argv, allowedExtensionIds, allowedFirefoxIds = []) {
+  // Firefox supplies [absolute native manifest path, fixed add-on ID]. Do not
+  // accept arbitrary moz-extension UUIDs or scan for an ID elsewhere in argv.
+  if (Array.isArray(argv) && argv.length === 2 && typeof argv[0] === "string" &&
+      path.isAbsolute(argv[0]) && argv[0].endsWith(".json") && allowedFirefoxIds.includes(argv[1])) return true;
+  return isAllowedOrigin(findOrigin(argv), allowedExtensionIds);
+}
+
 function runHost({
   stdin,
   stdout,
   argv,
   pipeName,
   allowedExtensionIds,
+  allowedFirefoxIds = [],
   requestTimeoutMs = 10000,
   approvalRequestTimeoutMs = 40000,
   exit
@@ -128,7 +138,7 @@ function runHost({
             setTimeout(() => {
               pending.delete(value.id);
               reply({ id: value.id, ok: false, error: "timeout" });
-            }, value.type === "save-login" || value.type === "get-login" ? approvalRequestTimeoutMs : requestTimeoutMs)
+            }, value.type === "secure" ? approvalRequestTimeoutMs : requestTimeoutMs)
           );
         }
         link.write(encodeMessage(value));
@@ -140,7 +150,7 @@ function runHost({
   }
 
   // Who started us? Only the extension we expect may use the helper.
-  if (!isAllowedOrigin(findOrigin(argv), allowedExtensionIds)) {
+  if (!isAllowedCaller(argv, allowedExtensionIds, allowedFirefoxIds)) {
     stdout.write(encodeMessage({ ok: false, error: "origin-not-allowed" }));
     closed = true;
     exit(1);
@@ -162,4 +172,4 @@ function runHost({
   return { close: () => shutdown(0) };
 }
 
-module.exports = { runHost, isAllowedOrigin, findOrigin };
+module.exports = { runHost, isAllowedOrigin, findOrigin, isAllowedCaller };

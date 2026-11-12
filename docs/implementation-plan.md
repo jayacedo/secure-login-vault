@@ -180,9 +180,68 @@ Scope:
 
 ### Later Phases
 
-Phase 12 will add Windows packaging and installer verification.
+Phase 12 now produces Windows installer and portable builds. Version 1.0.1 adds bundled
+browser resources and setup from Settings, with automated Settings and relocated-package
+verification. Clean-machine installer verification remains a release check.
+
+Version 1.0.2 adds optional browser save/update offers after ordinary form submissions,
+with explicit website permission, duplicate suppression, per-site dismissal, temporary
+memory-only candidates, and mandatory desktop confirmation for writes.
+
+Version 1.0.3 adds protocol v2 encryption and message authentication, replay rejection,
+bounded serialized processing, and optional browser-session pairing. It preserves
+existing remembered pairing while requiring both app and extension to be updated.
+See [Browser security](browser-security.md) for test coverage and remaining review.
+
+Version 1.0.4 adds a Firefox companion generated from shared extension source, a
+separate Windows native manifest, extension-private pairing persistence, Firefox
+setup guidance and an unsigned submission ZIP. Real Firefox tests cover the encrypted
+connection, save/fill/update, automatic offers, storage isolation and lock behavior.
+Mozilla signing and permanent installation remain a distribution step. See the
+[Firefox guide](firefox.md).
+
+Version 1.0.5 supports multiple browser pairings with independent secrets, preserves
+the previous pairing on upgrade, and lets Settings revoke one browser or all browsers.
+Re-pairing with the existing browser secret rotates only that pairing. Each browser
+continues using the same vault. Extensions must be updated to 0.5.0.
 
 ## Browser extension phases
+
+Desktop 1.0.14 adds Recently Deleted for credential entries, including entries
+displaced by Replace import. Entry metadata and password history are retained in
+the encrypted vault for 30 days, excluded from normal reads and browser matching,
+and restored together. Permanent deletion requires confirmation. Expiry cleanup
+runs after unlock, hourly while unlocked and on vault writes. Trash respects the
+active group and is included in encrypted backups, with original expiry dates.
+The separate Client Vault is not included. Extension 0.6.0 is unchanged.
+
+`test:trash` covers encrypted storage, metadata-only responses, normal-read
+exclusion, group/lock guards, restoration, expiry, backup recovery, failed writes
+and concurrent requests. `test:trash-app` covers the desktop controls, confirmation,
+sender guards, light/dark narrow layouts and lock cleanup.
+
+Desktop 1.0.15 adds Duplicate Login Review and refreshed searchable Help. Matching
+uses the exact website origin plus case-sensitive username (email fallback),
+excluding invalid URLs, blank identities, Trash and Client Vault. Cleanup requires
+an explicit kept entry and confirmation; the remaining matching entries move to
+Recently Deleted with their own histories. Full-row keyed revisions and the active
+scope are rechecked inside the serialized write, so stale or concurrent decisions
+cannot silently remove changed entries. Nothing is merged into the kept entry.
+`test:duplicates` verifies matching, scope, stale/forged choices, atomic failure,
+concurrency and recovery. `test:duplicates-app` verifies the comparison, edit return,
+confirmation, Help search, lock cleanup and layouts. Extension 0.6.0 is unchanged.
+
+Desktop 1.0.16 adds local hardening: shared sender/document/frame checks across
+desktop requests, current-session checks on sensitive replies and file dialogs,
+revoked picker grants on lock, serialized vault operations across password changes
+and recovery, and one desktop writer per profile. Lock cancels queued work and
+uncommitted writes; a replacement already committing finishes or rolls back with
+its temporary key, without reopening the session. Restore validates decrypted data
+before overwrite, cleans partial first restores, and supports recovery of an
+interrupted replacement. Temporary key and database buffers are cleared on exit.
+`test:hardening` covers deterministic disk/lock failure cases; `test:hardening-app`
+covers all desktop request channels, late reads/dialogs, staged exports and a second
+process. Extension 0.6.0 and the local-only product scope remain unchanged.
 
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving

@@ -11,7 +11,7 @@
 //   "ambiguous"  several different passwords (for example a change-password form)
 //   "no-username" no username was typed before the password
 //   "too-long"   a value is larger than the app accepts
-function slvReadFormInPage(expectedOrigin) {
+function slvReadFormInPage(expectedOrigin, submittedForm) {
   var MAX_USERNAME = 256;
   var MAX_PASSWORD = 1024;
 
@@ -26,6 +26,7 @@ function slvReadFormInPage(expectedOrigin) {
   }
 
   var inputs = Array.prototype.slice.call(document.querySelectorAll("input"));
+  if (submittedForm) inputs = inputs.filter(function (input) { return input.form === submittedForm; });
   var passwords = inputs.filter(function (input) {
     return input.type === "password" && visible(input);
   });

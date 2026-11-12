@@ -3,7 +3,7 @@
 // into the background worker with importScripts().
 (function (root) {
   const HOST_NAME = "com.securelogin.vault";
-  const EXPECTED_PROTOCOL = 1;
+  const EXPECTED_PROTOCOL = 2;
 
   function result(state, title, detail, extra) {
     return Object.assign({ state: state, connected: state === "connected", title: title, detail: detail }, extra || {});
@@ -14,11 +14,11 @@
     const problem = typeof runtimeError === "string" ? runtimeError : "";
 
     if (problem) {
-      if (/not found/i.test(problem)) {
+      if (/not found|no such native application/i.test(problem)) {
         return result(
           "helper-missing",
           "Helper not installed",
-          "Chrome cannot find the Secure Login Vault helper. Install or register it, then check again."
+          "Your browser cannot find the Secure Login Vault helper. Install or register it, then check again."
         );
       }
       if (/forbidden/i.test(problem)) {

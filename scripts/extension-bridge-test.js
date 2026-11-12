@@ -257,6 +257,16 @@ async function main() {
     await bridge.stop();
   }
 
+  // Pings cannot keep an unauthenticated slot occupied beyond the auth deadline.
+  {
+    const { bridge, pipeName } = makeBridge({ limits: { authTimeoutMs: 250, idleTimeoutMs: 1000 } });
+    await bridge.start();
+    const client = await connect(pipeName);
+    const timer = setInterval(() => { if (!client.isClosed()) client.send({ id: 1, type: "ping" }); }, 50);
+    try { await client.closed(); assert.equal(client.isClosed(), true); }
+    finally { clearInterval(timer); await bridge.stop(); }
+  }
+
   // ── stop() closes open connections ─────────────────────────────────────────
   {
     const { bridge, pipeName } = makeBridge();

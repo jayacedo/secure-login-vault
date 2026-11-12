@@ -1,29 +1,29 @@
-// Background service worker. It is the only part that talks to the browser helper
-// (and so the desktop app), and it only answers requests from this extension's own
-// pages (the popup). The pairing secret lives only here, in extension storage that
-// page scripts cannot read.
-importScripts("status.js", "pairing.js", "link.js", "fillInPage.js", "readFormInPage.js");
+// Background worker (Chromium) or event page (Firefox). Only this context talks to the helper
+// (and so the desktop app). The popup has privileged routes; optional content scripts
+// have only the scoped save-offer and inline-fill protocols. The pairing secret is in trusted storage.
+if (typeof importScripts === "function") importScripts("browserApi.js", "privateStorage.js", "status.js", "pairing.js", "secureChannel.js", "secretStorage.js", "link.js", "fillInPage.js", "readFormInPage.js", "saveOffers.js", "inlineFill.js");
+
+const extensionApi = self.SLVApi || chrome;
+
+// Content scripts must never be able to read the pairing secret or its storage mode.
+// Fail closed if the browser cannot establish this boundary.
+const secretStorage = self.SLVSecretStorage.createSecretStorage(extensionApi);
+const trustedStorage = secretStorage.ready;
+trustedStorage.catch(() => {});
 
 const HOST_NAME = self.SLVStatus.HOST_NAME;
-const SECRET_KEY = "slvPairingSecret";
-// Covers three verification requests (8s each), then a confirmation request (35s).
-const OPERATION_DEADLINE_MS = 65000;
+// Covers four verification requests (8s each), then a confirmation request (35s).
+const OPERATION_DEADLINE_MS = 75000;
 
 const link = self.SLVLink.createLink({
   hostName: HOST_NAME,
+  browserName: extensionApi.isFirefox ? "Firefox" : (/Edg\//.test(globalThis.navigator?.userAgent || "") ? "Microsoft Edge" : "Google Chrome"),
   pairing: self.SLVPairing,
   status: self.SLVStatus,
   randomId: () => crypto.randomUUID(),
-  connectNative: (host) => chrome.runtime.connectNative(host),
-  getLastError: () => (chrome.runtime.lastError ? chrome.runtime.lastError.message : ""),
-  storage: {
-    get: async () => {
-      const stored = await chrome.storage.local.get(SECRET_KEY);
-      return stored && typeof stored[SECRET_KEY] === "string" ? stored[SECRET_KEY] : null;
-    },
-    set: (secretHex) => chrome.storage.local.set({ [SECRET_KEY]: secretHex }),
-    clear: () => chrome.storage.local.remove(SECRET_KEY)
-  }
+  connectNative: (host) => extensionApi.runtime.connectNative(host),
+  getLastError: () => (extensionApi.runtime.lastError ? extensionApi.runtime.lastError.message : ""),
+  storage: secretStorage
 });
 
 // ── Filling a login ──────────────────────────────────────────────────────────
@@ -36,8 +36,8 @@ const FILL_OPTIONS = { submit: false, layout: true, skipUsernameOnly: false };
 function activeTab() {
   return new Promise((resolve) => {
     try {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        resolve(!chrome.runtime.lastError && Array.isArray(tabs) && tabs[0] ? tabs[0] : null);
+      extensionApi.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        resolve(!extensionApi.runtime.lastError && Array.isArray(tabs) && tabs[0] ? tabs[0] : null);
       });
     } catch (error) {
       resolve(null);
@@ -82,7 +82,7 @@ async function fillActiveTab(loginId) {
   let credentials = { username: fetched.username, password: fetched.password };
   fetched.password = "";
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await extensionApi.scripting.executeScript({
       target: { tabId: tab.id, frameIds: [0] }, // the main page only, never an embedded frame
       world: "ISOLATED",
       func: slvFillInPage,
@@ -98,8 +98,7 @@ async function fillActiveTab(loginId) {
 }
 
 // ── Saving a login ───────────────────────────────────────────────────────────
-// Only ever started by the person pressing "Save this login" in the popup, after typing their
-// login on the page. Nothing is watched or recorded in the background: the page is read once,
+// Manual save starts when the person presses "Save this login" in the popup. The page is read once,
 // now, in its main frame, and what was read goes to the app only, which always asks the person.
 // The popup supplies nothing: not the page, not the username, not the password.
 function describeSave(result) {
@@ -140,7 +139,7 @@ async function saveActiveTab() {
 
   let read;
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await extensionApi.scripting.executeScript({
       target: { tabId: tab.id, frameIds: [0] }, // the main page only, never an embedded frame
       world: "ISOLATED",
       func: slvReadFormInPage,
@@ -165,7 +164,7 @@ async function saveActiveTab() {
 // One operation at a time, so two popups cannot interleave pairing and checking.
 let queue = Promise.resolve();
 function runOperation(operation) {
-  const run = queue.then(() => withDeadline(operation()));
+  const run = queue.then(() => trustedStorage).then(() => withDeadline(operation()));
   queue = run.catch(() => {});
   return run;
 }
@@ -186,9 +185,57 @@ function withDeadline(promise) {
   });
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id) return false; // ignore anything not from this extension
+const offers = self.SLVSaveOffers.createSaveOffers({ chrome: extensionApi, link, ready: trustedStorage, run: runOperation });
+const inline = self.SLVInlineFill.createInlineFill({ chrome: extensionApi, link, ready: trustedStorage, run: runOperation,
+  fill: async (loginId, ticket, stillCurrent) => {
+    const fetched = await link.fetchLogin({ loginId, url: ticket.origin });
+    if (!fetched.ok) return { ok: false, message: fetched.message };
+    let credentials = { username: fetched.username, password: fetched.password };
+    fetched.password = "";
+    try {
+      if (!(await stillCurrent())) return describeFill("blocked");
+      const target = extensionApi.isFirefox ? { tabId: ticket.tabId, frameIds: [0] } : { tabId: ticket.tabId, documentIds: [ticket.documentId] };
+      const results = await extensionApi.scripting.executeScript({ target, world: "ISOLATED", func: slvFillInPage,
+        args: [ticket.origin, credentials, { ...FILL_OPTIONS, inlineToken: ticket.token }] });
+      return describeFill(results?.[0]?.result?.status);
+    } catch { return describeFill("blocked"); }
+    finally { credentials = null; }
+  }
+});
+
+extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== extensionApi.runtime.id) return false; // ignore anything not from this extension
   if (!message || typeof message !== "object") return false;
+
+  // Content scripts get only the scoped offer/inline protocols, never popup
+  // privileges. Inline choices contain metadata; passwords never return in messages.
+  // Browser-supplied extension URL identifies our packaged popup, including
+  // when opened as a tab. Website content scripts cannot claim this URL.
+  if (sender.url !== extensionApi.runtime.getURL("popup.html")) {
+    if (!sender.tab) return false;
+    if (["inline-ready", "inline-list", "inline-fill", "inline-dismiss"].includes(message.type)) {
+      inline.page(message, sender).then(sendResponse, () => sendResponse({ ok: false, message: "Could not reach SLV. Open the extension to check pairing." }));
+      return true;
+    }
+    if (!["offer-ready", "offer-capture", "offer-save", "offer-dismiss", "offer-never"].includes(message.type)) return false;
+    offers.page(message, sender).then(sendResponse, () => sendResponse({ enabled: false }));
+    return true;
+  }
+  if (["pairing-storage-get", "pairing-storage-set"].includes(message.type)) {
+    runOperation(async () => {
+      if (message.type === "pairing-storage-set") await secretStorage.setSessionOnly(message.sessionOnly);
+      return { sessionOnly: await secretStorage.sessionOnly() };
+    }).then(sendResponse, () => sendResponse({ error: true }));
+    return true;
+  }
+  if (["offers-get", "offers-set", "offers-allow-site"].includes(message.type)) {
+    activeTab().then(tab => offers.popup(message, tab)).then(sendResponse, () => sendResponse({ error: true }));
+    return true;
+  }
+  if (["inline-get", "inline-set"].includes(message.type)) {
+    inline.popup(message).then(sendResponse, () => sendResponse({ error: true }));
+    return true;
+  }
 
   // An optional page address (the popup sends only its origin) asks for matching logins too.
   const url = typeof message.url === "string" ? message.url : "";
@@ -198,6 +245,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === "pair" && typeof message.code === "string") {
     runOperation(() => link.pair(message.code, { url })).then(sendResponse);
   } else if (message.type === "forget") {
+    offers.clear();
+    inline.clear();
     runOperation(() => link.forget()).then(sendResponse);
   } else if (message.type === "fill" && Number.isSafeInteger(message.loginId)) {
     // Only the login's id is taken from the popup; the page and its address are read here.

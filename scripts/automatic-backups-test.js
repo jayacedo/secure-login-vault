@@ -1,0 +1,80 @@
+const assert = require("assert/strict");
+const fs = require("fs/promises");
+const path = require("path");
+const { createAutomaticBackups, DAY_MS } = require("../src/services/automaticBackups");
+const { createVaultStore } = require("../src/services/vaultStore");
+const { testTempRoot } = require("./testTemp");
+async function main() {
+  const root = await fs.mkdtemp(path.join(testTempRoot(), "auto-backups-"));
+  const folder = path.join(root, "backup folder");
+  await fs.mkdir(folder);
+  const vault = createVaultStore(path.join(root, "app"));
+  const password = "automatic backup test password";
+  await vault.createVault({masterPassword:password,confirmPassword:password});
+  await vault.createCredential({websiteName:"Dummy client",username:"backup-user",password:"never-write-plaintext-credential"});
+  let clock = Date.UTC(2026,10,12);
+  const configPath = path.join(root, "automatic-backups.json");
+  let service = createAutomaticBackups({configPath,vault,now:()=>clock});
+  await service.load();await service.run();
+  assert.deepEqual(await fs.readdir(folder),[],"disabled initially");
+  await service.chooseFolder(folder);
+  await service.configure({enabled:true,keep:7});
+  await service.run();
+  const first = (await fs.readdir(folder))[0];
+  assert.ok(first.endsWith(".slvbackup"));
+  const raw = await fs.readFile(path.join(folder,first),"utf8");
+  assert.equal(raw.includes("never-write-plaintext-credential"),false);
+  assert.equal(raw.includes("backup-user"),false);
+  await Promise.all([service.run(),service.run(),service.run()]);
+  assert.equal((await fs.readdir(folder)).length,1,"one backup when due, even with simultaneous checks");
+  const restored = createVaultStore(path.join(root,"restored"));
+  await restored.restoreEncryptedBackup(path.join(folder,first),password);
+  await restored.unlockVault({masterPassword:password});
+  assert.equal((await restored.getAllCredentials())[0].password,"never-write-plaintext-credential");
+  restored.lockVault();
+  console.log("PASS disabled default, serialized daily schedule, encrypted content and real restore compatibility");
+
+  await fs.writeFile(path.join(folder,"manual.slvbackup"),raw);
+  await fs.writeFile(path.join(folder,"unrelated.txt"),"keep me");
+  const fakeAutomatic="slv-auto-00000000-0000-0000-0000-000000000000-0000000000000-123456789abc.slvbackup";
+  await fs.writeFile(path.join(folder,fakeAutomatic),"not ours");
+  for(let i=0;i<9;i++){clock+=DAY_MS;await service.run();}
+  const retained=JSON.parse(await fs.readFile(configPath,"utf8"));
+  assert.equal(retained.files.length,7);
+  assert.equal((await fs.readdir(folder)).length,10);
+  await fs.access(path.join(folder,"manual.slvbackup"));await fs.access(path.join(folder,fakeAutomatic));
+  assert.equal(await fs.readFile(path.join(folder,"unrelated.txt"),"utf8"),"keep me");
+  service=createAutomaticBackups({configPath,vault,now:()=>clock});await service.load();await service.run();
+  assert.equal((await fs.readdir(folder)).length,10,"restart preserves schedule");
+  vault.lockVault();clock+=DAY_MS;await service.run();assert.equal(service.status().lastSuccess,clock-DAY_MS);
+  await vault.unlockVault({masterPassword:password});await service.run();assert.equal(service.status().lastSuccess,clock);
+  console.log("PASS retention owns only its files, restart persistence and overdue backups wait for unlock");
+
+  const goodDate=service.status().lastSuccess;
+  const oldFiles=(await fs.readdir(folder)).sort();
+  const realBackup=vault.createEncryptedBackup;
+  vault.createEncryptedBackup=async()=>{throw new Error("simulated disk failure");};
+  clock+=DAY_MS;await service.run();assert.equal(service.status().lastSuccess,goodDate);assert.ok(service.status().error);
+  assert.deepEqual((await fs.readdir(folder)).sort(),oldFiles,"failure never prunes good backups");
+  vault.createEncryptedBackup=realBackup;
+  await service.run({force:true});assert.equal(service.status().error,"");
+  await service.configure({enabled:false,keep:14});clock+=DAY_MS;const stopped=service.status().lastSuccess;await service.run();assert.equal(service.status().lastSuccess,stopped);
+  const other=path.join(root,"other");await fs.mkdir(other);await service.chooseFolder(other);
+  assert.equal(service.status().enabled,false);assert.equal((await fs.readdir(folder)).length,10);
+  await assert.rejects(service.configure({enabled:true,keep:0}));
+  vault.lockVault();await assert.rejects(service.chooseFolder(folder),/Unlock/);
+  console.log("PASS failures preserve backups, manual retry, disabling, destination changes and validation");
+
+  // A corrupted live database must not be published over an existing backup.
+  await vault.unlockVault({masterPassword:password});
+  const dbPath=path.join(root,"app/vault/vault-data.slv");
+  const db=JSON.parse(await fs.readFile(dbPath,"utf8"));
+  db.encryption.tag=Buffer.alloc(16).toString("base64");
+  await fs.writeFile(dbPath,JSON.stringify(db));
+  await assert.rejects(vault.createEncryptedBackup(path.join(folder,"manual.slvbackup")));
+  assert.equal(await fs.readFile(path.join(folder,"manual.slvbackup"),"utf8"),raw);
+  assert.equal((await fs.readdir(folder)).some(name=>name.endsWith(".tmp")),false);
+  vault.lockVault();
+  console.log("PASS corrupt snapshots are refused without replacing an existing backup");
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

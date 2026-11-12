@@ -23,6 +23,7 @@
   var APPROVAL_REQUEST_TIMEOUT_MS = 35000;
 
   function createLink(deps) {
+    var secure = root.SLVSecureChannel || (typeof require === "function" ? require("./secureChannel") : null);
     var pairing = deps.pairing;
     var status = deps.status;
     var timeoutMs = deps.requestTimeoutMs || REQUEST_TIMEOUT_MS;
@@ -50,6 +51,7 @@
       var waiting = {};
       var ended = "";
       var count = 0;
+      var channel = null;
 
       function settleAll(outcome) {
         Object.keys(waiting).forEach(function (id) {
@@ -73,34 +75,57 @@
       });
 
       port.onDisconnect.addListener(function () {
-        ended = lastErrorText() || "Native host has exited.";
+        ended = lastErrorText() || port.error?.message || "Native host has exited.";
         settleAll({ runtimeError: ended });
       });
 
-      return {
-        request: function (type, fields) {
+      function rawRequest(type, fields, envelope, deadlineMs = timeoutMs) {
           return new Promise(function (resolve) {
             if (ended) {
               resolve({ runtimeError: ended });
               return;
             }
             count += 1;
-            var id = deps.randomId() + "-" + count;
+            var id = envelope ? envelope.id : deps.randomId() + "-" + count;
             var timer = setTimeout(function () {
               delete waiting[id];
               resolve({ reply: { id: id, ok: false, error: "timeout" } });
-            }, type === "save-login" || type === "get-login" ? approvalTimeoutMs : timeoutMs);
+            }, deadlineMs);
             waiting[id] = { resolve: resolve, timer: timer };
             try {
-              port.postMessage(Object.assign({ id: id, type: type }, fields || {}));
+              port.postMessage(envelope || Object.assign({ id: id, type: type }, fields || {}));
             } catch (error) {
               delete waiting[id];
               clearTimeout(timer);
               resolve({ runtimeError: ended || "Native host has exited." });
             }
           });
+      }
+      const session = {
+        async enableEncryption(secret, nonceE, nonceA) {
+          channel = await secure.createChannel({ secret, nonceE, nonceA, role: "extension" });
+        },
+        async request(type, fields) {
+          if (!channel) {
+            if (!["ping", "pair-begin", "pair-finish", "auth-begin", "auth-finish"].includes(type)) return { runtimeError: "Encryption required" };
+            return rawRequest(type, fields);
+          }
+          try {
+            const id = deps.randomId() + "-secure-" + (++count);
+            const envelope = await channel.seal(Object.assign({}, fields || {}, { type }), id);
+            const outcome = await rawRequest("secure", null, envelope, type === "save-login" || type === "get-login" ? approvalTimeoutMs : timeoutMs);
+            if (outcome.runtimeError || !outcome.reply) throw new Error("Disconnected");
+            const reply = await channel.open(outcome.reply);
+            if (reply.id !== id) throw new Error("Wrong response");
+            return { reply };
+          } catch {
+            session.close();
+            return { runtimeError: "Secure connection failed. Check again." };
+          }
         },
         close: function () {
+          if (channel) channel.destroy();
+          ended = "closed";
           settleAll({ runtimeError: "closed" }); // nothing may be left waiting
           try {
             port.disconnect();
@@ -109,6 +134,7 @@
           }
         }
       };
+      return session;
     }
 
     function describe(outcome) {
@@ -255,6 +281,26 @@
       });
     }
 
+    function inspectLogin(request) {
+      var pageUrl = request && request.url;
+      var username = request && request.username;
+      var password = request && request.password;
+      if (typeof pageUrl !== "string" || !pageUrl || pageUrl.length > 2048 ||
+          typeof username !== "string" || !username.trim() || username.length > 256 ||
+          typeof password !== "string" || !password || password.length > 1024) return Promise.resolve({ ok: false });
+      return runVerified(function (session) {
+        return session.request("inspect-login", { url: pageUrl, username: username, password: password }).then(function (outcome) {
+          var reply = outcome.reply;
+          if (!outcome.runtimeError && reply && reply.ok === true && ["add", "update", "unchanged"].includes(reply.mode)) {
+            return { ok: true, mode: reply.mode };
+          }
+          return { ok: false, locked: Boolean(reply && reply.error === "locked") };
+        });
+      }).then(function (outcome) {
+        return outcome.verified ? outcome.value : { ok: false };
+      });
+    }
+
     function cleanText(value) {
       return typeof value === "string" ? value.slice(0, 100) : "";
     }
@@ -290,7 +336,9 @@
       var secret = pairing.fromHex(secretHex);
       var nonceE = pairing.randomNonce();
 
-      return session.request("auth-begin", { nonceE: nonceE }).then(function (begin) {
+      return pairing.pairingId(secret).then(function (id) {
+        return session.request("auth-begin", { nonceE: nonceE, pairingId: id });
+      }).then(function (begin) {
         if (begin.runtimeError || !begin.reply) return withFlags(describe(begin), secretHex);
         var reply = begin.reply;
 
@@ -311,20 +359,24 @@
 
         // The app goes first: until it proves it holds the secret, nothing is sent
         // that would let a fake app learn anything.
-        return pairing.appProof(secret, "auth", nonceE, reply.nonceA).then(function (expected) {
+        return pairing.appProof(secret, "auth-v2", nonceE, reply.nonceA).then(function (expected) {
           if (!pairing.equalHex(expected, reply.appProof)) {
             return problem(
               "app-unverified",
               "Could not verify the app",
-              "Whatever is answering did not prove it is the Secure Login Vault you paired with. If you paired this browser again from another browser, pair this one again. Otherwise something else may be answering on this computer: do not sign in or paste codes until you have closed it.",
+              "Whatever is answering did not prove it is the Secure Login Vault you paired with. Check that the correct SLV app is running before pairing again.",
               secretHex,
               { canPair: true, danger: true }
             );
           }
-          return pairing.extProof(secret, "auth", nonceE, reply.nonceA).then(function (proof) {
-            return session.request("auth-finish", { nonceE: nonceE, nonceA: reply.nonceA, extProof: proof }).then(function (finish) {
+          return pairing.extProof(secret, "auth-v2", nonceE, reply.nonceA).then(function (proof) {
+            return session.request("auth-finish", { nonceE: nonceE, nonceA: reply.nonceA, extProof: proof }).then(async function (finish) {
               if (finish.runtimeError || !finish.reply) return withFlags(describe(finish), secretHex);
               if (finish.reply.ok === true && finish.reply.authenticated === true) {
+                await session.enableEncryption(secret, nonceE, reply.nonceA);
+                secret.fill(0);
+                const confirmation = await session.request("channel-check");
+                if (!confirmation.reply?.ok || confirmation.reply.authenticated !== true) return genericError(secretHex);
                 return withFlags(
                   {
                     state: "verified",
@@ -381,7 +433,7 @@
     function runPairing(session, codeBytes, secretHex) {
       var nonceE = pairing.randomNonce();
 
-      return session.request("pair-begin", { nonceE: nonceE }).then(function (begin) {
+      return session.request("pair-begin", { nonceE: nonceE, browserName: deps.browserName || "Browser" }).then(function (begin) {
         if (begin.runtimeError || !begin.reply) return withFlags(describe(begin), secretHex);
         var reply = begin.reply;
 
@@ -408,8 +460,15 @@
                 secretHex
               );
             }
-            return pairing.extProof(authKey, "pair", nonceE, reply.nonceA).then(function (proof) {
-              return session.request("pair-finish", { nonceE: nonceE, nonceA: reply.nonceA, extProof: proof }).then(function (finish) {
+            return pairing.extProof(authKey, "pair", nonceE, reply.nonceA).then(async function (proof) {
+              const request = { nonceE: nonceE, nonceA: reply.nonceA, extProof: proof };
+              if (secretHex) {
+                const prior = pairing.fromHex(secretHex);
+                request.replaceId = await pairing.pairingId(prior);
+                request.replaceProof = await pairing.replaceProof(prior, nonceE, reply.nonceA, proof);
+                prior.fill(0);
+              }
+              return session.request("pair-finish", request).then(function (finish) {
                 if (finish.runtimeError || !finish.reply) return withFlags(describe(finish), secretHex);
                 if (finish.reply.ok === true && finish.reply.paired === true) {
                   return pairing.pairingSecret(codeBytes, nonceE, reply.nonceA).then(function (secret) {
@@ -424,6 +483,7 @@
                 if (finish.reply.error === "storage-failed") {
                   return pairFailed("The app could not save the pairing", "Windows encryption may be unavailable for this account.", secretHex);
                 }
+                if (finish.reply.error === "pairing-limit") return pairFailed("Too many paired browsers", "Remove an unused browser from SLV Settings, then try again.", secretHex);
                 return pairFailed("Code not accepted", "The app did not accept the pairing. Press Pair browser in the app for a new code and try again.", secretHex);
               });
             });
@@ -437,7 +497,7 @@
       return deps.storage.clear().then(check);
     }
 
-    return { check: check, pair: pair, forget: forget, fetchLogin: fetchLogin, saveLogin: saveLogin };
+    return { check: check, pair: pair, forget: forget, fetchLogin: fetchLogin, saveLogin: saveLogin, inspectLogin: inspectLogin };
   }
 
   var api = { createLink: createLink, REQUEST_TIMEOUT_MS: REQUEST_TIMEOUT_MS };

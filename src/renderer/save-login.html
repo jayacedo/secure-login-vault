@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Save login — Secure Login Vault</title>
+  <link rel="stylesheet" href="save-login.css">
+  <script src="save-login.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">SECURE LOGIN VAULT</p>
+    <h1>Save this login?</h1>
+    <p class="intro">Choose where to keep the login sent by your browser.</p>
+    <dl><dt>Website</dt><dd id="save-host"></dd><dt>Username</dt><dd id="save-username"></dd></dl>
+    <div class="fields">
+      <label>Group<select id="save-group" disabled></select></label>
+      <label>Category<select id="save-category" disabled></select></label>
+    </div>
+    <p id="save-group-note" class="hint"></p>
+    <p class="hint">Your password stays hidden in this confirmation.</p>
+    <footer><button id="save-cancel" type="button" autofocus>Don’t save</button><button id="save-confirm" type="button" disabled>Save login</button></footer>
+  </main>
+</body>
+</html>

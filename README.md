@@ -1,168 +1,238 @@
 # Secure Login Vault
 
-Secure Login Vault is a Windows desktop application for storing and managing credentials — and, alongside that, a separate workspace for managing web development clients — entirely locally. The app is built with Electron, HTML, CSS, and vanilla JavaScript, backed by an encrypted SQLite vault with no plaintext credential logging.
+A Windows desktop vault for managing passwords and web development client details locally, with an optional Chrome, Edge and Firefox companion extension.
 
-## Current Phase
+SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-Phase 1 is complete: project initialization.
+**Current source versions:** desktop **1.0.16**, extension **0.6.0**. This desktop update hardens local requests, locking, concurrent vault operations and backup restoration. The extension is unchanged; an already installed signed Firefox 0.6.0 needs no update.
 
-Phase 2 is complete: authentication.
+Settings now uses six sections: **General**, **Security**, **Browsers**, **Organization**,
+**Backup & Data**, and **About**. Browser pairings appear together under **Browsers**;
+installation instructions are tucked into **Installation & troubleshooting**.
+The window remembers the last section during the app session and supports arrow-key navigation.
 
-The app now supports first-launch vault creation, returning-user login, show/hide password controls, live password matching, a password strength meter, bcrypt master-password hashing, encrypted SQLite vault initialization, Electron IPC auth handlers, form validation, error handling, and an in-memory unlocked session.
+Since desktop **1.0.7**, saving a new login from either browser opens one confirmation
+with **Group** and **Category** choices. It defaults to the active group and **Other**
+(or the first available category), and supports **Unassigned**. Password updates
+keep the existing entry's organization.
 
-Phase 3 is complete: dashboard UI.
+[Windows setup](#windows-setup) | [Browser extension](#browser-extension) | [Security](#security) | [Development](#development) | [Documentation](#documentation)
 
-After unlock, the app now opens a desktop vault workspace with category navigation, favorites access, search field, add/settings actions, summary cards, credential list structure, empty state, and lock control.
+## Local hardening in desktop 1.0.16
 
-Phase 4 is complete: database integration.
+- Desktop requests must come from the main app window's expected document and main frame. Vault actions also require the current unlocked session.
+- Saves, backups, password changes, recovery and restore share a vault-operation queue. A second desktop process cannot open the same profile as another writer.
+- Locking cancels queued work, withholds late results and clears file-picker permissions. A file replacement already committing finishes or rolls back to keep authentication and encrypted data consistent; it does not reopen the vault.
+- Restore decrypts and validates the database before replacing files. Failed first restores remove partial files. An interrupted replacement can recover the verified previous database when its authentication record still matches.
+- Temporary key buffers and decrypted database buffers are cleared when their operation ends. JavaScript strings and runtime-managed memory cannot be guaranteed erased.
 
-Dashboard categories, counts, and credential-list data are now read from the encrypted SQLite vault through main-process IPC after unlock.
+Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic failure-case and Electron request-boundary checks. These are local protections, not cloud sync or an independent security audit.
 
-Phase 5 is complete: credential management.
+## Features
 
-Credentials can be added, edited, deleted, favorited, categorized, and stored in the encrypted SQLite vault.
+### Credential vault
 
-Phase 6 is complete: live search.
+- Store website addresses, usernames, emails, passwords, notes and tags.
+- Organize entries with categories, favorites and groups; search across credential fields.
+- Generate passwords with configurable length and character options.
+- Copy credentials with configurable password clipboard clearing.
+- Use auto-lock, change the master password and configure a recovery key.
+- Import CSV, JSON and KeePass CSV; export CSV/JSON or create an encrypted backup.
 
-The dashboard can search credentials across website, URL, username, email, notes, tags, and category while preserving active filters.
+### Vault Health
 
-Phase 7 is complete: password generator.
+Desktop **1.0.10** added **Check vault health** to the credential dashboard. It checks current passwords locally while the vault is unlocked. There is no paid service, network request, saved scan report or automatic password change.
 
-The credential modal includes configurable password generation with strength feedback and "use password" workflow.
+- **Weak:** fewer than 12 Unicode characters, or one of the built-in common, repeating or sequential patterns. This is a limited heuristic, not a comprehensive strength estimate or breach check. No finding does not guarantee a strong password.
+- **Reused:** the exact same non-empty password on more than one entry in the current scope. Comparisons are case-sensitive. Counts represent affected entries, so an entry can be both weak and reused.
+- The active group filter applies to the entire scan, including reuse counts. Other groups, password history and the separate Client Vault are excluded.
+- Results show entry names, usernames and reasons, without password values or fingerprints. Filter by issue, choose **Edit**, then return to a refreshed report after Save or Cancel. **Check again** refreshes the scan; browser saves refresh an open report too.
 
-Phase 8 is complete: clipboard management.
+Change a password on the website first, then update its saved entry in SLV. Editing the vault does not change the website's password.
 
-Username, password, email, and URL copy actions show toast feedback and copied passwords can auto-clear after the configured delay.
+### Duplicate Login Review
 
-Phase 9 is complete: import, export, backup, and restore.
+Desktop **1.0.15** adds **Review duplicates** to the credential dashboard. It compares active entries locally using the exact website origin (scheme, hostname and port) and case-sensitive username, falling back to email when username is blank. Outer whitespace is ignored. Paths are ignored; invalid website addresses and blank identities are skipped. HTTP and HTTPS remain separate.
 
-The settings modal supports CSV, JSON, KeePass CSV import, CSV/JSON export, encrypted backup creation, and encrypted restore.
+- Compare names, website paths, groups, categories, timestamps, favorites, tags and the presence of notes/QR images side by side. Differing passwords and different groups are flagged, without displaying password values. **Review / Edit** opens the normal credential editor and returns to a fresh report afterward.
+- Nothing is selected automatically. Choose one login to keep, select **Review cleanup**, and confirm the listed copies to move to **Recently Deleted**. No fields or histories are merged; the kept entry remains unchanged and removed copies retain their own password history for 30 days.
+- These are possible duplicates: different paths or groups may be intentional. Leave those matches alone. The active group applies to both review and cleanup; Trash and Client Vault are excluded.
+- The complete matching set is rechecked before an atomic cleanup. Edited, added or deleted entries and scope changes require a new review. Failed writes leave the previous vault intact.
 
-Phase 10 is complete: settings.
+Help now covers browser setup, remembered/session-only pairing, inline fill, save offers, automatic backups, password history, Vault Health, Recently Deleted, duplicate review and appearance previews.
 
-Theme, auto-lock, clipboard clear timeout, backup folder preference, app info, and master-password change are available in settings.
+### Recently Deleted
 
-Phase 11 is complete: UI polish.
+Desktop **1.0.14** adds **Recently Deleted** beside **Check vault health** on the credential dashboard.
 
-Visual consistency, dark-mode coverage, focus states, responsive modal behavior, and phase documentation have been tightened.
+- Deleting a login moves its complete entry and password history into encrypted Trash for **30 days**. Replace-imports also retain the entries they displace. Deletions from before this update cannot be recovered here.
+- Trashed logins are excluded from browser matching/fill, ordinary search, dashboard counts, Vault Health and CSV/JSON exports. Encrypted backups include Trash snapshots; their original expiry dates still apply after backup restoration.
+- **Restore** brings back the entry, including password history, notes, tags, favorite status and QR image. Original group/category names are restored, recreating removed names if needed. Restoration does not merge other matching logins.
+- The active group filter applies to the Trash list and its actions. Select all groups to see entries whose original group was removed or renamed.
+- **Delete permanently** asks for confirmation. Expired entries cannot be restored; cleanup runs after unlock, hourly while unlocked, and on vault writes. When SLV is closed or locked, cleanup waits. Older backups retain their own snapshots; deletion does not erase those files.
+- This version covers credential entries, not the separate Client Vault.
 
-Phase 12 (packaging) is configured but not yet verified.
+### Password history
 
-Electron Builder is set up to produce an NSIS installer and a portable build for Windows x64 (`npm run dist`), but installer verification hasn't been signed off yet.
+Since desktop **1.0.9**, SLV keeps the latest **10 previous passwords per credential**, inside the encrypted vault. Desktop edits and approved browser password updates record the password being replaced. Unchanged passwords and edits to other fields add no history. Existing vaults upgrade automatically; past changes made before this feature cannot be recovered.
 
-### Since Phase 11: Client Vault, Groups, and Branding
+Open a credential for editing, expand **Password history**, and use **Show** to reveal an old password or **Use** to select it for the edit form. Click **Update Credential** to save that selection; **Cancel** discards it. This changes the saved vault entry, not the password on the website. The replaced current password is retained in history too.
 
-Development continued past the original phase plan to add a second workspace and some cross-cutting features. These aren't part of the numbered phase list above, but are fully built and in daily use:
+History respects vault locking and the active group, is included in encrypted backups, and is excluded from ordinary CSV/JSON exports and browser login responses. Deleting a credential moves its history into Recently Deleted along with the entry for 30 days. Permanent deletion and expiry remove that retained copy; older backup files retain their snapshots. This first version covers credential entries, not the separate Client Vault fields.
 
-**Client Vault** — a separate workspace from the credential dashboard, for web developers or agencies tracking their clients' sites. One record per client holds:
+### Automatic encrypted backups
 
-- WordPress admin URL, username, and password
-- Hosting provider, hosting portal URL, username, and password
-- FTP/SFTP host, port, username, and password
-- Database host, name, username, and password, plus a phpMyAdmin URL
-- Registrar, domain expiry date, and SSL expiry date
-- Free-form notes
-- Auto-generated Quick Links (e.g. a "WP Admin" button) built from whichever URLs are filled in
-- An optional 2FA QR code image, stored for re-scanning onto a new device later
-- Favorites and categories, with its own search across name, domain, and hosting provider
+Since desktop **1.0.8**, open **Settings > Backup & Data**, choose an **Automatic Backup Folder**, then turn **Automatic Backups** on. This creates the first backup immediately. No paid service or internet connection is required.
 
-The Client Vault has its own summary stats (Total, Favorites, SSL Due) and is switched to from the sidebar Workspaces list, independent of the credential dashboard's categories/groups.
+- Backups run once every 24 hours while SLV is open and unlocked. An overdue backup runs after the next unlock.
+- Keep the latest **7** (default), **14**, or **30** automatic copies. Cleanup runs only after a successful backup and only removes tracked automatic copies from this installation; manual backups stay untouched.
+- **Back up now** creates another copy when automatic backups are enabled. The last successful backup and any errors appear in Settings.
+- Changing the automatic folder turns scheduling off until enabled again; copies in the old folder remain untouched. The manual backup folder is a separate setting.
+- Restore a `.slvbackup` file with **Restore from Backup**, using the master password that applied when it was created. Restoring replaces the current vault. Credential data stays encrypted; the file also includes readable timestamps and password-verification metadata.
 
-**Groups** — an axis independent of categories, answering "whose data is this" rather than "what kind of data is this." From Settings, the vault can be locked to one active group; credentials belonging to every other group are hidden from the list entirely (useful if a screen-recording or time-tracking tool might be capturing your screen). Groups can be added, renamed, and deleted from Settings, and the lock persists across restarts until cleared. This currently applies to the credential dashboard only — the Client Vault is intentionally independent of groups.
+A folder on the same drive does not protect against that drive failing. Choose an existing separate drive or copy backups elsewhere when possible.
 
-**White-Label Branding** — Settings > Branding lets a deployment rename the app, replace its logo, and recolor its accent, all applied instantly across the sidebar, login screen, About modal, and window title:
+### Client workspace
 
-- **App Name** — replaces "Secure Login Vault" everywhere in the UI and in the OS window title bar
-- **Logo** — a custom image replacing the default mark, auto-resized and kept transparent so it works on light and dark themes alike
-- **Accent Color** — a single color pick that re-themes buttons, links, and highlights throughout the app
+Keep client infrastructure details in a separate workspace: WordPress, hosting, FTP/SFTP, databases and registrar information, plus domain/SSL expiry dates, notes, quick links and an optional 2FA QR image. Client entries have their own search, favorites and categories.
 
-Branding is stored locally per install; it doesn't change the packaged app icon, which is still fixed at build time.
+The credential vault's active group filter does **not** apply to the Client Vault.
 
-**Also included:** an in-app Help & FAQ modal, an About modal, and full category/group management (add, rename, delete, with credential reassignment) from Settings.
+### Appearance and settings
 
-## Browser Extension
+Desktop **1.0.12** adds **Settings > General > Appearance > Text size**: **Small**, **Default**, or **Large**. The main SLV window previews the size immediately, using the existing font. **Apply** saves the choice for future launches. Closing Settings, pressing Escape or locking discards an unapplied size. Choose Default and Apply to restore the original size. Native Windows dialogs and the browser extension keep their own text settings.
 
-The browser extension has its own phase sequence, separate from the desktop phases above.
-Phases 1-4 provide the native connection, verified pairing, matching logins, and filling.
-Phase 5 adds **Save this login**: enter a login on a page, click Save in the extension,
-then confirm in the desktop app. SLV adds a new entry or updates the matching entry's
-password, and refreshes the desktop list.
+Since desktop **1.0.11**, accent colors preview live as you move the color picker. **Apply** saves the choice. Closing Settings (including Escape) or locking the vault discards an unapplied preview. **Reset** immediately restores the current theme's default accent.
 
-See [Browser extension workflow and verification](docs/browser-extension.md) for setup,
-usage, tested behavior, and current limits.
+Choose light, dark or system appearance, and customize the app name, logo and accent color. Branding changes the app's interface; the packaged Windows executable icon remains fixed at build time. Help and FAQ are available inside the app.
 
-## Requirements
+## Windows setup
 
-- Node.js LTS
-- npm
-- Electron dependencies installed with `npm install`
+Use a build produced from this source, or build it using the instructions below. Windows x64 builds are written to the local `release/` folder:
 
-## Install
+| File | Use |
+| --- | --- |
+| `Secure Login Vault Setup 1.0.16.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.16.exe` | Portable desktop app; browser-helper setup is unavailable |
+
+1. Run the **Setup** installer and open SLV.
+2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
+3. Add credentials, import existing entries through Settings, or connect the browser extension.
+
+Installed users do not need Node.js, npm or the source repository. The current builds are unsigned. Automated packaged-app checks have passed; installation on a clean Windows machine and the full Chrome/Edge setup still need manual verification.
+
+For updates, close SLV before running the newer Setup installer, then reload the browser extension. Keep an encrypted backup before updating or moving the vault.
+
+## Browser extension
+
+The Setup installer bundles Chrome/Edge and Firefox extensions plus the native helper. Loading an extension and pairing it are manual steps; installing SLV alone does not install the browser extension.
+
+1. Open and unlock SLV, then use **Settings > Browsers > Installation & troubleshooting**. Setup registers the local helper and opens the bundled extension folder.
+2. Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, select **Load unpacked**, and choose that folder.
+3. In SLV, choose **Add browser**. Paste the code into the extension popup and pair.
+4. Keep SLV running and unlocked when filling or saving logins.
+
+**Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
+
+After an extension update, reload it on the browser's extensions page. Desktop 1.0.16 uses extension 0.6.0 for inline suggestions; incompatible versions do not fall back to plaintext communication. Local hardening needs only the desktop update.
+
+### Fill, save and update
+
+- **Fill:** open the extension on a login page, select a matching saved login and click **Fill**. SLV fills the fields without submitting the form. Manually added vault entries work too when their saved website address matches the page's origin.
+- **Inline fill (optional):** enable **Inline fill suggestions** in the popup, approve website access, and reload open login pages. Focus a username or password field, click the small **SLV** button, then choose an account. It uses the same matching and desktop approval settings as popup Fill and never submits the form. No vault lookup happens until you click SLV. This first version supports ordinary top-level forms; embedded, shadow-DOM and form-less logins may need popup Fill or manual entry.
+- **Manual save:** type the login details on the page, open the extension and click **Save this login**. Confirm Add or Update in SLV.
+- **Automatic offers:** enable **Automatic save offers** in the extension popup, approve optional website access, and reload open login pages. Ordinary form submissions can trigger a Save or Update card. Unchanged saved logins stay quiet.
+- **Dismissal:** use **Not now** or **Never for this site**. The extension settings let you allow offers on that site again.
+
+Saving always requires desktop confirmation. Confirmation before filling is controlled by **Ask Before Filling** in SLV Settings. HTTPS is required for real websites; local test pages are an exception. Matching uses the exact scheme, hostname and port. Some embedded, form-less or multi-step login flows need manual handling.
+
+See the [browser workflow and troubleshooting notes](docs/browser-extension.md) for development setup, limitations and verification details.
+
+## Security
+
+- Vault data is encrypted at rest with AES-256-GCM; password-based key derivation uses scrypt.
+- The app and browser extension verify their pairing on each connection. Credential requests and replies use AES-256-GCM with separate directional session keys, message authentication and replay rejection.
+- Locked vaults refuse credential access. The extension requests one selected login for its matching website when filling.
+- Desktop pairing storage uses Windows protection through Electron's `safeStorage`. Browser pairing is remembered in the extension profile by default; **Pairing security > Keep pairing only for this browser session** offers memory-only browser storage instead.
+
+Encryption protects stored vault data and the local app-to-extension transfer. Once a password is filled, the website can read its form fields. A compromised browser or computer remains a risk. **CSV and JSON exports contain unencrypted credentials**; use **Encrypted Backup** when you need an encrypted copy. Restoring a backup replaces the current vault contents.
+
+Security and integration tests cover specific behaviors; this project has not undergone an independent security audit. Read the [security design, tests and remaining limits](docs/browser-security.md) before relying on it for sensitive credentials.
+
+## Development
+
+The app uses Electron, HTML, CSS and vanilla JavaScript, with SQLite provided by `sql.js`.
+
+Use Windows with Git, npm and a Node.js version supported by the current dependencies, such as **Node.js 24.15.0 or later in the 24.x series**. These tools are needed for development and builds, not for running the installed app.
 
 ```powershell
-npm install
-```
-
-If PowerShell blocks `npm.ps1` because of the local execution policy, use:
-
-```powershell
-npm.cmd install
-```
-
-## Run
-
-```powershell
-npm start
-```
-
-Execution-policy workaround:
-
-```powershell
+git clone https://github.com/jayacedo/secure-login-vault.git
+cd secure-login-vault
+npm.cmd ci
 npm.cmd start
 ```
 
-## Verify
+The `.cmd` commands also work when PowerShell's execution policy blocks `npm.ps1`.
 
-```powershell
-npm run check
-```
+### Checks
 
-Execution-policy workaround:
+Run syntax and shared-transport consistency checks:
 
 ```powershell
 npm.cmd run check
 ```
 
-Run the authentication smoke test:
-This also verifies encrypted SQLite dashboard reads.
+Selected functional and security checks:
 
 ```powershell
 npm.cmd run test:auth
+npm.cmd run test:health
+npm.cmd run test:health-app
+npm.cmd run test:history
+npm.cmd run test:trash
+npm.cmd run test:trash-app
+npm.cmd run test:duplicates
+npm.cmd run test:duplicates-app
+npm.cmd run test:history-app
+npm.cmd run test:auto-backups
+npm.cmd run test:auto-backups-app
+npm.cmd run test:secure
+npm.cmd run test:multi-pairing
+npm.cmd run test:secure-browser
+npm.cmd run test:offers
+npm.cmd run test:e2e
+npm.cmd run test:firefox
+npm.cmd run test:firefox-browser
 ```
 
-## Build Installer
+The Electron integration tests use temporary test data under `.tmp/`. The browser and security documentation describe test coverage and the manual checks that remain. Additional test scripts are listed in [package.json](package.json).
+
+### Build Windows packages
 
 ```powershell
-npm run dist
+npm.cmd run dist -- --publish never
+npm.cmd run test:packaged-browser
+npm.cmd run test:packaged-firefox
 ```
 
-The Windows installer output will be written to `release/`.
+The build creates the Setup installer and portable executable in `release/`. The packaged-browser test extracts the actual installer's files and checks its helper with dummy credentials and simulated registry writes; it does not run the installer wizard.
 
-## Development Phases
+For only the Setup installer, use `npm.cmd run dist -- --win nsis --publish never`.
+Firefox packaging also creates `dist/secure-login-vault-firefox-0.6.0.zip` for Mozilla signing.
 
-1. Project Initialization
-2. Authentication
-3. Dashboard UI
-4. Database Integration
-5. Credential Management
-6. Live Search
-7. Password Generator
-8. Clipboard Management
-9. Import / Export
-10. Settings
-11. UI Polish
-12. Packaging
+After editing the shared transport implementation, regenerate its browser copy before checking or building:
 
-Client Vault, Groups, and White-Label Branding were added after Phase 11 and sit outside this numbered plan — see "Since Phase 11" above.
+```powershell
+npm.cmd run extension:sync-secure
+```
 
-See `docs/implementation-plan.md` for the adapted product and workflow guidance.
+## Documentation
+
+- [Browser setup, workflows and verification](docs/browser-extension.md)
+- [Browser transport security and limitations](docs/browser-security.md)
+- [Firefox setup, testing and signing](docs/firefox.md)
+- [Implementation plan and development phase history](docs/implementation-plan.md)
+
+## License
+
+The project is currently marked `UNLICENSED` in [package.json](package.json).

@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const { JSDOM } = require("jsdom");
+const { addOfferApis } = require("./offerTestUtils");
 const { extensionIdFromPublicKey } = require("./extension-key");
 const { ALLOWED_EXTENSION_IDS } = require("../src/native-host/config");
 const { isAllowedOrigin } = require("../src/native-host/hostRelay");
@@ -27,12 +28,11 @@ assert.match(manifest.version, /^\d+(\.\d+){0,3}$/);
 // change to this test.
 // "activeTab" gives temporary access to the one tab the person is using, only after they act
 // in the popup; "scripting" lets the extension run its fill code there. Neither reads any
-// website on its own, and there are no host permissions.
+// website on its own. Automatic offers require explicitly granted optional host access.
 assert.deepEqual(manifest.permissions, ["nativeMessaging", "storage", "activeTab", "scripting"]);
 for (const forbidden of [
   "host_permissions",
   "optional_permissions",
-  "optional_host_permissions",
   "content_scripts",
   "externally_connectable",
   "web_accessible_resources",
@@ -44,6 +44,7 @@ for (const forbidden of [
 ]) {
   assert.equal(forbidden in manifest, false, `the manifest must not declare ${forbidden}`);
 }
+assert.deepEqual(manifest.optional_host_permissions, ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]);
 assert.deepEqual(Object.keys(manifest.background), ["service_worker"], "plain service worker, no module tricks");
 assert.equal(manifest.background.service_worker, "background.js");
 assert.equal(manifest.action.default_popup, "popup.html");
@@ -103,18 +104,18 @@ for (const file of ["background.js", "popup.js", "status.js", "pairing.js", "lin
 const { describeStatus, HOST_NAME, EXPECTED_PROTOCOL } = require("../extension/status.js");
 
 assert.equal(HOST_NAME, "com.securelogin.vault");
-assert.equal(EXPECTED_PROTOCOL, 1);
+assert.equal(EXPECTED_PROTOCOL, 2);
 
 {
-  const ok = describeStatus({ ok: true, type: "pong", appVersion: "1.2.3", protocol: 1, id: "x" }, "");
+  const ok = describeStatus({ ok: true, type: "pong", appVersion: "1.2.3", protocol: 2, id: "x" }, "");
   assert.deepEqual(ok, { state: "connected", connected: true, title: "Connected", detail: "Secure Login Vault 1.2.3", appVersion: "1.2.3" });
-  assert.equal(describeStatus({ ok: true, type: "pong", protocol: 1 }, "").detail, "Secure Login Vault");
-  assert.equal(describeStatus({ ok: true, type: "pong", appVersion: "9".repeat(100), protocol: 1 }, "").appVersion.length, 32);
-  assert.equal(describeStatus({ ok: true, type: "pong", appVersion: { evil: 1 }, protocol: 1 }, "").appVersion, "");
+  assert.equal(describeStatus({ ok: true, type: "pong", protocol: 2 }, "").detail, "Secure Login Vault");
+  assert.equal(describeStatus({ ok: true, type: "pong", appVersion: "9".repeat(100), protocol: 2 }, "").appVersion.length, 32);
+  assert.equal(describeStatus({ ok: true, type: "pong", appVersion: { evil: 1 }, protocol: 2 }, "").appVersion, "");
 }
 
 const cases = [
-  [[{ ok: true, type: "pong", protocol: 2 }, ""], "version-mismatch"],
+  [[{ ok: true, type: "pong", protocol: 99 }, ""], "version-mismatch"],
   [[{ ok: true, type: "pong" }, ""], "version-mismatch"],
   [[{ ok: false, error: "app-not-running" }, ""], "app-not-running"],
   [[{ ok: false, error: "origin-not-allowed" }, ""], "helper-forbidden"],
@@ -128,7 +129,7 @@ const cases = [
   [[undefined, "Specified native messaging host not found."], "helper-missing"],
   [[undefined, "Access to the specified native messaging host is forbidden."], "helper-forbidden"],
   [[undefined, "Native host has exited."], "helper-error"],
-  [[{ ok: true, type: "pong", protocol: 1 }, "Native host has exited."], "helper-error"] // a browser error wins
+  [[{ ok: true, type: "pong", protocol: 2 }, "Native host has exited."], "helper-error"] // a browser error wins
 ];
 for (const [args, state] of cases) {
   const status = describeStatus(...args);
@@ -217,13 +218,14 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
       }
     }
   };
+  addOfferApis(chrome, { tab });
   const sandbox = {
     chrome,
     crypto: crypto.webcrypto,
     console,
     setTimeout,
     clearTimeout,
-    TextEncoder,
+    TextEncoder, TextDecoder,
     URL,
     Uint8Array,
     String,
@@ -244,7 +246,7 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
     stats,
     store,
     storageCalls,
-    ask: (message, sender = { id: runtimeId }) =>
+    ask: (message, sender = { id: runtimeId, url: chrome.runtime.getURL("popup.html") }) =>
       new Promise((resolve) => {
         const keptOpen = listeners[0](message, sender, resolve);
         if (keptOpen !== true) resolve({ __ignored: true });
@@ -252,7 +254,7 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
   };
 }
 
-const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
+const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 2 };
 
 (async () => {
   // Running but not paired: reported as such, and not as connected
@@ -304,7 +306,7 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
     assert.deepEqual(bg.store, {});
     assert.equal(forgotten.state, "unpaired");
     assert.equal(forgotten.canForget, false);
-    for (const [, what] of bg.storageCalls) assert.ok(what === "slvPairingSecret" || (Array.isArray(what) && what.every((k) => k === "slvPairingSecret")), JSON.stringify(what));
+    for (const [, what] of bg.storageCalls) assert.ok(["slvSaveOffers", "slvInlineFill", "slvPairingSecret", "slvSessionPairing"].includes(what) || (Array.isArray(what) && what.every((k) => k === "slvPairingSecret")), JSON.stringify(what));
   }
 
   // Two popups at once: one operation at a time, never two connections together
@@ -356,16 +358,21 @@ const PONG = { ok: true, type: "pong", appVersion: "1.0.0", protocol: 1 };
       assert.deepEqual(await bg.ask(message, {}), { __ignored: true });
     }
     assert.deepEqual(await bg.ask({ type: "get-passwords" }), { __ignored: true });
+    const contentSender = { id: "ext-id", url: "https://example.com", tab: { id: 7 }, frameId: 0, documentId: "doc" };
+    for (const message of [{ type: "get-status" }, { type: "fill", loginId: 1 }, { type: "save-login" }, { type: "pair", code: "x" }, { type: "forget" }, { type: "offers-set", enabled: true }, { type: "inline-get" }, { type: "inline-set", enabled: true }, { type: "pairing-storage-get" }, { type: "pairing-storage-set", sessionOnly: false }]) {
+      assert.deepEqual(await bg.ask(message, contentSender), { __ignored: true }, "content scripts cannot use popup routes");
+    }
+    assert.deepEqual(await bg.ask({ type: "get-status" }, { id: "ext-id", url: "chrome-extension://ext-id/other.html" }), { __ignored: true });
     assert.deepEqual(await bg.ask(null), { __ignored: true });
     assert.deepEqual(await bg.ask("get-status"), { __ignored: true });
     assert.deepEqual(await bg.ask(["get-status"]), { __ignored: true });
     assert.equal(bg.sent.length, 0, "nothing reached the helper");
-    assert.deepEqual(bg.storageCalls, [], "nothing touched storage");
+    assert.ok(bg.storageCalls.every(([op, key]) => op === "get" && ["slvSaveOffers", "slvInlineFill"].includes(key)), "only startup preferences may be read");
   }
 
   // ── popup.js, run in a real DOM against a fake chrome ───────────────────────
   function openPopup(respond, { tabUrl, tabsThrow = false, tabsError = false } = {}) {
-    const html = read("popup.html").replace(/<script[^>]*><\/script>/, "").replace(/<link[^>]*>/, "");
+    const html = read("popup.html").replace(/<script[^>]*><\/script>/g, "").replace(/<link[^>]*>/, "");
     const dom = new JSDOM(html, { runScripts: "outside-only" });
     const calls = [];
     let insideTabsCallback = false;

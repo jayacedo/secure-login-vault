@@ -19,6 +19,11 @@
   box-sizing: border-box;
 }
 
+:root[data-text-size="small"] { font-size: 87.5%; }
+:root[data-text-size="default"] { font-size: 100%; }
+:root[data-text-size="large"] { font-size: 112.5%; }
+.settings-text-size-control { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
 body {
   min-width: 980px;
   margin: 0;
@@ -2152,7 +2157,7 @@ mark.search-highlight {
    Phase 10 — Dark Mode
    ══════════════════════════════════════════════════════════════════════════════ */
 
-[data-theme="dark"] {
+:root[data-theme="dark"] {
   color-scheme: dark;
   --bg:           #12161e;
   --panel:        #1c2231;
@@ -2599,6 +2604,70 @@ mark.search-highlight {
 .settings-backup-folder-btns {
   display: flex;
   gap: 8px;
+}
+
+.password-history {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.health-dashboard-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+.vault-health-container { width: min(760px, 94vw); }
+.trash-container { width: min(820px, 94vw); }
+.duplicate-container { width: min(1040px, 96vw); }
+.duplicate-container .modal-hint { line-height: 1.5; }
+.duplicate-set { border-top: 1px solid var(--line); padding: 16px 0; overflow-wrap: anywhere; }
+.duplicate-set h3 { margin: 0 0 10px; font-size: 1rem; }
+.duplicate-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; margin: 16px 0; }
+.duplicate-card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+.duplicate-card p { margin: 8px 0; }
+.duplicate-keep { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.duplicate-keep input[type="radio"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; padding: 0; margin: 3px 0 0; accent-color: var(--accent); }
+.duplicate-confirmation { margin-top: 12px; }
+.duplicate-confirmation button { margin: 0 8px 8px 0; max-width: 100%; white-space: normal; }
+.trash-container .modal-hint { line-height: 1.5; margin: 6px 0 12px; }
+.trash-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
+.trash-entry-info { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.trash-entry-info .modal-hint { margin: 5px 0 0; }
+.trash-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+.trash-entry-actions p { flex-basis: 100%; overflow-wrap: anywhere; }
+.trash-delete { color: var(--danger, #d94c57); }
+#trash-status { overflow-wrap: anywhere; }
+.vault-health-container .modal-hint { line-height: 1.5; }
+.vault-health-container .modal-body > p { margin: 0 0 10px; }
+.health-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0 10px; }
+.health-summary > div { padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.health-summary strong { display: block; font-size: 1.6rem; color: var(--text); }
+.health-summary span { font-size: .8rem; color: var(--muted); }
+.health-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.health-filters [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+#health-list-status { color: var(--muted); font-size: .85rem; }
+.health-entry { display: flex; align-items: center; gap: 16px; padding: 15px 0; border-top: 1px solid var(--line); }
+.health-entry-info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.health-entry-info > strong, .health-entry-info > span { display: block; }
+.health-entry-info ul { margin: 6px 0 0; padding-left: 18px; font-size: .85rem; color: var(--muted); }
+@media (max-width: 520px) { .health-summary { grid-template-columns: repeat(2, 1fr); } }
+.password-history summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.password-history > p { margin: 10px 0; line-height: 1.5; }
+#password-history-list { max-height: 260px; overflow-y: auto; color: var(--muted); }
+.password-history-row { padding: 10px 0; border-top: 1px solid var(--line); }
+.password-history-controls { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.password-history-controls input { flex: 1; min-width: 0; font-family: Consolas, monospace; }
+.password-history-controls button { flex-shrink: 0; padding: 8px 10px; }
+
+.settings-panel .settings-auto-backup-folder {
+  flex-direction: column;
+  align-items: stretch;
+}
+.settings-panel .settings-auto-backup-folder .settings-backup-folder-control {
+  max-width: 100%;
+  align-items: flex-start;
+}
+.settings-panel .settings-auto-backup-folder .settings-backup-folder-path {
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 /* Pair Browser: the one-time code */
@@ -3329,15 +3398,82 @@ small.group-badge {
 
 /* ─── Sign in buttons ────────────────────────────────────────────────────── */
 
-.row-action-btn.signin-action {
-  color: var(--accent-strong);
-}
-
 .signin-links {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.extension-setup-row { flex-direction: column; align-items: stretch; gap: 12px; }
+.extension-setup-buttons { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+.extension-setup-guide { min-width: 0; line-height: 1.6; }
+.extension-setup-guide ol { margin: 8px 0 14px; padding-left: 24px; }
+.extension-paired-list { flex-basis: 100%; width: 100%; list-style: none; margin: 8px 0 0; padding: 0; }
+.extension-paired-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.extension-paired-list span { min-width: 0; }
+.extension-paired-list strong, .extension-paired-list small { display: block; }
+.extension-paired-list small { margin-top: 4px; color: var(--muted); }
+.extension-folder-path { box-sizing: border-box; width: 100%; margin: 6px 0 10px; padding: 10px; color: var(--text); background: var(--panel-muted); border: 1px solid var(--line); border-radius: 8px; }
+
+/* Settings workspace: navigation stays in view while the selected panel scrolls. */
+.settings-modal-container { width: 900px; height: min(760px, 92vh); }
+.settings-workspace { display: grid; grid-template-columns: 190px minmax(0, 1fr); flex: 1; min-height: 0; }
+.settings-navigation { display: flex; flex-direction: column; gap: 6px; padding: 20px 12px; background: var(--panel-muted); border-right: 1px solid var(--line); overflow-y: auto; }
+.settings-nav-button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: .85rem; text-align: left; }
+.settings-nav-button svg { width: 18px; height: 18px; flex-shrink: 0; }
+.settings-nav-button:hover { color: var(--text); background: var(--panel); }
+.settings-nav-button[aria-selected="true"] { color: var(--accent); background: var(--panel); font-weight: 700; box-shadow: inset 3px 0 var(--accent); }
+.settings-nav-button:focus-visible, .settings-panel:focus-visible, .settings-installation summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.settings-workspace .settings-modal-body { min-width: 0; min-height: 0; max-height: none; padding: 24px 28px; overscroll-behavior: contain; }
+.settings-modal-container [hidden] { display: none !important; }
+.settings-panel { min-width: 0; }
+.settings-panel-heading { margin-bottom: 22px; }
+.settings-panel-heading h3 { font-size: 1.3rem; margin: 0 0 5px; color: var(--text); }
+.settings-panel-heading p { margin: 0; color: var(--muted); font-size: .85rem; }
+.settings-panel .settings-section { padding: 20px 0; }
+.settings-panel > .settings-section:first-of-type { padding-top: 0; }
+#settings-panel-browsers > .settings-section { padding-top: 20px; }
+#settings-panel-general .settings-backup-folder-control { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.settings-panel .settings-row { gap: 18px; }
+.settings-panel .settings-row-label { min-width: 0; }
+.settings-panel .settings-row-control { max-width: 100%; }
+.settings-browser-status { display: flex; align-items: flex-start; gap: 12px; padding: 14px; margin-bottom: 22px; background: var(--panel-muted); border-radius: 8px; }
+.settings-browser-status > svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--accent); }
+.settings-browser-status h4 { margin: 0 0 4px; font-size: .9rem; }
+.settings-browser-status p { margin: 0; }
+.settings-installation summary { padding: 10px 0; color: var(--muted); font-size: .85rem; cursor: pointer; }
+.settings-installation[open] > summary { color: var(--text); }
+.extension-browser-guide { padding: 4px 0; }
+.extension-browser-guide summary { color: var(--text); }
+.settings-browser-remove { margin-top: 16px; }
+.settings-unpair-all { border: 0; padding: 6px 0; min-height: 32px; background: transparent; color: var(--danger); font-size: .82rem; text-align: left; }
+.settings-unpair-all:hover { text-decoration: underline; }
+.settings-footer { align-items: center; }
+.settings-footer #settings-status { margin: 0 auto 0 0; font-size: .82rem; overflow-wrap: anywhere; }
+.settings-footer #settings-done-btn { margin-left: auto; flex-shrink: 0; }
+.settings-panel .extension-paired-list li { flex-wrap: wrap; }
+.settings-panel .extension-paired-list strong { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .settings-workspace { grid-template-columns: 150px minmax(0, 1fr); }
+  .settings-navigation { padding: 14px 8px; }
+  .settings-nav-button { padding: 9px; gap: 7px; font-size: .78rem; }
+  .settings-workspace .settings-modal-body { padding: 20px; }
+  .settings-panel .settings-row { flex-wrap: wrap; }
+  .settings-panel .settings-row-label { flex-basis: 100%; }
+  .settings-panel .settings-row-control { min-width: 0; }
+  #settings-panel-general .settings-backup-folder-control { justify-content: flex-start; }
+  .settings-panel .settings-input-row { flex-wrap: wrap; }
+  .settings-panel .settings-input-wrap { min-width: 0; }
+}
+@media (max-width: 520px) {
+  .settings-workspace { display: flex; flex-direction: column; }
+  .settings-navigation { flex-direction: row; flex-wrap: wrap; flex-shrink: 0; gap: 4px; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  .settings-nav-button { width: auto; min-height: 36px; }
+  .settings-nav-button svg { width: 14px; height: 14px; }
+  .settings-workspace .settings-modal-body { padding: 18px; }
+  .settings-panel .settings-info-grid { grid-template-columns: 1fr; }
+  .settings-panel .settings-backup-folder-path { max-width: 100%; }
 }
 
 .signin-btn {

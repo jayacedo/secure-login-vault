@@ -3,6 +3,13 @@ const path = require("path");
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const GRANT_TTL_MS = 10 * 60 * 1000;
 
+function isTrustedAppSender(event, window, expectedUrl) {
+  try {
+    return Boolean(window && !window.isDestroyed() && event.sender === window.webContents &&
+      event.senderFrame === window.webContents.mainFrame && event.senderFrame.url === expectedUrl);
+  } catch { return false; }
+}
+
 // Only plain web/mail links may leave the app. Credential URLs are free text
 // typed by the user, so file:, javascript:, ms-*: and other custom protocols
 // must never reach shell.openExternal.
@@ -27,6 +34,7 @@ function createPathGrants(now = () => Date.now()) {
   }
 
   return {
+    clear() { grants.clear(); },
     grant(kind, filePath) {
       if (typeof filePath !== "string" || !filePath) return;
       grants.set(keyFor(kind, filePath), now() + GRANT_TTL_MS);
@@ -51,4 +59,4 @@ function createPathGrants(now = () => Date.now()) {
   };
 }
 
-module.exports = { isSafeExternalUrl, createPathGrants };
+module.exports = { isSafeExternalUrl, createPathGrants, isTrustedAppSender };

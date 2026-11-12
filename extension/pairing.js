@@ -92,6 +92,8 @@
   }
 
   var api = {
+    pairingId: function (secret) { return hmacHex(secret, "slv-pairing-id-v1"); },
+    replaceProof: function (secret, nonceE, nonceA, proof) { return hmacHex(secret, "slv-repair-v1|" + nonceE + "|" + nonceA + "|" + proof); },
     parseCode: parseCode,
     randomNonce: randomNonce,
     toHex: toHex,

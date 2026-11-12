@@ -1,5 +1,15 @@
 const assert = require("assert");
-const { isSafeExternalUrl, createPathGrants } = require("../src/services/ipcGuards");
+const { isSafeExternalUrl, createPathGrants, isTrustedAppSender } = require("../src/services/ipcGuards");
+
+const expectedUrl = "file:///test/index.html";
+const mainFrame = { url: expectedUrl }, webContents = { mainFrame };
+const window = { isDestroyed: () => false, webContents };
+const event = { sender: webContents, senderFrame: mainFrame };
+assert.equal(isTrustedAppSender(event, window, expectedUrl), true);
+assert.equal(isTrustedAppSender({ ...event, senderFrame: { url: expectedUrl } }, window, expectedUrl), false, "same URL in another frame is not trusted");
+assert.equal(isTrustedAppSender(event, window, "about:blank"), false, "navigated document is not trusted");
+assert.equal(isTrustedAppSender(event, { ...window, isDestroyed: () => true }, expectedUrl), false);
+assert.equal(isTrustedAppSender(event, null, expectedUrl), false);
 
 // External URLs
 for (const ok of ["https://example.com/a?b=1", "http://localhost:8080", "mailto:a@b.com"]) {
@@ -37,3 +47,9 @@ t += 11 * 60 * 1000;
 assert.equal(grants.has("export", "C:\\out\\a.csv"), false, "expired");
 
 console.log("ipc-guards tests passed");
+
+grants.grant("export", "C:\\out\\a.csv");
+grants.grant("restore", "C:\\out\\b.slvbackup");
+grants.clear();
+assert.equal(grants.has("export", "C:\\out\\a.csv"), false);
+assert.equal(grants.has("restore", "C:\\out\\b.slvbackup"), false);

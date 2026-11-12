@@ -22,6 +22,17 @@ const userData = fs.mkdtempSync(path.join(testTempRoot(), "slv-e2e-"));
 app.setPath("userData", userData);
 // Own pipe for the app AND the helper, so a real running app is never touched.
 process.env.SLV_PIPE_USER = `e2e-${process.pid}`;
+// This transport test substitutes confirmations; browser-save-app-test drives
+// the actual isolated dropdown dialog and verifies persistence and cancellation.
+require("../src/services/browserSavePrompt").showSaveLoginPrompt = async (options) => {
+  const result = await dialog.showMessageBox(options.parent, {
+    message: `Add a new login for "${options.username}" on ${options.host}?`,
+    buttons: ["Don't add", "Add"], defaultId: 0, cancelId: 0, signal: options.signal
+  });
+  return !options.signal.aborted && result?.response === 1
+    ? { approved: true, groupName: options.activeGroup, category: options.categories.includes("Other") ? "Other" : options.categories[0], activeGroup: options.activeGroup }
+    : false;
+};
 require("../src/main.js");
 
 const registration = require("../src/native-host/registration");
@@ -112,7 +123,7 @@ function makeChrome({ connectNativeFor, store }) {
       connectNative: (host) => { chrome.connects += 1; return connectNativeFor(chrome)(host); },
       // Used by the popup: delivered to the background worker's listener.
       sendMessage(message, callback) {
-        const sender = { id: chrome.runtime.id };
+        const sender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") };
         chrome.messages.push(message);
         const keptOpen = listeners[0](message, sender, (response) => {
           chrome.responses.push(response);
@@ -158,6 +169,12 @@ function makeChrome({ connectNativeFor, store }) {
       }
     }
   };
+  chrome.offerState = require("./offerTestUtils").addOfferApis(chrome);
+  chrome.fromPage = message => new Promise(resolve => {
+    const sender = { id: chrome.runtime.id, url: chrome.activeTabUrl, tab: { id: 42 }, frameId: 0, documentId: "test-document" };
+    const kept = listeners[0](message, sender, resolve);
+    if (!kept) resolve({ ignored: true });
+  });
   return chrome;
 }
 
@@ -165,7 +182,7 @@ function startBackground(chrome) {
   const sandbox = {
     chrome,
     crypto: { randomUUID: () => crypto.randomUUID(), subtle: crypto.webcrypto.subtle, getRandomValues: (a) => crypto.webcrypto.getRandomValues(a) },
-    console, setTimeout, clearTimeout, TextEncoder, URL, Uint8Array, String, Promise, Object, Array, JSON, Error, parseInt
+    console, setTimeout, clearTimeout, TextEncoder, TextDecoder, URL, Uint8Array, String, Promise, Object, Array, JSON, Error, parseInt
   };
   sandbox.self = sandbox;
   const context = vm.createContext(sandbox);
@@ -174,7 +191,7 @@ function startBackground(chrome) {
 }
 
 function openPopup(chrome) {
-  const html = readExtensionFile("popup.html").replace(/<script[^>]*><\/script>/, "").replace(/<link[^>]*>/, "");
+  const html = readExtensionFile("popup.html").replace(/<script[^>]*><\/script>/g, "").replace(/<link[^>]*>/, "");
   const dom = new JSDOM(html, { runScripts: "outside-only" });
   dom.window.chrome = chrome;
   dom.window.eval(readExtensionFile("popup.js"));
@@ -583,6 +600,34 @@ async function main() {
     ownChrome.activeTabUrl = undefined;
   });
 
+  await check("automatic offers use the real native connection: inspect, confirm add/update, suppress duplicates, and never leak passwords", async () => {
+    const ask = message => new Promise(resolve => ownChrome.runtime.sendMessage(message, resolve));
+    const prompts = [];
+    dialog.showMessageBox = async (_window, options) => { prompts.push(options); return { response: 1 }; };
+    ownChrome.activeTabUrl = "https://offers.example/login";
+    ownChrome.offerState.tab = { id: 42, url: ownChrome.activeTabUrl };
+    ownChrome.offerState.allowed = true;
+    await ask({ type: "offers-set", enabled: true });
+    const capture = password => ownChrome.fromPage({ type: "offer-capture", username: "offer-dummy", password });
+    const first = await capture("offer-dummy-one");
+    assert.equal(first.offer.mode, "add");
+    assert.equal(prompts.length, 0, "inspection doesn't open a desktop prompt");
+    assert.equal((await ownChrome.fromPage({ type: "offer-save", token: first.offer.token })).ok, true);
+    assert.equal(prompts.length, 1);
+    const unchanged = await capture("offer-dummy-one");
+    assert.equal(unchanged.offer, undefined);
+    const changed = await capture("offer-dummy-two");
+    assert.equal(changed.offer.mode, "update");
+    assert.equal((await ownChrome.fromPage({ type: "offer-save", token: changed.offer.token })).ok, true);
+    assert.equal(prompts.length, 2);
+    const matches = (await inApp("credentials.getAll()")).result.filter(c => c.username === "offer-dummy");
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].password, "offer-dummy-two");
+    assert.equal(JSON.stringify([first, changed, ownChrome.offerState.notices, prompts]).includes("offer-dummy-two"), false);
+    await ask({ type: "offers-set", enabled: false });
+    ownChrome.activeTabUrl = undefined;
+  });
+
   await check("the same code cannot be used twice", async () => {
     popup.typeCode(code);
     popup.pair();
@@ -657,6 +702,16 @@ async function main() {
     view.pair();
     await settle(view, "pairing again");
     assert.equal(view.state(), "connected", `${view.title()}: ${view.detail()}`);
+  });
+
+  await check("session-only pairing removes the disk entry and still authenticates through the real helper", async () => {
+    const request = message => new Promise(resolve => ownChrome.runtime.sendMessage(message, resolve));
+    assert.equal((await request({ type: "pairing-storage-set", sessionOnly: true })).sessionOnly, true);
+    assert.equal(ownStore.slvPairingSecret, undefined);
+    assert.equal((await request({ type: "get-status" })).state, "verified");
+    assert.equal((await request({ type: "pairing-storage-set", sessionOnly: false })).sessionOnly, false);
+    assert.equal(typeof ownStore.slvPairingSecret, "string");
+    assert.equal((await request({ type: "get-status" })).state, "verified");
   });
 
   await check("Forget in the popup removes this browser's copy of the secret", async () => {

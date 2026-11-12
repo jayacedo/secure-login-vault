@@ -36,6 +36,7 @@ function memoryStorage(initial = null) {
 // What Chrome gives an extension: connectNative(host) -> a port wired to a helper.
 // The helper is the real relay code, run in this process.
 function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
+  const wire = [];
   const stats = { opened: 0, open: 0 };
   const lastError = { message: "" };
   let secretHex = null;
@@ -58,7 +59,7 @@ function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
 
     const reader = createMessageReader({
       // like a real browser, never deliver before the caller has had a chance to listen
-      onMessage: (value) => setImmediate(() => messageListeners.forEach((fn) => fn(value))),
+      onMessage: (value) => { wire.push(JSON.stringify(value)); setImmediate(() => messageListeners.forEach((fn) => fn(value))); },
       onError() {}
     });
     fromHelper.on("data", (chunk) => reader.push(chunk));
@@ -76,6 +77,7 @@ function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
       onMessage: { addListener: (fn) => messageListeners.push(fn) },
       onDisconnect: { addListener: (fn) => disconnectListeners.push(fn) },
       postMessage(message) {
+        wire.push(JSON.stringify(message));
         if (ended) throw new Error("Attempt to postMessage on disconnected port");
         toHelper.write(encodeMessage(message));
       },
@@ -108,7 +110,7 @@ function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
     }
   });
 
-  const browser = { connectNative, stats, lastError, link, secret: () => secretHex, setSecret: (v) => (secretHex = v) };
+  const browser = { connectNative, stats, lastError, link, wire, secret: () => secretHex, setSecret: (v) => (secretHex = v) };
   return browser;
 }
 
@@ -281,9 +283,10 @@ async function main() {
     assert.equal(all.includes(browser.secret()), false, "nor the secret");
     const allowedFields = {
       ping: ["id", "type"],
-      "pair-begin": ["id", "nonceE", "type"],
-      "pair-finish": ["extProof", "id", "nonceA", "nonceE", "type"],
-      "auth-begin": ["id", "nonceE", "type"],
+      "channel-check": ["id", "type"],
+      "pair-begin": ["browserName", "id", "nonceE", "type"],
+      "pair-finish": ["extProof", "id", "nonceA", "nonceE", "replaceId", "replaceProof", "type"],
+      "auth-begin": ["id", "nonceE", "pairingId", "type"],
       "auth-finish": ["extProof", "id", "nonceA", "nonceE", "type"]
     };
     for (const request of app.received) {
@@ -364,7 +367,8 @@ async function main() {
     app.received.length = 0;
     const got = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
     assert.deepEqual(got, { ok: true, username: "alice", password: "pw-ALICE" });
-    assert.deepEqual(types(app), ["ping", "auth-begin", "auth-finish", "get-login"]);
+    assert.equal(browser.wire.join("").includes("pw-ALICE"), false, "the real native helper only relays encrypted credentials");
+    assert.deepEqual(types(app), ["ping", "auth-begin", "auth-finish", "channel-check", "get-login"]);
     const request = app.received.find((r) => r.type === "get-login");
     assert.deepEqual(Object.keys(request).sort(), ["id", "loginId", "type", "url"]);
     assert.equal(browser.stats.open, 0, "the connection is closed again");
@@ -413,7 +417,7 @@ async function main() {
     const result = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
     assert.equal(result.ok, false);
     assert.equal(result.unverified, true);
-    assert.match(result.message, /Could not verify the app/);
+    assert.match(result.message, /Pairing no longer valid/);
     assert.equal(types(app).includes("get-login"), false, "no password request reached it");
     assert.equal(JSON.stringify(result).includes("pw-LEAK"), false);
 
@@ -474,11 +478,18 @@ async function main() {
     app = await startApp(pipeName, { vault, handlerOptions: { approveSave: async () => decisions.approve, saveLimits: { overall: 5 } } });
     assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
 
+    // Inspection returns a classification, never existing credentials and never writes.
+    assert.deepEqual(await link.inspectLogin({ url: "https://example.com", username: "alice", password: "pw-OLD" }), { ok: true, mode: "unchanged" });
+    assert.deepEqual(await link.inspectLogin({ url: "https://example.com", username: "alice", password: "pw-NEW" }), { ok: true, mode: "update" });
+    assert.deepEqual(await link.inspectLogin({ url: "https://other.example", username: "alice", password: "pw-OLD" }), { ok: true, mode: "add" });
+    assert.deepEqual(writes, []);
+
     // the happy paths: one save-login request with exactly these fields
     app.received.length = 0;
     const firstSave = await link.saveLogin({ url: "https://example.com", username: "carol", password: "pw-NEW" });
     assert.deepEqual(firstSave, { ok: true, mode: "add" }, JSON.stringify(firstSave));
-    assert.deepEqual(types(app), ["ping", "auth-begin", "auth-finish", "save-login"]);
+    assert.equal(browser.wire.join("").includes("pw-NEW"), false, "saving never exposes the submitted password to the helper");
+    assert.deepEqual(types(app), ["ping", "auth-begin", "auth-finish", "channel-check", "save-login"]);
     assert.deepEqual(Object.keys(app.received.find((r) => r.type === "save-login")).sort(), ["id", "password", "type", "url", "username"]);
     assert.equal(browser.stats.open, 0, "the connection is closed again");
     assert.deepEqual(await link.saveLogin({ url: "https://example.com", username: "alice", password: "pw-CHANGED" }), { ok: true, mode: "update" });
@@ -492,6 +503,7 @@ async function main() {
     assert.deepEqual(await link.saveLogin({ url: "http://example.com", username: "dave", password: "pw-D" }), { ok: false, message: "Logins are only saved from secure (https) pages." });
     assert.deepEqual(await link.saveLogin({ url: "chrome://extensions", username: "dave", password: "pw-D" }), { ok: false, message: "Logins are only saved from secure (https) pages." });
     vault.locked = true;
+    assert.deepEqual(await link.inspectLogin({ url: "https://example.com", username: "alice", password: "pw-OLD" }), { ok: false, locked: true });
     assert.deepEqual(await link.saveLogin({ url: "https://example.com", username: "dave", password: "pw-D" }), { ok: false, message: "Secure Login Vault is locked. Unlock it, then try again." });
     vault.locked = false;
     // (5 requests reached the limiter so far, the ones for http and chrome pages were turned away first: the next is told to wait)
@@ -601,11 +613,11 @@ async function main() {
     const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
     app = await startApp(pipeName, { pairing: other });
     const status = await link.check({ url: "https://example.com" });
-    assert.equal(status.state, "app-unverified");
+    assert.equal(status.state, "pairing-lost");
     assert.equal(status.connected, false);
-    assert.equal(status.danger, true);
+    assert.equal(status.canPair, true);
     assert.deepEqual(types(app), ["ping", "auth-begin"], "stopped before sending its own proof, and never sent the page address");
-    assert.match(status.detail, /something else may be answering/);
+    assert.match(status.detail, /does not recognise/);
     assert.equal(status.site, undefined);
   });
 

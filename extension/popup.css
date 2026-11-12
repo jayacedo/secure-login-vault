@@ -209,3 +209,9 @@ button:disabled {
   cursor: progress;
   opacity: 0.6;
 }
+
+.offer-settings { border-top: 1px solid var(--line); padding-top: 10px; font-size: 13px; }
+.offer-settings summary { cursor: pointer; font-weight: 600; }
+.offer-settings label { display: flex; align-items: center; gap: 7px; margin: 10px 0; }
+.offer-settings p { margin: 8px 0; }
+.offer-settings button { width: 100%; font-size: 12px; }

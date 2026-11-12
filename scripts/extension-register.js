@@ -1,4 +1,4 @@
-// Registers (or removes) the browser helper for Chrome and Edge, for development.
+// Registers (or removes) the browser helper for Chrome, Edge and Firefox, for development.
 //
 //   npm run extension:register     install the helper for the current user
 //   npm run extension:unregister   remove it again
@@ -51,6 +51,7 @@ async function main() {
       process.exitCode = 1;
     }
     console.log("Now load the extension: chrome://extensions > Developer mode > Load unpacked > the 'extension' folder.");
+    console.log("Firefox: npm run extension:build-firefox, then about:debugging > This Firefox > Load Temporary Add-on > dist/firefox/manifest.json.");
   } else if (command === "unregister") {
     const result = await registration.unregister({ installDir });
     console.log(result.removed.length ? `Removed the registration for: ${result.removed.join(", ")}` : "Nothing was registered.");

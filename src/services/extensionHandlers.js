@@ -24,17 +24,20 @@ const { matchLogins } = require("./siteMatch");
 const { createRateLimiter } = require("./rateLimit");
 const { originOf } = require("./siteLogin");
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 
 // Wraps a handler so it only runs for an authenticated connection.
 function requireAuth(handler) {
   return (request, context) => {
     if (!context || context.authenticated !== true) return { error: "not-authenticated" };
+    if (context.secureRequest !== true) return { error: "encryption-required" };
+    if (context.isPairingCurrent && !context.isPairingCurrent()) return { error: "not-authenticated" };
     return handler(request, context);
   };
 }
 
 const LOCKED_MESSAGE = "Vault is locked.";
+const isLocked = error => Boolean(error && (error.message === LOCKED_MESSAGE || error.code === "VAULT_SESSION_CHANGED"));
 
 // Passwords leave the app one at a time, and not faster than a person could use them.
 const FILL_LIMITS = Object.freeze({ perConnection: 10, overall: 20, windowMs: 60 * 1000 });
@@ -47,14 +50,17 @@ const MAX_PASSWORD = 1024;
 // vault: { getCredentials() }            required for find-logins and get-login
 // approve({ host, name }) -> boolean      optional: ask the person in the app before a password is released
 // vault.addCredential(data), vault.updatePassword(id, password)   needed for save-login
-// approveSave({ host, username, name, mode }) -> boolean   required for save-login (mode "add" | "update");
+// approveSave({ host, username, name, mode }) -> boolean or approved organization
+// choice for a new login; required for save-login (mode "add" | "update").
 //                                         without it nothing is ever saved
 function createExtensionHandlers({ getAppVersion, pairing, vault, approve, approveSave, now = Date.now, fillLimits = {}, saveLimits = {} }) {
   const limits = { ...FILL_LIMITS, ...fillLimits };
   const overallLimiter = createRateLimiter({ max: limits.overall, windowMs: limits.windowMs, now });
   const saveLimit = { ...SAVE_LIMITS, ...saveLimits };
   const overallSaveLimiter = createRateLimiter({ max: saveLimit.overall, windowMs: saveLimit.windowMs, now });
+  const inspectLimiter = createRateLimiter({ max: 30, windowMs: 60000, now });
   const handlers = {
+    "channel-check": requireAuth(() => ({ authenticated: true })),
     ping() {
       return { type: "pong", appVersion: getAppVersion(), protocol: PROTOCOL_VERSION };
     }
@@ -72,7 +78,7 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
     try {
       return { credentials: await vault.getCredentials() };
     } catch (error) {
-      if (error && error.message === LOCKED_MESSAGE) return { error: "locked" };
+      if (isLocked(error)) return { error: "locked" };
       throw error; // anything else is a failure, not "locked"
     }
   }
@@ -140,7 +146,22 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
         return match.ok && match.logins.length === 1;
       });
 
-    const isLocked = (error) => Boolean(error && error.message === LOCKED_MESSAGE);
+
+    // Classify a submitted candidate without releasing a stored password or changing the vault.
+    // This is separate from save-login so unchanged logins need no offer or confirmation.
+    handlers["inspect-login"] = requireAuth(async (request, context) => {
+      if (typeof request.url !== "string" || request.url.length > 2048 ||
+          typeof request.username !== "string" || !request.username.trim() || request.username.length > MAX_USERNAME ||
+          typeof request.password !== "string" || !request.password || request.password.length > MAX_PASSWORD) return { error: "bad-message" };
+      const page = matchLogins(request.url, []);
+      if (!page.ok) return { error: page.reason };
+      if (!inspectLimiter.take()) return { error: "rate-limited" };
+      const read = await readCredentials();
+      if (read.error) return { error: read.error };
+      if (!context.authenticated || context.signal?.aborted) return { error: "not-authenticated" };
+      const existing = findSaved(read.credentials, request.url, request.username.trim());
+      return { mode: !existing ? "add" : String(existing.password || "") === request.password ? "unchanged" : "update" };
+    });
 
     handlers["save-login"] = requireAuth(async (request, context) => {
       if (typeof request.url !== "string" || typeof request.username !== "string" || typeof request.password !== "string") return { error: "bad-message" };
@@ -168,7 +189,11 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
       if (typeof approveSave !== "function") return { error: "declined" };
       const previousPassword = existing ? String(existing.password || "") : null;
       const approved = await approveSave({ host: page.host, username, name, mode }, context.signal);
-      if (approved !== true || context.authenticated !== true || context.signal?.aborted) return { error: "declined" };
+      const organization = mode === "add" && approved?.approved === true
+        && typeof approved.groupName === "string" && typeof approved.category === "string"
+        && typeof approved.activeGroup === "string"
+        ? { groupName: approved.groupName, category: approved.category, activeGroup: approved.activeGroup } : null;
+      if ((approved !== true && !organization) || context.authenticated !== true || context.signal?.aborted || (context.isPairingCurrent && !context.isPairingCurrent())) return { error: "declined" };
 
       // Time has passed while the person decided: look again and save only what they agreed to.
       const fresh = await readCredentials();
@@ -176,11 +201,11 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
       const now2 = findSaved(fresh.credentials, origin, username);
       const sameChoice = existing ? now2 && Number(now2.id) === Number(existing.id) && String(now2.password || "") === previousPassword : !now2;
       if (!sameChoice) return { error: "changed" };
-      if (context.authenticated !== true || context.signal?.aborted) return { error: "declined" };
+      if (context.authenticated !== true || context.signal?.aborted || (context.isPairingCurrent && !context.isPairingCurrent())) return { error: "declined" };
 
       try {
         if (existing) await vault.updatePassword(Number(existing.id), request.password);
-        else await vault.addCredential({ websiteName: page.host, websiteUrl: origin, username, password: request.password });
+        else await vault.addCredential({ websiteName: page.host, websiteUrl: origin, username, password: request.password }, organization);
       } catch (error) {
         if (isLocked(error)) return { error: "locked" };
         throw error;

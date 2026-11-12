@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { createChannel } = require("../shared/secureChannel");
 
 // Pairing and mutual authentication between the app and the browser extension.
 //
@@ -37,7 +38,8 @@ const DEFAULTS = Object.freeze({
   codeTtlMs: 2 * 60 * 1000,
   maxFailedAttempts: 10,
   pendingTtlMs: 30 * 1000,
-  maxPending: 8
+  maxPending: 8,
+  maxPairings: 32
 });
 
 function encodeCode(bytes) {
@@ -99,6 +101,8 @@ function equalHex(a, b) {
 // The cryptographic pieces, exported so the extension's own implementation (WebCrypto)
 // can be tested against exactly these functions.
 const protocol = {
+  pairingId: (secret) => hmacHex(secret, "slv-pairing-id-v1"),
+  replaceProof: (secret, nonceE, nonceA, proof) => hmacHex(secret, `slv-repair-v1|${nonceE}|${nonceA}|${proof}`),
   pairingAuthKey: (codeBytes) => hkdf(codeBytes, "slv-pair-v1", "auth"),
   pairingSecret: (codeBytes, nonceE, nonceA) => hkdf(codeBytes, Buffer.from(nonceE + nonceA, "utf8"), "secret"),
   appProof: (key, label, nonceE, nonceA) => hmacHex(key, `${label}-app|${nonceE}|${nonceA}`),
@@ -111,14 +115,30 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
   }
   const config = { ...DEFAULTS, ...limits };
 
-  let secret = null; // Buffer once paired
+  let records = new Map();
+  const browserName = value => ["Google Chrome", "Microsoft Edge", "Firefox"].includes(value) ? value : "Browser";
   try {
     const saved = storage.load();
-    if (saved && typeof saved.secret === "string" && /^[0-9a-f]{64}$/.test(saved.secret)) {
-      secret = Buffer.from(saved.secret, "hex");
+    const entries = saved?.version === 2 && Array.isArray(saved.pairings) ? saved.pairings
+      : saved?.secret ? [{ secret: saved.secret, name: "Existing browser", legacy: true, createdAt: 0 }] : [];
+    if (entries.length > config.maxPairings) throw new Error("Invalid pairing data");
+    for (const entry of entries) {
+      if (typeof entry?.secret !== "string" || !PROOF_HEX.test(entry.secret)) throw new Error("Invalid pairing data");
+      const secret = Buffer.from(entry.secret, "hex");
+      const id = protocol.pairingId(secret);
+      if (records.has(id) || (entry.id && entry.id !== id)) throw new Error("Invalid pairing data");
+      records.set(id, { id, secret, name: entry.name === "Existing browser" ? entry.name : browserName(entry.name),
+        createdAt: Number.isSafeInteger(entry.createdAt) && entry.createdAt >= 0 ? entry.createdAt : 0, legacy: entry.legacy === true });
     }
+    if ([...records.values()].filter(record => record.legacy).length > 1) throw new Error("Invalid legacy pairings");
   } catch {
-    secret = null; // unreadable storage means "not paired"
+    records = new Map(); // unreadable storage fails closed
+  }
+
+  function persist(next) {
+    if (!next.size) storage.clear();
+    else storage.save({ version: 2, pairings: [...next.values()].map(record => ({ ...record, secret: record.secret.toString("hex") })) });
+    records = next; // do not change live access if atomic persistence fails
   }
 
   let active = null; // { codeBytes, authKey, expiresAt, failures }
@@ -142,11 +162,11 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
     }
   }
 
-  function addPending(kind, nonceE, context) {
+  function addPending(kind, nonceE, context, metadata = {}) {
     prunePending();
     if (pending.size >= config.maxPending) return null;
     const nonceA = randomNonce();
-    pending.set(nonceA, { kind, nonceE, context, expiresAt: now() + config.pendingTtlMs });
+    pending.set(nonceA, { kind, nonceE, context, expiresAt: now() + config.pendingTtlMs, ...metadata });
     return nonceA;
   }
 
@@ -180,7 +200,7 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
         expiresAt: now() + config.codeTtlMs,
         failures: 0
       };
-      pending.clear();
+      for (const [key, entry] of pending) if (entry.kind === "pair") pending.delete(key);
       return { code: formatCode(encodeCode(codeBytes)), expiresAt: active.expiresAt };
     },
 
@@ -190,31 +210,36 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
     },
 
     isPairingActive: () => codeIsLive(),
-    isPaired: () => secret !== null,
+    isPaired: () => records.size > 0,
+    list: () => [...records.values()].map(({ id, name, createdAt }) => ({ id, name, createdAt })),
 
     // Forgets the secret. Returns true if there was one.
-    unpair() {
-      const was = secret !== null;
-      secret = null;
-      pending.clear();
-      storage.clear();
+    unpair(id) {
+      if (id !== undefined && (typeof id !== "string" || !PROOF_HEX.test(id))) throw new Error("Invalid pairing ID");
+      const was = id === undefined ? records.size > 0 : records.has(id);
+      const next = id === undefined ? new Map() : new Map(records);
+      if (id !== undefined) next.delete(id);
+      persist(next);
+      if (id === undefined) { pending.clear(); active = null; }
+      else for (const [key, entry] of pending) if (entry.record?.id === id) pending.delete(key);
       return was;
     },
 
     // ── Messages from the extension ───────────────────────────────────────────
 
-    pairBegin({ nonceE }, context) {
+    pairBegin({ nonceE, browserName: name }, context) {
       if (!validNonce(nonceE)) return { error: "bad-message" };
       if (!codeIsLive()) return { error: "no-pairing" };
-      const nonceA = addPending("pair", nonceE, context);
+      const nonceA = addPending("pair", nonceE, context, { name: browserName(name), legacy: name === undefined });
       if (!nonceA) return { error: "busy" };
       return { nonceA, appProof: protocol.appProof(active.authKey, "pair", nonceE, nonceA) };
     },
 
-    pairFinish({ nonceE, nonceA, extProof }, context) {
+    pairFinish({ nonceE, nonceA, extProof, replaceId, replaceProof }, context) {
       if (!validNonce(nonceE) || !validNonce(nonceA) || !validProof(extProof)) return { error: "bad-message" };
       if (!codeIsLive()) return { error: "no-pairing" };
-      if (!takePending("pair", nonceE, nonceA, context)) return { error: "bad-proof" };
+      const entry = takePending("pair", nonceE, nonceA, context);
+      if (!entry) return { error: "bad-proof" };
 
       const expected = protocol.extProof(active.authKey, "pair", nonceE, nonceA);
       if (!equalHex(expected, extProof)) {
@@ -223,30 +248,53 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
       }
 
       const newSecret = protocol.pairingSecret(active.codeBytes, nonceE, nonceA);
+      const next = new Map(records);
+      // A browser may rotate only its own key, after proving both the new code
+      // and its existing secret. A claimed public ID alone cannot evict anyone.
+      if (replaceId !== undefined || replaceProof !== undefined) {
+        if (!validProof(replaceId) || !validProof(replaceProof)) return { error: "bad-message" };
+        const prior = records.get(replaceId);
+        if (prior && !equalHex(protocol.replaceProof(prior.secret, nonceE, nonceA, extProof), replaceProof)) return { error: "bad-proof" };
+        if (prior) next.delete(replaceId);
+      }
+      // Preserve the old client's fallback slot. An unauthenticated caller's
+      // version/name claim must never evict an existing pairing.
+      if (next.size >= config.maxPairings) return { error: "pairing-limit" };
+      const id = protocol.pairingId(newSecret);
+      next.set(id, { id, secret: newSecret, name: entry.name, createdAt: now(),
+        legacy: entry.legacy && ![...next.values()].some(record => record.legacy) });
       try {
-        storage.save({ secret: newSecret.toString("hex") });
+        persist(next);
       } catch {
         return { error: "storage-failed" };
       }
-      secret = newSecret;
       active = null; // one use only
-      pending.clear();
+      for (const [key, value] of pending) if (value.kind === "pair") pending.delete(key);
       return { paired: true };
     },
 
-    authBegin({ nonceE }, context) {
+    authBegin({ nonceE, pairingId }, context) {
       if (!validNonce(nonceE)) return { error: "bad-message" };
-      if (!secret) return { error: "not-paired" };
-      const nonceA = addPending("auth", nonceE, context);
+      if (pairingId !== undefined && !validProof(pairingId)) return { error: "bad-message" };
+      const record = pairingId === undefined ? [...records.values()].find(value => value.legacy) : records.get(pairingId);
+      if (!record) return { error: "not-paired" };
+      const nonceA = addPending("auth", nonceE, context, { record });
       if (!nonceA) return { error: "busy" };
-      return { nonceA, appProof: protocol.appProof(secret, "auth", nonceE, nonceA) };
+      return { nonceA, appProof: protocol.appProof(record.secret, "auth-v2", nonceE, nonceA) };
     },
 
-    authFinish({ nonceE, nonceA, extProof }, context) {
+    async authFinish({ nonceE, nonceA, extProof }, context) {
       if (!validNonce(nonceE) || !validNonce(nonceA) || !validProof(extProof)) return { error: "bad-message" };
-      if (!secret) return { error: "not-paired" };
-      if (!takePending("auth", nonceE, nonceA, context)) return { error: "bad-proof" };
-      if (!equalHex(protocol.extProof(secret, "auth", nonceE, nonceA), extProof)) return { error: "bad-proof" };
+      if (!records.size) return { error: "not-paired" };
+      const record = takePending("auth", nonceE, nonceA, context)?.record;
+      if (!record || records.get(record.id) !== record) return { error: "bad-proof" };
+      const secret = record.secret;
+      if (!equalHex(protocol.extProof(secret, "auth-v2", nonceE, nonceA), extProof)) return { error: "bad-proof" };
+      const channel = await createChannel({ secret, nonceE, nonceA, role: "app", crypto: crypto.webcrypto });
+      if (context.signal?.aborted || records.get(record.id) !== record) { channel.destroy(); return { error: "not-authenticated" }; }
+      context.isPairingCurrent = () => records.get(record.id) === record;
+      context.pairingId = record.id;
+      context.channel = channel;
       context.authenticated = true;
       return { authenticated: true };
     }

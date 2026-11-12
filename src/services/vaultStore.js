@@ -4,16 +4,23 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { promisify } = require("util");
 const { writeJsonAtomic, fileExists } = require("./fsUtils");
+const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, beforeVaultCommit, trackVaultBuffer } = require("./vaultOperationContext");
 const {
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,
+  verifyEncryptedVaultPayload,
   getCredentials,
   getCredentialsForExport,
   getCredentialById,
+  getCredentialPasswordHistory,
+  getVaultHealth,
+  getDuplicateReview,
+  resolveDuplicateReview,
   addCredential,
   updateCredential,
   deleteCredential,
+  manageCredentialTrash,
   deleteCredentialsByGroups,
   toggleFavorite,
   getCategories,
@@ -58,6 +65,53 @@ function createVaultStore(basePath) {
   const preRestoreSuffix = ".pre-restore.bak";
   let sessionKey = null;
   let session = null;
+  let operationEpoch = 0;
+  let operationQueue = Promise.resolve();
+  const owner = {};
+
+  function currentKey() {
+    const operation = currentVaultOperation();
+    return operation?.owner === owner ? operation.key : sessionKey;
+  }
+
+  function serialize(operation, requiresUnlock = true) {
+    return (...args) => {
+      const requestedEpoch = operationEpoch;
+      const requestedSession = session?.id;
+      const task = operationQueue.then(async () => {
+        if (requestedEpoch !== operationEpoch || (requiresUnlock && (!sessionKey || requestedSession !== session?.id))) {
+          throw createSessionChangedError();
+        }
+        const state = { owner, epoch: operationEpoch, key: sessionKey ? Buffer.from(sessionKey) : null, buffers: new Set(), committing: false,
+          check() { if (this.epoch !== operationEpoch) throw createSessionChangedError(); } };
+        if (state.key) state.buffers.add(state.key);
+        try {
+          return await runVaultOperation(state, async () => {
+            const result = await operation(...args);
+            state.check();
+            return result;
+          });
+        } finally { for (const buffer of state.buffers) buffer.fill(0); }
+      });
+      operationQueue = task.catch(() => {});
+      return task;
+    };
+  }
+
+  function replaceSessionKey(key) {
+    const operation = currentVaultOperation();
+    // A completed commit must not undo a lock that arrived during disk IO.
+    if (operation?.owner === owner && operation.epoch !== operationEpoch) return;
+    if (sessionKey) sessionKey.fill(0);
+    sessionKey = Buffer.from(key);
+  }
+
+  function lockForReplacement() {
+    assertVaultOperationActive();
+    lockVault();
+    const operation = currentVaultOperation();
+    if (operation?.owner === owner) operation.epoch = operationEpoch;
+  }
 
   async function getState() {
     const hasAuth = await fileExists(authFilePath);
@@ -185,6 +239,7 @@ function createVaultStore(basePath) {
   }
 
   function lockVault() {
+    operationEpoch++;
     if (sessionKey) {
       sessionKey.fill(0);
     }
@@ -200,155 +255,202 @@ function createVaultStore(basePath) {
 
   async function getDashboardData() {
     ensureUnlocked();
-    return readDashboardData(databaseFilePath, sessionKey);
+    return readDashboardData(databaseFilePath, currentKey());
   }
 
   // ─── Phase 5: Credential operations ────────────────────────────────────────
 
   async function getAllCredentials() {
     ensureUnlocked();
-    return getCredentials(databaseFilePath, sessionKey);
+    return getCredentials(databaseFilePath, currentKey());
   }
 
   async function getAllCredentialsForExport() {
     ensureUnlocked();
-    return getCredentialsForExport(databaseFilePath, sessionKey);
+    return getCredentialsForExport(databaseFilePath, currentKey());
   }
 
   async function getCredential(id) {
     ensureUnlocked();
-    return getCredentialById(databaseFilePath, sessionKey, Number(id));
+    return getCredentialById(databaseFilePath, currentKey(), Number(id));
   }
 
   async function createCredential(data) {
     ensureUnlocked();
-    return addCredential(databaseFilePath, sessionKey, data);
+    return addCredential(databaseFilePath, currentKey(), data);
+  }
+
+  async function createBrowserCredential(data, organization) {
+    ensureUnlocked();
+    return addCredential(databaseFilePath, currentKey(),
+      { ...data, groupName: organization.groupName, category: organization.category },
+      { expectedActiveGroup: organization.activeGroup });
   }
 
   async function editCredential(id, data) {
     ensureUnlocked();
-    return updateCredential(databaseFilePath, sessionKey, Number(id), data);
+    return updateCredential(databaseFilePath, currentKey(), Number(id), data);
+  }
+
+  async function getPasswordHistory(id) {
+    ensureUnlocked();
+    const credentialId = Number(id);
+    if (!Number.isSafeInteger(credentialId) || credentialId <= 0) throw createPublicError("Credential not found.");
+    return getCredentialPasswordHistory(databaseFilePath, currentKey(), credentialId);
+  }
+
+  async function checkVaultHealth() {
+    ensureUnlocked();
+    const key = currentKey();
+    const report = await getVaultHealth(databaseFilePath, key);
+    ensureUnlocked();
+    if (key !== currentKey()) throw createPublicError("Vault session changed. Check again.");
+    return report;
   }
 
   async function removeCredential(id) {
     ensureUnlocked();
-    return deleteCredential(databaseFilePath, sessionKey, Number(id));
+    return deleteCredential(databaseFilePath, currentKey(), Number(id));
+  }
+
+  async function manageTrash(action, id, confirmed) {
+    ensureUnlocked();
+    const key = currentKey();
+    const guard = () => {
+      ensureUnlocked();
+      if (key !== currentKey()) throw createPublicError("Vault session changed. Open Recently Deleted again.");
+    };
+    const result = await manageCredentialTrash(databaseFilePath, key, action, id, confirmed, guard);
+    guard();
+    return result;
+  }
+
+  async function reviewDuplicates(choice) {
+    ensureUnlocked();
+    const key = currentKey();
+    const guard = () => {
+      ensureUnlocked();
+      if (key !== currentKey()) throw createPublicError("Vault session changed. Open Duplicate Login Review again.");
+    };
+    const result = choice === undefined ? await getDuplicateReview(databaseFilePath, key, guard) : await resolveDuplicateReview(databaseFilePath, key, choice, guard);
+    guard();
+    return result;
   }
 
   async function removeCredentialsByGroups(groupNames) {
     ensureUnlocked();
-    return deleteCredentialsByGroups(databaseFilePath, sessionKey, groupNames);
+    return deleteCredentialsByGroups(databaseFilePath, currentKey(), groupNames);
   }
 
   async function toggleCredentialFavorite(id) {
     ensureUnlocked();
-    return toggleFavorite(databaseFilePath, sessionKey, Number(id));
+    return toggleFavorite(databaseFilePath, currentKey(), Number(id));
   }
 
   async function getAllCategories() {
     ensureUnlocked();
-    return getCategories(databaseFilePath, sessionKey);
+    return getCategories(databaseFilePath, currentKey());
   }
 
   // ─── Category management ────────────────────────────────────────────────────
 
   async function getCategoriesWithUsage() {
     ensureUnlocked();
-    return getCategoryUsage(databaseFilePath, sessionKey);
+    return getCategoryUsage(databaseFilePath, currentKey());
   }
 
   async function createCategory(name) {
     ensureUnlocked();
-    return addCategory(databaseFilePath, sessionKey, name);
+    return addCategory(databaseFilePath, currentKey(), name);
   }
 
   async function editCategory(currentName, newName) {
     ensureUnlocked();
-    return renameCategory(databaseFilePath, sessionKey, currentName, newName);
+    return renameCategory(databaseFilePath, currentKey(), currentName, newName);
   }
 
   async function removeCategory(name, reassignTo) {
     ensureUnlocked();
-    return deleteCategory(databaseFilePath, sessionKey, name, reassignTo);
+    return deleteCategory(databaseFilePath, currentKey(), name, reassignTo);
   }
 
   async function searchVaultCredentials(options) {
     ensureUnlocked();
-    return searchCredentials(databaseFilePath, sessionKey, options);
+    return searchCredentials(databaseFilePath, currentKey(), options);
   }
 
   // ─── Group management ───────────────────────────────────────────────────────
 
   async function getAllGroups() {
     ensureUnlocked();
-    return getGroups(databaseFilePath, sessionKey);
+    return getGroups(databaseFilePath, currentKey());
   }
 
   async function getGroupsWithUsage() {
     ensureUnlocked();
-    return getGroupUsage(databaseFilePath, sessionKey);
+    return getGroupUsage(databaseFilePath, currentKey());
   }
 
   async function createGroup(name) {
     ensureUnlocked();
-    return addGroup(databaseFilePath, sessionKey, name);
+    return addGroup(databaseFilePath, currentKey(), name);
   }
 
   async function editGroup(currentName, newName) {
     ensureUnlocked();
-    return renameGroup(databaseFilePath, sessionKey, currentName, newName);
+    return renameGroup(databaseFilePath, currentKey(), currentName, newName);
   }
 
   async function removeGroup(name) {
     ensureUnlocked();
-    return deleteGroup(databaseFilePath, sessionKey, name);
+    return deleteGroup(databaseFilePath, currentKey(), name);
   }
 
   async function getCurrentActiveGroup() {
     ensureUnlocked();
-    return getActiveGroup(databaseFilePath, sessionKey);
+    return getActiveGroup(databaseFilePath, currentKey());
   }
 
   async function setCurrentActiveGroup(name) {
     ensureUnlocked();
-    return setActiveGroup(databaseFilePath, sessionKey, name);
+    return setActiveGroup(databaseFilePath, currentKey(), name);
   }
 
   // ─── Client Vault operations ────────────────────────────────────────────────
 
   async function getAllClients() {
     ensureUnlocked();
-    return getClients(databaseFilePath, sessionKey);
+    return getClients(databaseFilePath, currentKey());
   }
 
   async function getClient(id) {
     ensureUnlocked();
-    return getClientById(databaseFilePath, sessionKey, Number(id));
+    return getClientById(databaseFilePath, currentKey(), Number(id));
   }
 
   async function createClient(data) {
     ensureUnlocked();
-    return addClient(databaseFilePath, sessionKey, data);
+    return addClient(databaseFilePath, currentKey(), data);
   }
 
   async function editClient(id, data) {
     ensureUnlocked();
-    return updateClient(databaseFilePath, sessionKey, Number(id), data);
+    return updateClient(databaseFilePath, currentKey(), Number(id), data);
   }
 
   async function removeClient(id) {
     ensureUnlocked();
-    return deleteClient(databaseFilePath, sessionKey, Number(id));
+    return deleteClient(databaseFilePath, currentKey(), Number(id));
   }
 
   async function toggleClientFav(id) {
     ensureUnlocked();
-    return toggleClientFavorite(databaseFilePath, sessionKey, Number(id));
+    return toggleClientFavorite(databaseFilePath, currentKey(), Number(id));
   }
 
   async function searchVaultClients(options) {
     ensureUnlocked();
-    return searchClients(databaseFilePath, sessionKey, options);
+    return searchClients(databaseFilePath, currentKey(), options);
   }
 
   // ─── Phase 10: Change Master Password ──────────────────────────────────────
@@ -403,7 +505,7 @@ function createVaultStore(basePath) {
       // keeps working.
       updatedAuthRecord.keyWrap = {
         ...authRecord.keyWrap,
-        dek: wrapBytes(sessionKey, newKey)
+        dek: wrapBytes(currentKey(), newKey)
       };
       await writeJsonAtomic(authFilePath, updatedAuthRecord);
       newKey.fill(0);
@@ -418,7 +520,7 @@ function createVaultStore(basePath) {
     const { rekeyEncryptedVaultFile } = require("./sqliteVault");
     await fs.copyFile(databaseFilePath, databaseBackupPath);
     try {
-      await rekeyEncryptedVaultFile(databaseFilePath, sessionKey, newKey);
+      await rekeyEncryptedVaultFile(databaseFilePath, currentKey(), newKey);
       await writeJsonAtomic(authFilePath, updatedAuthRecord);
     } catch (error) {
       // Put the old database back so it matches the unchanged auth record.
@@ -428,8 +530,7 @@ function createVaultStore(basePath) {
     await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
 
     // Update live session key
-    sessionKey.fill(0);
-    sessionKey = newKey;
+    replaceSessionKey(newKey);
 
     return { changed: true };
   }
@@ -484,7 +585,7 @@ function createVaultStore(basePath) {
           ...authRecord.keyWrap,
           recovery: {
             salt: recoverySalt.toString("base64"),
-            dek: wrapBytes(sessionKey, recoveryWrapKey)
+            dek: wrapBytes(currentKey(), recoveryWrapKey)
           }
         }
       });
@@ -494,12 +595,12 @@ function createVaultStore(basePath) {
     // Convert: re-encrypt the database with a new random data key. Same
     // protection as a master password change: keep the old database until the
     // auth record that matches the new one is safely written.
-    const dataKey = crypto.randomBytes(32);
+    const dataKey = trackVaultBuffer(crypto.randomBytes(32));
     const updatedAuthRecord = {
       ...authRecord,
       updatedAt: now,
       keyWrap: {
-        dek: wrapBytes(dataKey, sessionKey),
+        dek: wrapBytes(dataKey, currentKey()),
         recovery: {
           salt: recoverySalt.toString("base64"),
           dek: wrapBytes(dataKey, recoveryWrapKey)
@@ -510,7 +611,7 @@ function createVaultStore(basePath) {
     const { rekeyEncryptedVaultFile } = require("./sqliteVault");
     await fs.copyFile(databaseFilePath, databaseBackupPath);
     try {
-      await rekeyEncryptedVaultFile(databaseFilePath, sessionKey, dataKey);
+      await rekeyEncryptedVaultFile(databaseFilePath, currentKey(), dataKey);
       await writeJsonAtomic(authFilePath, updatedAuthRecord);
     } catch (error) {
       await fs.copyFile(databaseBackupPath, databaseFilePath).catch(() => {});
@@ -518,8 +619,7 @@ function createVaultStore(basePath) {
     }
     await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
 
-    sessionKey.fill(0);
-    sessionKey = dataKey;
+    replaceSessionKey(dataKey);
     return { recoveryKey: recovery.text, converted: true };
   }
 
@@ -572,7 +672,7 @@ function createVaultStore(basePath) {
     delete updatedAuthRecord.hint;
     if (newHint) updatedAuthRecord.hint = newHint;
 
-    lockVault();
+    lockForReplacement();
     await writeJsonAtomic(authFilePath, updatedAuthRecord);
     newKey.fill(0);
     dataKey.fill(0);
@@ -585,26 +685,32 @@ function createVaultStore(basePath) {
   // The backup bundles the two files that already make up the vault on disk —
   // the auth record (master password hash + key-derivation salt) and the
   // encrypted SQLite database — into a single portable JSON file. Nothing
-  // inside is decrypted or re-encrypted for the backup; both pieces are
-  // already AES-256-GCM encrypted at rest, so the backup is exactly as safe
-  // as the live vault. Restoring it requires the same master password that
-  // was used to create it.
+  // written in plaintext: credential data remains encrypted. The auth record
+  // includes public metadata (salt, password hash and optional hint). Verify
+  // the encrypted snapshot in memory before writing it atomically. Restoring
+  // requires the master password in use when this backup was created.
   async function createEncryptedBackup(destinationPath) {
     ensureUnlocked();
-
-    const authRaw = await fs.readFile(authFilePath, "utf8");
-    const databaseRaw = await fs.readFile(databaseFilePath, "utf8");
-
-    const bundle = {
-      format: "secure-login-vault-backup",
-      version: 1,
-      createdAt: new Date().toISOString(),
-      auth: JSON.parse(authRaw),
-      database: JSON.parse(databaseRaw)
-    };
-
-    await fs.writeFile(destinationPath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
-    return { written: true, filePath: destinationPath };
+    const originalKey = currentKey();
+    const backupKey = Buffer.from(originalKey);
+    try {
+      const authRaw = await fs.readFile(authFilePath, "utf8");
+      const auth = JSON.parse(authRaw);
+      if (!isValidAuthRecord(auth)) throw createPublicError("Vault authentication data is invalid.");
+      const database = JSON.parse(await fs.readFile(databaseFilePath, "utf8"));
+      await verifyEncryptedVaultPayload(database, backupKey);
+      // A master-password change/recovery conversion swaps auth and database
+      // separately. Never publish a mismatched pair or a snapshot across locks.
+      if (currentKey() !== originalKey || authRaw !== await fs.readFile(authFilePath, "utf8")) {
+        throw createPublicError("The vault changed during backup. Try again.");
+      }
+      const bundle = {
+        format: "secure-login-vault-backup", version: 1,
+        createdAt: new Date().toISOString(), auth, database
+      };
+      await writeJsonAtomic(destinationPath, bundle);
+      return { written: true, filePath: destinationPath };
+    } finally { backupKey.fill(0); }
   }
 
   // Restoring does NOT require the vault to currently be unlocked — this is
@@ -649,8 +755,11 @@ function createVaultStore(basePath) {
       throw createPublicError("Backup file could not be verified.");
     }
 
+    const backupDataKey = bundle.auth.keyWrap ? unwrapBytes(bundle.auth.keyWrap.dek, key) : key;
+    await verifyEncryptedVaultPayload(bundle.database, backupDataKey);
+
     // Lock any active session before overwriting the files it points to.
-    lockVault();
+    lockForReplacement();
 
     await fs.mkdir(vaultDirectory, { recursive: true });
 
@@ -667,7 +776,9 @@ function createVaultStore(basePath) {
     } catch (error) {
       // Roll back to the previous pair so the vault is never half-restored.
       if (hadDatabase) await fs.copyFile(databaseFilePath + preRestoreSuffix, databaseFilePath).catch(() => {});
+      else await fs.rm(databaseFilePath, { force: true }).catch(() => {});
       if (hadAuth) await fs.copyFile(authFilePath + preRestoreSuffix, authFilePath).catch(() => {});
+      else await fs.rm(authFilePath, { force: true }).catch(() => {});
       throw error;
     }
 
@@ -714,11 +825,18 @@ function createVaultStore(basePath) {
       } catch (error) {
         // Interrupted master-password change: the database was re-keyed but the
         // auth record was not updated. The pre-change copy matches this key.
-        if (!(await fileExists(databaseBackupPath))) throw error;
-        await verifyEncryptedVaultFile(databaseBackupPath, key).catch(() => {
+        let recoveryPath = databaseBackupPath;
+        if (!(await fileExists(recoveryPath))) {
+          const previousAuth = await fs.readFile(authFilePath + preRestoreSuffix, "utf8").catch(() => "");
+          const currentAuth = await fs.readFile(authFilePath, "utf8");
+          if (previousAuth !== currentAuth || !(await fileExists(databaseFilePath + preRestoreSuffix))) throw error;
+          recoveryPath = databaseFilePath + preRestoreSuffix;
+        }
+        await verifyEncryptedVaultFile(recoveryPath, key).catch(() => {
           throw error;
         });
-        await fs.copyFile(databaseBackupPath, databaseFilePath);
+        beforeVaultCommit();
+        await fs.copyFile(recoveryPath, databaseFilePath);
         await fs.rm(databaseBackupPath, { force: true }).catch(() => {});
       }
       return;
@@ -741,13 +859,18 @@ function createVaultStore(basePath) {
   }
 
   function ensureUnlocked() {
+    assertVaultOperationActive();
     if (!sessionKey) {
       throw createPublicError("Vault is locked.");
     }
   }
 
   function startSession(key, now) {
-    sessionKey = key;
+    assertVaultOperationActive();
+    replaceSessionKey(key);
+    operationEpoch++;
+    const operation = currentVaultOperation();
+    if (operation?.owner === owner) operation.epoch = operationEpoch;
     session = {
       id: crypto.randomUUID(),
       unlockedAt: now,
@@ -769,7 +892,7 @@ function createVaultStore(basePath) {
     };
   }
 
-  return {
+  const operations = {
     createVault,
     getDashboardData,
     getState,
@@ -779,8 +902,17 @@ function createVaultStore(basePath) {
     getAllCredentialsForExport,
     getCredential,
     createCredential,
+    createBrowserCredential,
     editCredential,
+    getPasswordHistory,
+    checkVaultHealth,
+    getDuplicateReview: () => reviewDuplicates(),
+    resolveDuplicateReview: choice => reviewDuplicates(choice === undefined ? null : choice),
     removeCredential,
+    getDeletedCredentials: () => manageTrash("list"),
+    restoreDeletedCredential: id => manageTrash("restore", id),
+    permanentlyDeleteCredential: (id, confirmed) => manageTrash("delete", id, confirmed),
+    purgeDeletedCredentials: () => manageTrash("purge"),
     removeCredentialsByGroups,
     toggleCredentialFavorite,
     getAllCategories,
@@ -810,6 +942,13 @@ function createVaultStore(basePath) {
     createRecoveryKey,
     resetWithRecoveryKey
   };
+  const publicWhileLocked = new Set(["createVault", "unlockVault", "restoreEncryptedBackup", "resetWithRecoveryKey"]);
+  for (const [name, operation] of Object.entries(operations)) {
+    if (name !== "getState" && name !== "lockVault") operations[name] = serialize(operation, !publicWhileLocked.has(name));
+  }
+  operations.getOperationEpoch = () => operationEpoch;
+  operations.isUnlocked = () => Boolean(sessionKey);
+  return operations;
 }
 
 function normalizePassword(value) {
@@ -851,7 +990,7 @@ function unwrapBytes(payload, key) {
   try {
     const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(payload.iv, "base64"));
     decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
-    return Buffer.concat([decipher.update(Buffer.from(payload.ciphertext, "base64")), decipher.final()]);
+    return trackVaultBuffer(Buffer.concat([decipher.update(Buffer.from(payload.ciphertext, "base64")), decipher.final()]));
   } catch {
     throw createPublicError("Vault could not be decrypted with this master password.");
   }
@@ -893,7 +1032,7 @@ function decodeBase32(text) {
 
 // A random 160-bit key shown as XXXX-XXXX-... (8 groups of 4).
 function generateRecoveryKey() {
-  const bytes = crypto.randomBytes(RECOVERY_KEY_BYTES);
+  const bytes = trackVaultBuffer(crypto.randomBytes(RECOVERY_KEY_BYTES));
   return { bytes, text: encodeBase32(bytes).match(/.{4}/g).join("-") };
 }
 
@@ -904,15 +1043,15 @@ function parseRecoveryKey(value) {
   const cleaned = value.replace(/[\s-]+/g, "").toUpperCase();
   if (cleaned.length !== (RECOVERY_KEY_BYTES * 8) / 5) return null;
   if (![...cleaned].every((char) => BASE32_ALPHABET.includes(char))) return null;
-  return decodeBase32(cleaned);
+  return trackVaultBuffer(decodeBase32(cleaned));
 }
 
 // The recovery key is already high-entropy random data, so a fast KDF is
 // enough here (unlike the human-chosen master password, which uses scrypt).
 function deriveRecoveryWrapKey(recoveryBytes, salt) {
-  return Buffer.from(
+  return trackVaultBuffer(Buffer.from(
     crypto.hkdfSync("sha256", recoveryBytes, salt, "secure-login-vault-recovery-v1", 32)
-  );
+  ));
 }
 
 const MAX_HINT_LENGTH = 100;
@@ -937,7 +1076,7 @@ function normalizePasswordHint(value, masterPassword) {
 }
 
 async function deriveVaultKey(password, salt) {
-  return scryptAsync(password, salt, 32, SCRYPT_OPTIONS);
+  return trackVaultBuffer(await scryptAsync(password, salt, 32, SCRYPT_OPTIONS));
 }
 
 function encryptJson(value, key) {
@@ -969,7 +1108,8 @@ function decryptJson(payload, key) {
       decipher.final()
     ]);
 
-    return JSON.parse(decrypted.toString("utf8"));
+    try { return JSON.parse(decrypted.toString("utf8")); }
+    finally { decrypted.fill(0); }
   } catch {
     throw createPublicError("Vault could not be decrypted with this master password.");
   }
@@ -1024,6 +1164,12 @@ function isValidBackupBundle(bundle) {
       bundle.database &&
       bundle.database.format === "secure-login-vault-encrypted-sqlite"
   );
+}
+
+function createSessionChangedError() {
+  const error = createPublicError("Vault is locked or its session changed. Try again after unlocking.");
+  error.code = "VAULT_SESSION_CHANGED";
+  return error;
 }
 
 function createPublicError(message) {
