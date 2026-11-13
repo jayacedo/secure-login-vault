@@ -309,7 +309,7 @@ The narrower table retains aligned website actions and horizontal scrolling when
 needed. Existing UI checks cover the new headers, group placement, category filters,
 Edit values and authenticator actions. Extension 0.6.1 is unchanged.
 
-Pending the next desktop package: Help, Settings, Add Credential and Lock use
+Desktop 1.0.24: Help, Settings, Add Credential and Lock use
 consistent 44-pixel icon-only buttons. Tooltips appear on hover and focus, and
 accessible labels preserve their names. Add Credential keeps its accent background;
 Settings uses a gear symbol. The compact header retains horizontal actions on narrow
@@ -317,10 +317,9 @@ windows. Vault Health, Recently Deleted, Review Duplicates and Activity History
 also use labeled icon-only controls. All eight actions share a subtle raised,
 tilted hover/focus effect and a pressed state; reduced-motion settings disable
 the movement. Credential tools stay grouped as the header wraps on narrow windows.
-This source update is verified in development; installer packaging and
-the version bump are deferred until the next batch of changes is ready.
+The controls are verified in development at wide and narrow window sizes.
 
-Also pending packaging: Add/Edit Credential and CSV exports use "Login URL".
+Also in 1.0.24: Add/Edit Credential and CSV exports use "Login URL".
 CSV import accepts Login URL, Website URL and URL, with Website/Website Name,
 Username, Password, Group and Category mapping. Standard CSV imports show a
 masked, paginated review before saving, offer defaults for blank group/category
@@ -329,6 +328,10 @@ remain unchanged; explicitly including duplicates adds separate entries. Passwor
 whitespace, commas, quotes and newlines are preserved. Cancel/lock clears the
 review, and a changed active group requires a fresh review. JSON and KeePass retain
 their existing Merge/Replace choices. Verified with parser and Electron UI tests.
+The 1.0.24 Windows Setup package is built and its extracted payload matches the
+current renderer, including both CSV review modules. Packaged Chromium and Firefox
+checks pass for pairing, save, fill, update, locking and encrypted persistence.
+Extension 0.6.1 is unchanged.
 
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving

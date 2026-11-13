@@ -26,7 +26,7 @@ async function main() {
   const fromApp = (file) => require(path.join(appCode, "src", file));
   const packageInfo = JSON.parse(await fs.readFile(path.join(appCode, "package.json"), "utf8"));
   assert.equal(packageInfo.version, require("../package.json").version);
-  for (const file of ["index.html", "app.js", "styles.css", "helpContent.js", "duplicateReview.js", "activityHistory.js", "authenticator.js", "save-login.html", "save-login.css", "save-login.js"]) {
+  for (const file of ["index.html", "app.js", "styles.css", "helpContent.js", "duplicateReview.js", "activityHistory.js", "authenticator.js", "csvImport.js", "csvImportReview.js", "save-login.html", "save-login.css", "save-login.js"]) {
     assert.deepEqual(await fs.readFile(path.join(appCode, "src/renderer", file)),
       await fs.readFile(path.join(__dirname, "../src/renderer", file)), `installed Settings renderer is current: ${file}`);
   }
