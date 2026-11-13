@@ -120,6 +120,7 @@ async function readDashboardData(filePath, key) {
           email,
           favorite,
           group_name,
+          CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code,
           created_at,
           updated_at
         FROM credentials cr
@@ -162,6 +163,7 @@ async function readDashboardData(filePath, key) {
         email: row.email || "",
         favorite: row.favorite === 1,
         groupName: row.group_name || "",
+        hasQrCode: row.has_qr_code === 1,
         createdAt: row.created_at,
         updatedAt: row.updated_at
       })),
@@ -176,7 +178,8 @@ async function getCredentials(filePath, key) {
   return withDecryptedDatabase(filePath, key, (db) => {
     const activeGroup = getActiveGroupFilterValue(db);
     let sql = `SELECT id, website_name, website_url, category, username, password,
-              email, notes, tags, favorite, group_name, created_at, updated_at
+              email, notes, tags, favorite, group_name, created_at, updated_at,
+              CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code
        FROM credentials`;
     const params = [];
     if (activeGroup) {
@@ -821,7 +824,8 @@ async function searchCredentials(filePath, key, { query = "", onlyFavorites = fa
 
     let sql = `
       SELECT id, website_name, website_url, category, username, password,
-             email, notes, tags, favorite, group_name, created_at, updated_at
+             email, notes, tags, favorite, group_name, created_at, updated_at,
+             CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code
       FROM credentials
       WHERE 1=1
     `;
@@ -1304,6 +1308,7 @@ function normalizeCredential(row) {
     favorite: row.favorite === 1,
     groupName: row.group_name || "",
     qrCode: row.qr_code || "",
+    hasQrCode: row.has_qr_code === 1 || Boolean(row.qr_code),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

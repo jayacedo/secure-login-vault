@@ -265,6 +265,14 @@ function registerAuthHandlers() {
 
   for (const [channel, operation] of [
     ["vault:authenticator-start", image => authenticator.start(image)],
+    ["vault:authenticator-credential", id => {
+      if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Choose a saved login.");
+      return authenticator.start(async () => {
+        const credential = await vaultStore.getCredential(id);
+        if (!credential.qrCode) throw createPublicError("This login has no saved QR. Add one in Edit first.");
+        return credential.qrCode;
+      });
+    }],
     ["vault:authenticator-read", token => authenticator.read(token)],
     ["vault:authenticator-copy", token => authenticator.copy(token)],
     ["vault:authenticator-stop", token => authenticator.stop(token)],

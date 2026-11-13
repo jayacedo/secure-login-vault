@@ -277,6 +277,16 @@ boundaries; `test:authenticator-app` covers both editors, safe labels, lock/reop
 keyboard access and narrow layouts. The same UI test can run against the packaged
 ASAR using `SLV_TEST_PACKAGED_APP`. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.20 adds a dedicated 2FA column beside Password in the credential table.
+Entries with a saved QR show Generate; others show a dash. List/search/dashboard
+queries return only QR presence, and the direct action loads the selected image in
+the main process through the existing group/session guards. Closing or locking
+during that read cancels the pending decode. The table scrolls horizontally within
+its panel on narrow windows. QR maintenance stays in Edit; Client Vault keeps its
+existing editor action. Authenticator tests cover search, favorites, QR changes,
+missing entries, group isolation, cancellation, focus return and table layouts.
+Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

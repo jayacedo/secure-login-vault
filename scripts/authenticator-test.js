@@ -61,6 +61,15 @@ async function main() {
   let finish; const pendingManager = createAuthenticator({ vault, clipboard, decode: () => new Promise(resolve => { finish = resolve; }) });
   const pending = pendingManager.start(image); pendingManager.clear(); const late = parseSetupUri(uri); finish(late);
   await assert.rejects(pending, /session changed/); assert.ok(late.secret.every(byte => byte === 0));
+  let finishRead, decodeCalls = 0;
+  const savedManager = createAuthenticator({ vault, clipboard, decode: async () => { decodeCalls++; return parseSetupUri(uri); } });
+  const pendingRead = savedManager.start(() => new Promise(resolve => { finishRead = resolve; }));
+  savedManager.stop(); finishRead(image);
+  await assert.rejects(pendingRead, /session changed/); assert.equal(decodeCalls, 0);
+  const lockedRead = savedManager.start(() => new Promise(resolve => { finishRead = resolve; }));
+  unlocked = false; epoch++; finishRead(image);
+  await assert.rejects(lockedRead, /session changed/); assert.equal(decodeCalls, 0); unlocked = true;
+  const saved = await savedManager.start(async () => image); assert.match(saved.code, /^\d{6}$/); savedManager.clear();
   time = 59995; const expiring = await manager.start(image); manager.copy(expiring.token); await sleep(30); assert.equal(clipboardText, ""); manager.clear();
   console.log("PASS 18 RFC vectors, URI/QR validation, single-image decoding, worker cancellation, rollover copy, session/lock guards, seed wiping and clipboard expiry/preservation");
 }

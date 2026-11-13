@@ -17,7 +17,10 @@ async function main() {
   await app.whenReady(); await until(() => BrowserWindow.getAllWindows().length);
   const win = BrowserWindow.getAllWindows()[0]; win.webContents.setBackgroundThrottling(false); win.show(); win.focus();
   if (win.webContents.isLoading()) await new Promise(resolve => win.webContents.once("did-finish-load", resolve));
-  const run = code => win.webContents.executeJavaScript(code), api = code => run(`window.secureLoginVault.${code}`);
+  const run = async code => {
+    try { return await win.webContents.executeJavaScript(code); }
+    catch (error) { throw new Error(`Test expression failed: ${code.slice(0, 100)}`, { cause: error }); }
+  }, api = code => run(`window.secureLoginVault.${code}`);
   const uri = "otpauth://totp/" + encodeURIComponent("Dummy:<img src=x onerror=alert(1)>") + "?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
   const image = await QR.toDataURL(uri, { width: 400, margin: 4 });
   assert.equal((await api(`authenticator.start(${JSON.stringify(image)})`)).ok, false);
@@ -26,6 +29,50 @@ async function main() {
   await run("initAuth()");
   const data = { websiteName: "Authenticator dummy", websiteUrl: "https://authenticator.test", username: "Dummy", password: "Dummy-only-password", qrCode: image };
   const added = await api(`credentials.add(${JSON.stringify(data)})`); assert.equal(added.ok, true); const id = added.result.id;
+  const withoutQr = (await api(`credentials.add(${JSON.stringify({ ...data, websiteName: 'No QR dummy', qrCode: '' })})`)).result.id;
+  await run("refreshCredentials()");
+  await until(() => run("document.querySelectorAll('.credential-row-item').length===2"));
+  assert.deepEqual(await run("[...document.querySelectorAll('.credential-row-head [role=columnheader]')].map(el=>el.textContent)"), ['Website','Username','Password','2FA','Category','Manage']);
+  assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
+  assert.equal(await run(`document.querySelector('.credential-row-item[data-id="${withoutQr}"] .two-factor-empty').getAttribute('aria-label')`), 'No saved QR');
+  const list = (await api('credentials.getAll()')).result;
+  assert.equal(list.find(row=>row.id===id).hasQrCode, true);
+  assert.equal(list.find(row=>row.id===withoutQr).hasQrCode, false);
+  assert.equal(list.some(row=>row.qrCode), false);
+  const dashboard = (await api('vault.getDashboardData()')).result;
+  assert.equal(dashboard.credentials.find(row=>row.id===id).hasQrCode, true);
+  assert.equal(JSON.stringify(dashboard).includes(image), false);
+  assert.equal(await run("document.querySelector('#credential-list-body').innerHTML.includes('data:image')"), false);
+  const rowButton = `[data-action=generate-code][data-id="${id}"]`;
+  await run("document.documentElement.setAttribute('data-theme','dark')"); win.webContents.invalidate(); await sleep(400);
+  fs.writeFileSync(path.join(root, '2fa-column-dark.png'), (await win.webContents.capturePage()).toPNG());
+  await run(`document.querySelector('${rowButton}').click()`);
+  await until(() => run("/^\\d{6}$/.test(document.querySelector('#authenticator-code')?.textContent)"));
+  assert.equal(await run("!!document.querySelector('#credential-modal-overlay.is-open')"), false);
+  await run("document.querySelector('#authenticator-copy').click()"); await until(() => copied.length===6);
+  await run("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  assert.equal(await run("document.activeElement.dataset.action"), 'generate-code');
+  await run("searchState.query='Authenticator';runSearch()");
+  assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
+  await api(`credentials.toggleFavorite(${id})`);
+  await run("searchState.onlyFavorites=true;runSearch()");
+  assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
+  await run("searchState.query='';searchState.onlyFavorites=false;runSearch()");
+  win.setMinimumSize(400,500); win.setSize(760,760);
+  await run("document.documentElement.setAttribute('data-theme','light')"); win.webContents.invalidate(); await sleep(400);
+  assert.equal(await run("(()=>{const table=document.querySelector('.credential-table');table.scrollLeft=table.scrollWidth;return table.clientWidth<table.scrollWidth&&table.scrollLeft>0})()"), true);
+  fs.writeFileSync(path.join(root, '2fa-column-narrow.png'), (await win.webContents.capturePage()).toPNG());
+  win.setSize(1164,760); await run("document.querySelector('.credential-table').scrollLeft=0");
+  assert.equal((await api(`authenticator.startCredential(${withoutQr})`)).ok, false);
+  assert.equal((await api('authenticator.startCredential(-1)')).ok, false);
+  assert.equal((await api('authenticator.startCredential(999999)')).ok, false);
+  await api('groups.add("Separate dummy group")'); await api('groups.setActive("Separate dummy group")');
+  assert.equal((await api(`authenticator.startCredential(${id})`)).ok, false);
+  await api('groups.setActive("")');
+  await api(`credentials.update(${id},${JSON.stringify({ ...data, qrCode: '' })})`); await run("refreshCredentials()");
+  assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 0);
+  await api(`credentials.update(${id},${JSON.stringify(data)})`); await run("refreshCredentials()");
+  assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
   await run(`openCredentialModal(${id})`);
   await run("document.querySelector('[data-qr-id=m-qr][data-qr-action=code]').click()");
   const ready = () => until(() => run("/^\\d{6}$/.test(document.querySelector('#authenticator-code')?.textContent)"));
@@ -61,6 +108,7 @@ async function main() {
   await run("handleLockVault()"); assert.equal(copied, "");
   assert.equal(await run("document.querySelector('#authenticator-overlay').childElementCount"), 0);
   assert.equal((await api(`authenticator.read(${JSON.stringify(token)})`)).ok, false);
+  assert.equal((await api(`authenticator.startCredential(${id})`)).ok, false);
   assert.equal((await api(`auth.unlockVault({masterPassword:${JSON.stringify(masterPassword)}})`)).ok, true);
   await run("initAuth()"); await run(`openCredentialModal(${id})`);
   assert.equal(await run("document.querySelector('#m-qr').value"), image);
@@ -70,7 +118,7 @@ async function main() {
   assert.equal((await pending).ok, false);
   const encrypted = fs.readFileSync(path.join(root, 'vault/vault-data.slv'));
   assert.equal(encrypted.includes(Buffer.from(image)), false);
-  console.log(`PASS ${process.env.SLV_TEST_PACKAGED_APP ? 'PACKAGED ASAR' : 'source'} worker, saved QR reopen, credential/client UI, safe labels, copy, lock/cancel, focus and layouts\nScreenshots: ${root}`);
+  console.log(`PASS ${process.env.SLV_TEST_PACKAGED_APP ? 'PACKAGED ASAR' : 'source'} worker, dashboard 2FA/search/favorites/updates, metadata-only rows, group/lock guards, saved QR reopen, credential/client UI, safe labels, copy, cancel, focus and layouts\nScreenshots: ${root}`);
   app.exit(0);
 }
 setTimeout(() => { console.error("Authenticator UI timeout"); app.exit(1); }, 60000).unref();

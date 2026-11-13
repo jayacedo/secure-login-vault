@@ -422,6 +422,7 @@ function renderDashboard(state) {
             <span role="columnheader">Website</span>
             <span role="columnheader">Username</span>
             <span role="columnheader">Password</span>
+            <span role="columnheader" class="head-2fa">2FA</span>
             <span role="columnheader">Category</span>
             <span role="columnheader" class="head-manage">Manage</span>
           </div>
@@ -554,6 +555,14 @@ function renderCredentialRow(credential, query = "") {
             ${renderKeyIcon()}
           </button>
         </span>
+      </span>
+
+      <span role="cell" class="cell-2fa">
+        ${credential.hasQrCode ? `<button class="two-factor-button" type="button"
+          data-action="generate-code" data-id="${credential.id}"
+          title="Generate authenticator code" aria-label="Generate 2FA code for ${escapeHtml(credential.websiteName)}">
+          ${renderQrIcon()}<span>Generate</span></button>`
+          : `<span class="two-factor-empty" title="No saved QR" aria-label="No saved QR">&mdash;</span>`}
       </span>
 
       <span role="cell" class="cell-category">
@@ -698,6 +707,11 @@ function bindCredentialActions() {
       searchState.query = tag;
       if (searchInput) searchInput.value = tag;
       runSearch();
+      return;
+    }
+
+    if (action === "generate-code") {
+      openAuthenticator(id, btn);
       return;
     }
 

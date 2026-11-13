@@ -49,10 +49,15 @@ function createAuthenticator({ vault, clipboard, now = Date.now, decode = decode
     return { ...generateCode(session.config, now()), account: session.config.account, issuer: session.config.issuer, algorithm: session.config.algorithm };
   }
   async function start(image) {
-    requireUnlocked(); validateImage(image); stop();
+    requireUnlocked(); stop();
     const epoch = vault.getOperationEpoch(), request = generation, controller = new AbortController(); pending = controller;
     let config;
     try {
+      // Saved-entry loading is inside the same cancellable request as decoding.
+      // Closing or locking during that read must not start a later worker.
+      if (typeof image === "function") image = await image();
+      if (controller.signal.aborted || request !== generation || !vault.isUnlocked() || epoch !== vault.getOperationEpoch()) fail("Vault session changed. Open Generate code again after unlocking.");
+      validateImage(image);
       config = await decode(image, controller.signal);
       if (controller.signal.aborted || request !== generation || !vault.isUnlocked() || epoch !== vault.getOperationEpoch()) fail("Vault session changed. Open Generate code again after unlocking.");
       const token = crypto.randomBytes(24).toString("hex");

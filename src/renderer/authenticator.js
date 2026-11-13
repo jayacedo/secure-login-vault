@@ -67,7 +67,9 @@ async function openAuthenticator(image, trigger) {
   for (const id of ["authenticator-close", "authenticator-done"]) find(`#${id}`).addEventListener("click", closeAuthenticator);
   find("#authenticator-close").focus();
   try {
-    const response = await window.secureLoginVault.authenticator.start(image);
+    const response = typeof image === "number"
+      ? await window.secureLoginVault.authenticator.startCredential(image)
+      : await window.secureLoginVault.authenticator.start(image);
     if (request !== authenticatorRequest) { if (response.ok) window.secureLoginVault.authenticator.stop(response.result.token).catch(() => {}); return; }
     if (!response.ok) return failed(response.message || "Could not read this authenticator QR.");
     authenticatorToken = response.result.token; paint(response.result);
