@@ -338,7 +338,7 @@ cursor instead of the generic busy cursor. Page-boundary behavior is unchanged.
 The Windows Setup installer is built; extracted-source checks and packaged
 Chromium/Firefox pairing, save, fill, update and lock checks pass.
 
-Pending the next desktop package: Settings > General includes Start with Windows,
+Desktop 1.0.26: Settings > General includes Start with Windows,
 Start in system tray and Close to tray, all off by default. Windows sign-in can
 start an existing vault quietly in the tray, always locked; a direct launch opens
 the window. Tray Open SLV shows a compact, branded unlock form, and successful
@@ -350,6 +350,9 @@ hide-on-close behavior. First-vault setup and unavailable-tray cases stay visibl
 Startup registration is available only in installed Windows builds and respects
 Windows Startup Apps disabling it. Development tests use mock startup registration
 and isolated vaults; no real startup preference is enabled by these checks.
+The 1.0.26 Windows Setup installer is built. CSV parser and Electron import tests
+pass; extracted-source checks and packaged Chromium/Firefox pairing, save, fill,
+update, lock and encrypted persistence checks pass. Extension 0.6.1 is unchanged.
 
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
