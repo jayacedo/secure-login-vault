@@ -44,6 +44,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     // Priority: sub-modals first, then primary modals
     const subModalOrder = [
+      "#authenticator-overlay",
       "#qr-lightbox-overlay",
       "#group-delete-modal-overlay",
       "#group-rename-modal-overlay",
@@ -65,6 +66,8 @@ document.addEventListener("keydown", (e) => {
       const el = document.querySelector(selector);
       if (el && el.classList.contains("is-open")) {
         el.classList.remove("is-open");
+        if (selector === "#authenticator-overlay") closeAuthenticator();
+        if (selector === "#qr-lightbox-overlay") closeQrLightbox();
         if (selector === "#credential-modal-overlay") closeCredentialModal();
         if (selector === "#vault-health-overlay") closeVaultHealth();
         if (selector === "#credential-trash-overlay") closeCredentialTrash();
@@ -1069,6 +1072,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  closeAuthenticator(); closeQrLightbox();
   closeActivityHistory();
   closeDuplicateReview();
   closeCredentialTrash();
@@ -1246,13 +1250,13 @@ async function runSearch() {
 //
 // Stores the QR image itself (as a data URI, auto-downscaled on upload) so it
 // can be pulled up on screen and re-scanned with a phone later. The app never
-// decodes or reads the QR — it's opaque image data, protected by the same
-// whole-database encryption as everything else.
+// changes it automatically. Generate code explicitly decodes supported TOTP
+// setup images locally; the stored image uses the vault's existing encryption.
 
 function renderQrUploadField(id, existingDataUri) {
   return `
     <div class="qr-field" data-qr-id="${id}">
-      <span class="modal-label-text">2FA QR Code <span class="modal-hint">(optional — for re-scanning later)</span></span>
+      <span class="modal-label-text">2FA QR Code <span class="modal-hint">(optional — authenticator setup QR)</span></span>
       <input type="hidden" id="${id}" value="${escapeHtml(existingDataUri || "")}" />
       <input type="file" accept="image/*" id="${id}-file" class="qr-file-input" hidden />
       <div class="qr-upload-area" id="${id}-area">
@@ -1284,6 +1288,7 @@ function renderQrPreviewMarkup(id, dataUri, originalBytes) {
       <div class="qr-preview-details">
         <span class="qr-size-hint">${sizeLine}</span>
         <div class="qr-preview-actions">
+          <button type="button" class="secondary-button" data-qr-action="code" data-qr-id="${id}">Generate code</button>
           <button type="button" class="secondary-button" data-qr-action="upload" data-qr-id="${id}">Replace</button>
           <button type="button" class="danger-button" data-qr-action="remove" data-qr-id="${id}">Remove</button>
         </div>
@@ -1336,6 +1341,8 @@ function setupQrUploadField(container, id) {
       clearQrError();
     } else if (target.dataset.qrAction === "view") {
       if (hiddenInput.value) openQrLightbox(hiddenInput.value);
+    } else if (target.dataset.qrAction === "code") {
+      if (hiddenInput.value) openAuthenticator(hiddenInput.value, target);
     }
   });
 
@@ -1406,7 +1413,7 @@ function getOrCreateQrLightboxOverlay() {
     overlay.className = "modal-overlay";
     document.body.appendChild(overlay);
     overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) overlay.classList.remove("is-open");
+      if (e.target === overlay) closeQrLightbox();
     });
   }
   return overlay;
@@ -1430,7 +1437,12 @@ function openQrLightbox(dataUri) {
     </div>
   `;
   overlay.classList.add("is-open");
-  overlay.querySelector("#qr-lightbox-close-btn").addEventListener("click", () => overlay.classList.remove("is-open"));
+  overlay.querySelector("#qr-lightbox-close-btn").addEventListener("click", closeQrLightbox);
+}
+
+function closeQrLightbox() {
+  const overlay = document.querySelector("#qr-lightbox-overlay");
+  if (overlay) { overlay.classList.remove("is-open"); overlay.replaceChildren(); }
 }
 
 // ─── Credential Modal ─────────────────────────────────────────────────────────
@@ -1832,6 +1844,7 @@ async function openCredentialModal(editId) {
 }
 
 function closeCredentialModal() {
+  closeAuthenticator(); closeQrLightbox();
   credentialModalRequest++;
   const overlay = document.querySelector("#credential-modal-overlay");
   if (overlay) {
@@ -2506,6 +2519,7 @@ function updateQuickLinksPreview() {
 }
 
 function closeClientModal() {
+  closeAuthenticator(); closeQrLightbox();
   const overlay = document.querySelector("#client-modal-overlay");
   if (overlay) overlay.classList.remove("is-open");
 }
@@ -2782,6 +2796,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  closeAuthenticator(); closeQrLightbox();
   closeActivityHistory();
   closeDuplicateReview();
   closeCredentialTrash();

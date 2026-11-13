@@ -1169,7 +1169,8 @@ function ensureSchemaUpgrades(db) {
   }
 
   // 2FA QR code image (data URI) — stored as an opaque blob, never decoded/
-  // parsed by this app. Protected by the same whole-database envelope as
+  // parsed by storage. Explicit Generate code requests decode it in a worker.
+  // Protected by the same whole-database envelope as
   // everything else, so no separate encryption is needed.
   const hasCredentialQrColumn = columns.some((c) => c.name === "qr_code");
   if (!hasCredentialQrColumn) {

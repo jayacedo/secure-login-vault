@@ -264,6 +264,19 @@ Browser password updates now modify only that field in the serialized write.
 `test:activity-app` checks the interface, request guards, keyboard access and layouts.
 Extension 0.6.1 is unchanged.
 
+Desktop 1.0.19 adds local TOTP generation from the existing encrypted QR field in
+Credentials and Client Vault. Explicit Generate code requests decode a bounded PNG
+in a worker, accept standard TOTP setup URIs, and reject unsupported QR types. Codes
+and account labels cross the guarded desktop IPC boundary; decoded keys stay in the
+main process and expire after five minutes or on close, lock or renderer reload.
+Copy generates a fresh code and clears its clipboard value at expiry (30 seconds
+maximum), without clearing unrelated text. The saved QR is retained in encrypted
+backups and JSON credential exports; no new seed column or code history is added.
+`test:authenticator` covers RFC 6238 vectors, QR validation and session/clipboard
+boundaries; `test:authenticator-app` covers both editors, safe labels, lock/reopen,
+keyboard access and narrow layouts. The same UI test can run against the packaged
+ASAR using `SLV_TEST_PACKAGED_APP`. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

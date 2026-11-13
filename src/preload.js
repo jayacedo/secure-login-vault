@@ -49,6 +49,13 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     search:         (options)   => ipcRenderer.invoke("vault:search-credentials", options)
   },
 
+  authenticator: {
+    start: image => ipcRenderer.invoke("vault:authenticator-start", image),
+    read: token => ipcRenderer.invoke("vault:authenticator-read", token),
+    copy: token => ipcRenderer.invoke("vault:authenticator-copy", token),
+    stop: token => ipcRenderer.invoke("vault:authenticator-stop", token)
+  },
+
   categories: {
     getAllWithUsage: ()                       => ipcRenderer.invoke("vault:get-categories-with-usage"),
     add:             (name)                   => ipcRenderer.invoke("vault:add-category", name),

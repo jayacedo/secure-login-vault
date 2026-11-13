@@ -3519,6 +3519,14 @@ small.group-badge {
 .activity-footnote { margin-top:18px; }
 .activity-footer { flex-wrap:wrap; justify-content:space-between; gap:10px; }
 .activity-pages { display:flex; gap:8px; }
+#authenticator-overlay { z-index:990; }
+.authenticator-container { width:460px; }
+.authenticator-container .modal-hint { margin:4px 0; line-height:1.6; }
+.authenticator-account { margin:4px 0; text-align:center; overflow-wrap:anywhere; font-weight:600; }
+.authenticator-code { text-align:center; font-size:clamp(1.7rem,7vw,2.5rem); font-family:ui-monospace,monospace; font-variant-numeric:tabular-nums; letter-spacing:.12em; padding:18px 0; color:var(--text); user-select:text; }
+#authenticator-progress { width:100%; height:8px; accent-color:var(--accent); }
+#authenticator-countdown { text-align:center; }
+.qr-preview-actions { flex-wrap:wrap; }
 @media (max-width: 600px) {
   .activity-filters { grid-template-columns:1fr; }
   .activity-footer { display:grid; grid-template-columns:1fr 1fr; }

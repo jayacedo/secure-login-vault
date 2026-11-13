@@ -26,11 +26,11 @@ async function main() {
   const fromApp = (file) => require(path.join(appCode, "src", file));
   const packageInfo = JSON.parse(await fs.readFile(path.join(appCode, "package.json"), "utf8"));
   assert.equal(packageInfo.version, require("../package.json").version);
-  for (const file of ["index.html", "app.js", "styles.css", "helpContent.js", "duplicateReview.js", "activityHistory.js", "save-login.html", "save-login.css", "save-login.js"]) {
+  for (const file of ["index.html", "app.js", "styles.css", "helpContent.js", "duplicateReview.js", "activityHistory.js", "authenticator.js", "save-login.html", "save-login.css", "save-login.js"]) {
     assert.deepEqual(await fs.readFile(path.join(appCode, "src/renderer", file)),
       await fs.readFile(path.join(__dirname, "../src/renderer", file)), `installed Settings renderer is current: ${file}`);
   }
-  for (const file of ["main.js", "preload.js", "saveLoginPreload.js", "services/browserSavePrompt.js", "services/automaticBackups.js", "services/vaultStore.js", "services/sqliteVault.js", "services/vaultHealth.js", "services/credentialTrash.js", "services/duplicateReview.js", "services/activityHistory.js", "services/vaultOperationContext.js", "services/ipcGuards.js", "services/fsUtils.js"]) {
+  for (const file of ["main.js", "preload.js", "saveLoginPreload.js", "services/browserSavePrompt.js", "services/automaticBackups.js", "services/vaultStore.js", "services/sqliteVault.js", "services/vaultHealth.js", "services/credentialTrash.js", "services/duplicateReview.js", "services/activityHistory.js", "services/authenticator.js", "services/authenticatorQr.js", "services/authenticatorWorker.js", "services/totp.js", "services/vaultOperationContext.js", "services/ipcGuards.js", "services/fsUtils.js"]) {
     assert.deepEqual(await fs.readFile(path.join(appCode, "src", file)),
       await fs.readFile(path.join(__dirname, "../src", file)), `installed desktop code is current: ${file}`);
   }

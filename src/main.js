@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -17,6 +17,7 @@ const { getPipeName } = require("./native-host/pipeName");
 const { createBrowserSetup } = require("./services/browserSetup");
 const browserSavePrompt = require("./services/browserSavePrompt");
 const { createAutomaticBackups } = require("./services/automaticBackups");
+const { createAuthenticator } = require("./services/authenticator");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -30,6 +31,7 @@ let pairingStorage;
 let browserSetup;
 let automaticBackups;
 let trashMaintenance;
+let authenticator;
 let pairingExpiresAt = 0;
 const pathGrants = createPathGrants();
 // One writer process per user-data profile. The native helper runs separately
@@ -135,6 +137,9 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
+  mainWindow.webContents.on("did-start-loading", () => authenticator?.clear());
+  mainWindow.webContents.on("render-process-gone", () => authenticator?.clear());
+  mainWindow.webContents.on("destroyed", () => authenticator?.clear());
 
   // Background auto-lock is enforced here, not in the renderer: minimizing or
   // losing focus starts the grace timer, regaining focus cancels it (alt-tab,
@@ -206,6 +211,7 @@ function registerAuthHandlers() {
   });
 
   handleAppRequest("vault:lock", async () => {
+    authenticator.clear();
     pathGrants.clear();
     saveApprovalAbort?.abort();
     lockManager.setUnlocked(false);
@@ -258,6 +264,10 @@ function registerAuthHandlers() {
   });
 
   for (const [channel, operation] of [
+    ["vault:authenticator-start", image => authenticator.start(image)],
+    ["vault:authenticator-read", token => authenticator.read(token)],
+    ["vault:authenticator-copy", token => authenticator.copy(token)],
+    ["vault:authenticator-stop", token => authenticator.stop(token)],
     ["vault:duplicates-list", () => vaultStore.getDuplicateReview()],
     ["vault:activity-history", options => vaultStore.getActivityHistory(options)],
     ["vault:duplicates-resolve", choice => vaultStore.resolveDuplicateReview(choice)],
@@ -775,6 +785,7 @@ function registerImportExportHandlers() {
       }
       // Kept after a failed attempt (e.g. wrong password) so the user can
       // retry; revoked once the restore succeeds.
+      authenticator.clear();
       const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
       pathGrants.clear();
       lockManager.setUnlocked(false); // restore locks the vault
@@ -861,9 +872,11 @@ function registerSettingsHandlers() {
 
   // Works while the vault is locked; leaves it locked (the user logs in next).
   handleAppRequest("vault:reset-with-recovery-key", async (_event, payload) => {
+    authenticator.clear();
     const response = await handleVaultOperation(() => vaultStore.resetWithRecoveryKey(payload || {}));
     if (response.ok) {
       pathGrants.clear();
+      authenticator.clear();
       lockManager.setUnlocked(false);
       loginWindows.closeAll();
     }
@@ -947,6 +960,7 @@ app.whenReady().then(async () => {
   if (!ownsDesktopInstance) return;
   vaultStore = createVaultStore(app.getPath("userData"));
   automaticBackups = createAutomaticBackups({ configPath: path.join(app.getPath("userData"), "automatic-backups.json"), vault: vaultStore });
+  authenticator = createAuthenticator({ vault: vaultStore, clipboard });
   await automaticBackups.load();
   automaticBackups.start();
   trashMaintenance = setInterval(() => {
@@ -1001,6 +1015,7 @@ app.whenReady().then(async () => {
   });
   lockManager = createLockManager({
     onLock: (reason) => {
+      authenticator.clear();
       pathGrants.clear();
       saveApprovalAbort?.abort();
       vaultStore.lockVault();
@@ -1031,6 +1046,7 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   automaticBackups?.stop();
   clearInterval(trashMaintenance);
+  authenticator?.clear();
   if (extensionBridge) {
     extensionBridge.stop();
   }

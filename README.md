@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.18**, extension **0.6.1**. This desktop update adds encrypted Activity History with search, action/source filters and 90-day retention. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.19**, extension **0.6.1**. This desktop update generates authenticator codes locally from saved setup QR images. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 Settings now uses six sections: **General**, **Security**, **Browsers**, **Organization**,
 **Backup & Data**, and **About**. Browser pairings appear together under **Browsers**;
@@ -38,6 +38,20 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 - Copy credentials with configurable password clipboard clearing.
 - Use auto-lock, change the master password and configure a recovery key.
 - Import CSV, JSON and KeePass CSV; export CSV/JSON or create an encrypted backup.
+
+### Authenticator codes from a setup QR
+
+1. Edit a Credential or Client Vault entry and upload a clear image of its **authenticator setup QR** in **2FA QR Code**. Crop a sheet or screenshot to one QR first.
+2. Save the entry to retain its QR. Open it again and choose **Generate code** beside the thumbnail.
+3. Use **Copy code** and paste it into the website's verification field. The view updates with a countdown; Copy generates the current code even at rollover. Check the first code against your existing authenticator before relying on it.
+
+- This works offline with standard `otpauth://totp` setup QR images: SHA1/SHA256/SHA512, 6 or 8 digits and 15–120 second periods. Ordinary sign-in/approval links, HOTP, Steam codes and authenticator migration QR codes are unsupported. An unreadable sheet is rejected; always crop to one setup QR.
+- SLV converts uploads to PNG. If an older imported image cannot be read, upload it again. The computer's clock must be correct. Uploading an image does not enable or change 2FA on the website.
+- The QR image remains inside the encrypted vault and encrypted backups. **JSON credential exports include QR images and therefore their setup secrets; CSV exports omit them.** A setup QR can recreate the authenticator, so protect it like a password. Keeping password and authenticator together means vault access exposes both; a separate phone authenticator provides more separation.
+- QR decoding runs in a worker with image, memory and time limits. The decoded key stays in main-process session memory, is cleared on close/lock/reload, and expires after five minutes. JavaScript/runtime memory cannot be guaranteed erased. No separate seed field or generated-code history is saved.
+- The desktop view receives the current code and account label. The browser extension receives neither the setup key nor codes. Copy clears SLV's clipboard text at code expiry or after 30 seconds, preserving unrelated clipboard text. Closing the view leaves the copied code available until that timeout; locking clears it immediately.
+
+Validation: `npm run test:authenticator` (RFC 6238 vectors, QR validation, session and clipboard checks) and `npm run test:authenticator-app` (desktop workflow and lock checks).
 
 ### Activity History
 
@@ -124,8 +138,8 @@ Use a build produced from this source, or build it using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.18.exe` | Installed desktop app, with browser-extension setup support |
-| `Secure Login Vault 1.0.18.exe` | Portable desktop app; browser-helper setup is unavailable |
+| `Secure Login Vault Setup 1.0.19.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.19.exe` | Portable desktop app; browser-helper setup is unavailable |
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -146,7 +160,7 @@ The Setup installer bundles Chrome/Edge and Firefox extensions plus the native h
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
-After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.18 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
+After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.19 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
 
 ### Fill, save and update
 
