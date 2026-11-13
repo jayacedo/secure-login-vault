@@ -73,7 +73,9 @@
     "test:activity": "node scripts/activity-history-test.js",
     "test:activity-app": "node scripts/run-electron-test.js scripts/activity-history-app-test.js",
     "test:authenticator": "node scripts/authenticator-test.js",
-    "test:authenticator-app": "node scripts/run-electron-test.js scripts/authenticator-app-test.js"
+    "test:authenticator-app": "node scripts/run-electron-test.js scripts/authenticator-app-test.js",
+    "test:csv-import": "node scripts/csv-import-test.js",
+    "test:csv-import-app": "node scripts/run-electron-test.js scripts/csv-import-app-test.js"
   },
   "build": {
     "appId": "com.secureloginvault.app",

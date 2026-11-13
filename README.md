@@ -38,6 +38,12 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 - Copy credentials with configurable password clipboard clearing.
 - Use auto-lock, change the master password and configure a recovery key.
 - Import CSV, JSON and KeePass CSV; export CSV/JSON or create an encrypted backup.
+  In the development source (pending the next installer), standard CSV imports
+  accept `Website, Login URL, Username, Password, Group, Category`, with older
+  `Website Name` and `Website URL` headers also supported. A masked preview shows
+  the mapping, blank-field defaults, invalid rows and possible duplicates before
+  confirmation. Possible duplicates are skipped by default; existing entries are
+  unchanged. Add/Edit Credential and CSV exports now call the address "Login URL".
 
 ### Authenticator codes from a setup QR
 

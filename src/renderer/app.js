@@ -44,6 +44,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     // Priority: sub-modals first, then primary modals
     const subModalOrder = [
+      "#csv-import-overlay",
       "#authenticator-overlay",
       "#qr-lightbox-overlay",
       "#group-delete-modal-overlay",
@@ -65,7 +66,9 @@ document.addEventListener("keydown", (e) => {
     for (const selector of subModalOrder) {
       const el = document.querySelector(selector);
       if (el && el.classList.contains("is-open")) {
+        if (selector === "#csv-import-overlay" && csvReviewState?.busy) { e.preventDefault(); return; }
         el.classList.remove("is-open");
+        if (selector === "#csv-import-overlay") closeCsvImportReview();
         if (selector === "#authenticator-overlay") closeAuthenticator();
         if (selector === "#qr-lightbox-overlay") closeQrLightbox();
         if (selector === "#credential-modal-overlay") closeCredentialModal();
@@ -1718,9 +1721,9 @@ async function openCredentialModal(editId) {
         </div>
 
         <label class="modal-label" for="m-website-url">
-          <span class="modal-label-text">Website URL</span>
+          <span class="modal-label-text">Login URL</span>
           <input id="m-website-url" type="url" class="modal-input"
-                 placeholder="https://example.com"
+                 placeholder="https://example.com/login"
                  value="${cred ? escapeHtml(cred.websiteUrl) : ""}" />
         </label>
 
@@ -3753,6 +3756,7 @@ function setupAutomaticBackups(overlay) {
 }
 
 function closeSettingsModal() {
+  closeCsvImportReview();
   applyTextSize(getTextSize());
   brandAccentPreview = null;
   applyAccentColor(getBrandAccent());
@@ -4937,13 +4941,21 @@ async function runSavePasswordHint() {
 
 async function runImportFlow(formatKind, triggerBtn) {
   setSettingsStatus("");
+  const request = csvReviewRequest;
   const picked = await window.secureLoginVault.importExport.pickImportFile();
+  if (request !== csvReviewRequest) return;
 
   if (!picked.ok) {
     setSettingsStatus(picked.message, true);
     return;
   }
   if (picked.result.canceled) return;
+
+  if (formatKind === "csv") {
+    try { await openCsvImportReview(picked.result.content); }
+    catch (error) { setSettingsStatus(error.message || "Could not read that CSV.", true); }
+    return;
+  }
 
   let rows;
   try {
@@ -5163,7 +5175,7 @@ function parseCsvImport(content, mapRowFn) {
   return dataRows
     .map((cells) => {
       const record = {};
-      header.forEach((key, idx) => (record[key] = (cells[idx] || "").trim()));
+      header.forEach((key, idx) => (record[key] = key === "password" ? (cells[idx] || "") : (cells[idx] || "").trim()));
       return mapRowFn(record);
     })
     .filter((row) => row.websiteName && row.password);
@@ -5171,18 +5183,7 @@ function parseCsvImport(content, mapRowFn) {
 
 // Maps a CSV exported by this app (or a similarly-shaped generic CSV).
 function mapStandardCsvRow(record) {
-  return {
-    websiteName: record["website name"] || record["website_name"] || record["website"] || record["name"] || "",
-    websiteUrl: record["website url"] || record["website_url"] || record["url"] || "",
-    category: record["category"] || "Other",
-    username: record["username"] || "",
-    email: record["email"] || "",
-    password: record["password"] || "",
-    tags: record["tags"] || "",
-    groupName: record["group"] || "",
-    notes: record["notes"] || "",
-    favorite: ["1", "true", "yes"].includes((record["favorite"] || "").toLowerCase())
-  };
+  return CsvImport.mapRecord(record);
 }
 
 // Maps KeePass's standard CSV export columns:
@@ -5271,7 +5272,7 @@ function buildJsonExport(credentials) {
 
 function buildCsvExport(credentials) {
   const headers = [
-    "Website Name", "Website URL", "Category", "Username",
+    "Website Name", "Login URL", "Category", "Username",
     "Email", "Password", "Tags", "Group", "Notes", "Favorite"
   ];
   const lines = [headers.map(csvEscape).join(",")];

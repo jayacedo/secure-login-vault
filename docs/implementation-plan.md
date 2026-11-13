@@ -320,6 +320,16 @@ the movement. Credential tools stay grouped as the header wraps on narrow window
 This source update is verified in development; installer packaging and
 the version bump are deferred until the next batch of changes is ready.
 
+Also pending packaging: Add/Edit Credential and CSV exports use "Login URL".
+CSV import accepts Login URL, Website URL and URL, with Website/Website Name,
+Username, Password, Group and Category mapping. Standard CSV imports show a
+masked, paginated review before saving, offer defaults for blank group/category
+cells, and skip invalid rows and possible duplicates by default. Existing records
+remain unchanged; explicitly including duplicates adds separate entries. Password
+whitespace, commas, quotes and newlines are preserved. Cancel/lock clears the
+review, and a changed active group requires a fresh review. JSON and KeePass retain
+their existing Merge/Replace choices. Verified with parser and Electron UI tests.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
