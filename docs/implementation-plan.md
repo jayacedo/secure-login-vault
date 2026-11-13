@@ -333,8 +333,10 @@ current renderer, including both CSV review modules. Packaged Chromium and Firef
 checks pass for pairing, save, fill, update, locking and encrypted persistence.
 Extension 0.6.1 is unchanged.
 
-Pending the next package: disabled CSV Previous/Next controls use a normal arrow
+Desktop 1.0.25: disabled CSV Previous/Next controls use a normal arrow
 cursor instead of the generic busy cursor. Page-boundary behavior is unchanged.
+The Windows Setup installer is built; extracted-source checks and packaged
+Chromium/Firefox pairing, save, fill, update and lock checks pass.
 
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
