@@ -26,11 +26,11 @@ async function main() {
   const fromApp = (file) => require(path.join(appCode, "src", file));
   const packageInfo = JSON.parse(await fs.readFile(path.join(appCode, "package.json"), "utf8"));
   assert.equal(packageInfo.version, require("../package.json").version);
-  for (const file of ["index.html", "app.js", "styles.css", "helpContent.js", "duplicateReview.js", "save-login.html", "save-login.css", "save-login.js"]) {
+  for (const file of ["index.html", "app.js", "styles.css", "helpContent.js", "duplicateReview.js", "activityHistory.js", "save-login.html", "save-login.css", "save-login.js"]) {
     assert.deepEqual(await fs.readFile(path.join(appCode, "src/renderer", file)),
       await fs.readFile(path.join(__dirname, "../src/renderer", file)), `installed Settings renderer is current: ${file}`);
   }
-  for (const file of ["main.js", "preload.js", "saveLoginPreload.js", "services/browserSavePrompt.js", "services/automaticBackups.js", "services/vaultStore.js", "services/sqliteVault.js", "services/vaultHealth.js", "services/credentialTrash.js", "services/duplicateReview.js", "services/vaultOperationContext.js", "services/ipcGuards.js", "services/fsUtils.js"]) {
+  for (const file of ["main.js", "preload.js", "saveLoginPreload.js", "services/browserSavePrompt.js", "services/automaticBackups.js", "services/vaultStore.js", "services/sqliteVault.js", "services/vaultHealth.js", "services/credentialTrash.js", "services/duplicateReview.js", "services/activityHistory.js", "services/vaultOperationContext.js", "services/ipcGuards.js", "services/fsUtils.js"]) {
     assert.deepEqual(await fs.readFile(path.join(appCode, "src", file)),
       await fs.readFile(path.join(__dirname, "../src", file)), `installed desktop code is current: ${file}`);
   }
@@ -86,8 +86,8 @@ async function main() {
     getAppVersion: () => packageInfo.version, pairing,
     vault: {
       getCredentials: () => vault.getAllCredentials(),
-      addCredential: (data) => vault.createCredential(data),
-      updatePassword: async (id, password) => vault.editCredential(id, { ...await vault.getCredential(id), password })
+      addCredential: (data) => vault.createBrowserCredential(data, { groupName: "", category: "Other", activeGroup: "" }),
+      updatePassword: (id, password) => vault.updateBrowserPassword(id, password)
     }, approveSave: async () => true
   }) });
   await bridge.start();
@@ -138,6 +138,7 @@ async function main() {
     dom.window.close();
     assert.equal((await conn.request({ ...login, password: "dummy-updated" })).mode, "update");
     assert.equal((await vault.getPasswordHistory(id))[0].password, login.password, "browser updates preserve the previous password");
+    assert.deepEqual((await vault.getActivityHistory({ source: "browser" })).entries.map(entry => entry.event), ["password_updated", "added"], "packaged browser writes record activity without secret values");
     assert.equal((await vault.getAllCredentials()).length, 1);
     const health = await vault.checkVaultHealth();
     assert.equal(health.total, 1);

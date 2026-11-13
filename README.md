@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.17**, extension **0.6.1**. The inline Fill button now uses the SLV logo instead of text, with a hover highlight, a “Fill with Secure Login Vault” tooltip and keyboard support. Desktop Setup bundles the updated extension. Reload Chrome/Edge and refresh login pages; Firefox needs the newly signed 0.6.1 XPI to show the new icon. Existing 0.6.0 extensions remain compatible.
+**Current source versions:** desktop **1.0.18**, extension **0.6.1**. This desktop update adds encrypted Activity History with search, action/source filters and 90-day retention. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 Settings now uses six sections: **General**, **Security**, **Browsers**, **Organization**,
 **Backup & Data**, and **About**. Browser pairings appear together under **Browsers**;
@@ -38,6 +38,18 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 - Copy credentials with configurable password clipboard clearing.
 - Use auto-lock, change the master password and configure a recovery key.
 - Import CSV, JSON and KeePass CSV; export CSV/JSON or create an encrypted backup.
+
+### Activity History
+
+Choose **Activity History** on the credential dashboard to review new changes from desktop 1.0.18 onward. It records login additions, edits (including password changes), moves to Recently Deleted, restores and confirmed permanent deletions. Bulk changes such as duplicate cleanup and Replace import also record affected credentials. No-op edits do not add events.
+
+- Events contain only the credential ID, saved login name, saved group, action, desktop/browser source and time. Passwords, usernames, website URLs, notes, QR images and keys are not copied into history.
+- Search by login name or group, filter by action/source, and page through 50 events at a time. The active group applies to the group saved with each event; renaming or moving a group does not rewrite older events.
+- History is stored in the same encrypted vault and included in encrypted backups, but excluded from CSV/JSON credential exports and browser replies. Restoring a backup restores its history snapshot; it does not reconstruct changes since that backup.
+- Events expire after 90 days. Expired events are hidden immediately; physical cleanup runs on vault writes, after unlock, and hourly while unlocked. Older encrypted backups retain their own snapshots.
+- This records credential changes, not Client Vault actions, browser Fill, successful website sign-ins or failed authentication attempts. It is not a tamper-proof audit trail, and changes made using older app versions are not recorded.
+
+Validation: `npm run test:activity` and `npm run test:activity-app`.
 
 ### Vault Health
 
@@ -112,8 +124,8 @@ Use a build produced from this source, or build it using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.17.exe` | Installed desktop app, with browser-extension setup support |
-| `Secure Login Vault 1.0.17.exe` | Portable desktop app; browser-helper setup is unavailable |
+| `Secure Login Vault Setup 1.0.18.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.18.exe` | Portable desktop app; browser-helper setup is unavailable |
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -134,7 +146,7 @@ The Setup installer bundles Chrome/Edge and Firefox extensions plus the native h
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
-After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.17 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
+After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.18 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
 
 ### Fill, save and update
 

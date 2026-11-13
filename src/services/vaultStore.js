@@ -18,6 +18,9 @@ const {
   getDuplicateReview,
   resolveDuplicateReview,
   addCredential,
+  updateBrowserPassword,
+  getActivityHistory,
+  purgeActivityHistory,
   updateCredential,
   deleteCredential,
   manageCredentialTrash,
@@ -284,7 +287,7 @@ function createVaultStore(basePath) {
     ensureUnlocked();
     return addCredential(databaseFilePath, currentKey(),
       { ...data, groupName: organization.groupName, category: organization.category },
-      { expectedActiveGroup: organization.activeGroup });
+      { expectedActiveGroup: organization.activeGroup, source: "browser" });
   }
 
   async function editCredential(id, data) {
@@ -903,6 +906,9 @@ function createVaultStore(basePath) {
     getCredential,
     createCredential,
     createBrowserCredential,
+    updateBrowserPassword: (id, password) => { ensureUnlocked(); return updateBrowserPassword(databaseFilePath, currentKey(), Number(id), password); },
+    getActivityHistory: options => { ensureUnlocked(); return getActivityHistory(databaseFilePath, currentKey(), options); },
+    purgeActivityHistory: () => { ensureUnlocked(); return purgeActivityHistory(databaseFilePath, currentKey()); },
     editCredential,
     getPasswordHistory,
     checkVaultHealth,

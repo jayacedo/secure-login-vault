@@ -251,6 +251,19 @@ network resources are needed. Inline UI checks cover mouse filling, keyboard
 activation and Escape focus return. Firefox 0.6.1 requires a newly signed XPI;
 existing 0.6.0 remains compatible with the desktop.
 
+Desktop 1.0.18 adds encrypted Activity History for credential additions, updates,
+password changes, deletion, restoration and confirmed permanent deletion. Events
+commit with the credential mutation and carry only ID, login name, historical group,
+action, desktop/browser source and time. No secret values are copied. Search, action
+and source filters, 50-event pages and the active group apply in the desktop modal.
+Events expire after 90 days; cleanup runs on writes, after unlock and hourly while
+unlocked. Encrypted backups retain their snapshot; CSV/JSON exports and browser
+responses exclude history. Older actions and Client Vault are not covered.
+Browser password updates now modify only that field in the serialized write.
+`test:activity` checks atomicity, source labels, filters, retention and backups;
+`test:activity-app` checks the interface, request guards, keyboard access and layouts.
+Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

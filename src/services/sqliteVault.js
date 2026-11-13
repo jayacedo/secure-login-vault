@@ -5,6 +5,7 @@ const initSqlJs = require("sql.js");
 const { writeJsonAtomic } = require("./fsUtils");
 const { buildVaultHealth } = require("./vaultHealth");
 const trash = require("./credentialTrash");
+const activity = require("./activityHistory");
 const { collectDuplicateGroups, describeDuplicateGroup } = require("./duplicateReview");
 
 let sqlitePromise;
@@ -274,6 +275,7 @@ async function resolveDuplicateReview(filePath, key, choice, guard = () => {}) {
 
 async function addCredential(filePath, key, data, options = {}) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
+    activity.setContext(db, options.source);
     validateCredentialData(data);
     const now = new Date().toISOString();
     const activeGroup = getActiveGroupFilterValue(db);
@@ -357,6 +359,28 @@ async function deleteCredential(filePath, key, id) {
     if (activeGroup && (existing.group_name || "").toLowerCase() !== activeGroup.toLowerCase()) throw createPublicError("Credential not found.");
     return { ...trash.moveToTrash(db, [existing]), deleted: true };
   });
+}
+
+async function updateBrowserPassword(filePath, key, id, password) {
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    const entry = queryOne(db, "SELECT * FROM credentials WHERE id = ?", [id]);
+    const group = getActiveGroupFilterValue(db);
+    if (!entry.id || (group && (entry.group_name || "").toLowerCase() !== group.toLowerCase())) throw createPublicError("Credential not found.");
+    validateCredentialData({ websiteName: entry.website_name, password });
+    activity.setContext(db, "browser");
+    db.run("UPDATE credentials SET password = ?, updated_at = ? WHERE id = ?", [password, new Date().toISOString(), id]);
+    return { updated: true };
+  });
+}
+
+async function getActivityHistory(filePath, key, options) {
+  return withDecryptedDatabase(filePath, key, db => activity.list(db, getActiveGroupFilterValue(db), options));
+}
+
+async function purgeActivityHistory(filePath, key) {
+  const expired = await withDecryptedDatabase(filePath, key, db => activity.hasExpired(db));
+  if (!expired) return { cleaned: false };
+  return withDecryptedDatabaseWrite(filePath, key, () => ({ cleaned: true }));
 }
 
 async function manageCredentialTrash(filePath, key, action, id, confirmed, guard = () => {}) {
@@ -1164,6 +1188,7 @@ function ensureSchemaUpgrades(db) {
     insertMeta.run([]);
     insertMeta.free();
   }
+  activity.ensureSchema(db);
 }
 
 // ─── Write helper (decrypt → mutate → re-encrypt → save) ─────────────────────
@@ -1195,6 +1220,7 @@ async function performDatabaseWrite(filePath, key, operation) {
     db = new SQL.Database(databaseBytes);
     ensureSchemaUpgrades(db);
     trash.purgeTrash(db);
+    activity.purge(db);
     const result = operation(db);
     updatedBytes = Buffer.from(db.export());
     const encryptedDatabase = encryptBuffer(updatedBytes, key);
@@ -1505,6 +1531,9 @@ module.exports = {
   getDuplicateReview,
   resolveDuplicateReview,
   addCredential,
+  updateBrowserPassword,
+  getActivityHistory,
+  purgeActivityHistory,
   updateCredential,
   deleteCredential,
   manageCredentialTrash,

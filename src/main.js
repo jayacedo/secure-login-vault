@@ -199,6 +199,7 @@ function registerAuthHandlers() {
     if (response.ok) {
       lockManager.setUnlocked(true);
       vaultStore.purgeDeletedCredentials().catch(() => {});
+      vaultStore.purgeActivityHistory().catch(() => {});
       automaticBackups.run().catch(() => {});
     }
     return response;
@@ -258,6 +259,7 @@ function registerAuthHandlers() {
 
   for (const [channel, operation] of [
     ["vault:duplicates-list", () => vaultStore.getDuplicateReview()],
+    ["vault:activity-history", options => vaultStore.getActivityHistory(options)],
     ["vault:duplicates-resolve", choice => vaultStore.resolveDuplicateReview(choice)],
     ["vault:trash-list", () => vaultStore.getDeletedCredentials()],
     ["vault:trash-restore", id => vaultStore.restoreDeletedCredential(id)],
@@ -947,7 +949,10 @@ app.whenReady().then(async () => {
   automaticBackups = createAutomaticBackups({ configPath: path.join(app.getPath("userData"), "automatic-backups.json"), vault: vaultStore });
   await automaticBackups.load();
   automaticBackups.start();
-  trashMaintenance = setInterval(() => vaultStore.purgeDeletedCredentials().catch(() => {}), 60 * 60 * 1000);
+  trashMaintenance = setInterval(() => {
+    vaultStore.purgeDeletedCredentials().catch(() => {});
+    vaultStore.purgeActivityHistory().catch(() => {});
+  }, 60 * 60 * 1000);
   trashMaintenance.unref();
   browserSetup = createBrowserSetup({
     packaged: app.isPackaged,
@@ -988,8 +993,7 @@ app.whenReady().then(async () => {
         },
         // Only the password changes; everything else about the login is kept as it is.
         updatePassword: async (id, password) => {
-          const existing = await vaultStore.getCredential(id);
-          await vaultStore.editCredential(id, { ...existing, password });
+          await vaultStore.updateBrowserPassword(id, password);
           tellWindowCredentialsChanged();
         }
       }

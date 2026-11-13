@@ -53,6 +53,7 @@ document.addEventListener("keydown", (e) => {
       "#vault-health-overlay",
       "#credential-trash-overlay",
       "#duplicate-review-overlay",
+      "#activity-history-overlay",
       "#client-modal-overlay",
       "#categories-modal-overlay",
       "#groups-modal-overlay",
@@ -68,6 +69,7 @@ document.addEventListener("keydown", (e) => {
         if (selector === "#vault-health-overlay") closeVaultHealth();
         if (selector === "#credential-trash-overlay") closeCredentialTrash();
         if (selector === "#duplicate-review-overlay") closeDuplicateReview();
+        if (selector === "#activity-history-overlay") closeActivityHistory();
         if (selector === "#settings-modal-overlay") closeSettingsModal();
 
         // Re-surface settings if categories sub-modal was closed that way
@@ -409,6 +411,7 @@ function renderDashboard(state) {
             <button class="icon-text-button" type="button" id="check-vault-health-btn">${renderShieldIcon()}<span>Check vault health</span></button>
             <button class="icon-text-button" type="button" id="recently-deleted-btn">${renderTrashIcon()}<span>Recently Deleted</span></button>
             <button class="icon-text-button" type="button" id="review-duplicates-btn">Review duplicates</button>
+            <button class="icon-text-button" type="button" id="activity-history-btn">Activity History</button>
           </div>
         </div>
         <div class="credential-table" role="table" aria-label="Credential list">
@@ -432,6 +435,7 @@ function renderDashboard(state) {
   document.querySelector("#check-vault-health-btn").addEventListener("click", () => { vaultHealthFilter = "all"; openVaultHealth(); });
   document.querySelector("#recently-deleted-btn").addEventListener("click", openCredentialTrash);
   document.querySelector("#review-duplicates-btn").addEventListener("click", openDuplicateReview);
+  document.querySelector("#activity-history-btn").addEventListener("click", openActivityHistory);
   document.querySelector("#manage-categories-btn").addEventListener("click", openManageCategoriesModal);
   document.querySelector("#open-client-vault-btn").addEventListener("click", () => renderClientVault(state));
   document.querySelector("#active-group-banner-clear").addEventListener("click", async () => {
@@ -1065,6 +1069,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  closeActivityHistory();
   closeDuplicateReview();
   closeCredentialTrash();
   closeSettingsModal();
@@ -2777,6 +2782,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  closeActivityHistory();
   closeDuplicateReview();
   closeCredentialTrash();
   closeSettingsModal();

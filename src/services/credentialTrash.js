@@ -1,5 +1,6 @@
 // All tables below live inside the existing encrypted SQLite vault.
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const activity = require("./activityHistory");
 const COLUMNS = ["id", "website_name", "website_url", "category", "username", "password", "email", "notes", "tags", "favorite", "group_name", "qr_code", "created_at", "updated_at"];
 function rows(db, sql, params = []) {
   const stmt = db.prepare(sql);
@@ -54,6 +55,7 @@ function restoreTrash(db, id, activeGroup) {
       db.run(`INSERT INTO ${table} (name, created_at) VALUES (?, ?)`, [name, now]);
     }
   }
+  activity.setContext(db, "desktop", "restored");
   db.run(`INSERT INTO credentials (${COLUMNS.join(",")}) VALUES (${COLUMNS.map(() => "?").join(",")})`, COLUMNS.map(column => credential[column] ?? null));
   for (const item of history.slice(-10)) db.run("INSERT INTO credential_password_history (credential_id, password, replaced_at) VALUES (?, ?, ?)", [credential.id, item.password, item.replaced_at]);
   db.run("DELETE FROM credential_trash WHERE id = ?", [id]);
@@ -61,7 +63,8 @@ function restoreTrash(db, id, activeGroup) {
 }
 function deleteTrash(db, id, activeGroup, confirmed) {
   if (confirmed !== true) fail("Confirm permanent deletion first.");
-  getTrashEntry(db, id, activeGroup);
+  const entry = getTrashEntry(db, id, activeGroup);
+  activity.recordPermanentDelete(db, entry);
   db.run("DELETE FROM credential_trash WHERE id = ?", [id]);
   return { deleted: true };
 }

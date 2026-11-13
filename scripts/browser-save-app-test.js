@@ -75,6 +75,9 @@ async function main() {
   saved=(await all()).find(c=>c.username==="chosen");assert.equal(saved.password,"changed-dummy-password");assert.equal(saved.groupName,"Client B");assert.equal(saved.category,"Hosting");
   assert.equal((await api(`credentials.getPasswordHistory(${saved.id})`)).result[0].password,"dummy-browser-password","real browser save records password history");
   assert.deepEqual((await all()).map(c=>c.username).sort(),["chosen","unassigned"]);
+  const activity = (await api('credentials.getActivityHistory({source:"browser"})')).result;
+  assert.deepEqual(activity.entries.filter(entry=>entry.credentialId===saved.id).map(entry=>entry.event),["password_updated","added"]);
+  assert.equal(JSON.stringify(activity).includes("changed-dummy-password"),false);
   console.log(`PASS password updates preserve organization; no cancelled records added\nScreenshot: ${path.join(root,"save-login.png")}`);
   conn.close();app.exit(0);
 }

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   credentials: {
+    getActivityHistory: options => ipcRenderer.invoke("vault:activity-history", options),
     getDuplicates: () => ipcRenderer.invoke("vault:duplicates-list"),
     resolveDuplicates: choice => ipcRenderer.invoke("vault:duplicates-resolve", choice),
     getDeleted:     () => ipcRenderer.invoke("vault:trash-list"),
