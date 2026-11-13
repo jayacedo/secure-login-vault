@@ -100,6 +100,9 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   settings: {
+    getDesktopIntegration: () => ipcRenderer.invoke("app:get-desktop-integration"),
+    setDesktopIntegration: preferences => ipcRenderer.invoke("app:set-desktop-integration", preferences),
+    hideLockedWindow: () => ipcRenderer.invoke("app:hide-locked-window"),
     getAutomaticBackups: () => ipcRenderer.invoke("vault:auto-backup-status"),
     configureAutomaticBackups: (options) => ipcRenderer.invoke("vault:auto-backup-configure", options),
     chooseAutomaticBackupFolder: () => ipcRenderer.invoke("vault:auto-backup-folder"),

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard, Tray, Menu, screen } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -18,6 +18,7 @@ const { createBrowserSetup } = require("./services/browserSetup");
 const browserSavePrompt = require("./services/browserSavePrompt");
 const { createAutomaticBackups } = require("./services/automaticBackups");
 const { createAuthenticator } = require("./services/authenticator");
+const { createDesktopIntegration } = require("./services/desktopIntegration");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -32,6 +33,11 @@ let browserSetup;
 let automaticBackups;
 let trashMaintenance;
 let authenticator;
+let desktopIntegration;
+let compactUnlock = false;
+let dashboardBounds;
+let dashboardWasMaximized = false;
+let servicesDisposed = false;
 let pairingExpiresAt = 0;
 const pathGrants = createPathGrants();
 // One writer process per user-data profile. The native helper runs separately
@@ -39,16 +45,14 @@ const pathGrants = createPathGrants();
 const ownsDesktopInstance = app.requestSingleInstanceLock();
 if (!ownsDesktopInstance) app.quit();
 app.on("second-instance", () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show(); mainWindow.focus();
-  }
+  showMainWindow();
 });
 const appPageUrl = pathToFileURL(path.join(__dirname, "renderer", "index.html")).href;
 const lockedRequests = new Set([
   "vault:get-state", "vault:create", "vault:unlock", "vault:lock", "vault:pick-restore-file", "vault:restore-backup",
   "vault:reset-with-recovery-key", "vault:set-lock-policy", "app:get-info", "app:set-window-title", "app:set-window-icon",
-  "vault:get-extension-bridge", "vault:get-browser-setup", "vault:get-extension-pairing"
+  "vault:get-extension-bridge", "vault:get-browser-setup", "vault:get-extension-pairing",
+  "app:get-desktop-integration", "app:hide-locked-window"
 ]);
 function handleAppRequest(channel, handler) {
   ipcMain.handle(channel, async (event, ...args) => {
@@ -107,6 +111,45 @@ function openExternalSafely(url) {
   }
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show(); mainWindow.focus();
+}
+
+function applyWindowState(state) {
+  const compact = Boolean(state.hasVault && !state.isUnlocked && desktopIntegration?.hasTray());
+  if (mainWindow && !mainWindow.isDestroyed() && compact !== compactUnlock) {
+    if (compact) {
+      dashboardWasMaximized = mainWindow.isMaximized();
+      dashboardBounds = mainWindow.getNormalBounds();
+      if (dashboardWasMaximized) mainWindow.unmaximize();
+      mainWindow.setMinimumSize(360, 400);
+      const work = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+      mainWindow.setSize(Math.min(460, work.width), Math.min(620, work.height));
+      mainWindow.center();
+    } else {
+      mainWindow.setMinimumSize(980, 640);
+      if (dashboardBounds) mainWindow.setBounds(dashboardBounds);
+      else mainWindow.setSize(1180, 760);
+      if (dashboardWasMaximized) mainWindow.maximize();
+    }
+  }
+  compactUnlock = compact;
+  desktopIntegration?.refresh();
+  return { ...state, compactUnlock: compact };
+}
+
+function lockDesktopVault(reason, notify = true) {
+  authenticator?.clear(); pathGrants.clear(); saveApprovalAbort?.abort();
+  lockManager?.setUnlocked(false);
+  extensionPairing?.cancelPairing(); loginWindows?.closeAll();
+  const result = vaultStore.lockVault();
+  desktopIntegration?.refresh();
+  if (notify && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("vault:auto-locked", { reason });
+  return result;
+}
+
 // Without a stable AppUserModelID, Windows can group/cache the taskbar
 // button under the underlying electron.exe process instead of this app's
 // own identity, which makes a dynamic setIcon() call (used for the custom
@@ -134,8 +177,9 @@ function createMainWindow() {
     }
   });
 
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
+  mainWindow.once("ready-to-show", async () => {
+    const state = applyWindowState(await vaultStore.getState());
+    if (!desktopIntegration?.shouldStartHidden(process.argv, state.hasVault)) mainWindow.show();
   });
   mainWindow.webContents.on("did-start-loading", () => authenticator?.clear());
   mainWindow.webContents.on("render-process-gone", () => authenticator?.clear());
@@ -148,6 +192,8 @@ function createMainWindow() {
   mainWindow.on("blur", handleAppWindowBlur);
   mainWindow.on("focus", handleAppWindowFocus);
   mainWindow.on("restore", handleAppWindowFocus);
+  mainWindow.on("close", event => desktopIntegration?.handleClose(event));
+  mainWindow.on("query-session-end", () => { desktopIntegration?.beginQuit(); lockDesktopVault("shutdown", false); });
   mainWindow.on("closed", () => loginWindows.closeAll());
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -190,12 +236,12 @@ function createMainWindow() {
 function registerAuthHandlers() {
   // ─── Auth & vault lifecycle ─────────────────────────────────────────────────
   handleAppRequest("vault:get-state", async () => {
-    return vaultStore.getState();
+    return applyWindowState(await vaultStore.getState());
   });
 
   handleAppRequest("vault:create", async (_event, payload) => {
     const response = await handleVaultOperation(() => vaultStore.createVault(payload));
-    if (response.ok) { lockManager.setUnlocked(true); automaticBackups.run().catch(() => {}); }
+    if (response.ok) { lockManager.setUnlocked(true); applyWindowState({ hasVault: true, isUnlocked: true }); automaticBackups.run().catch(() => {}); }
     return response;
   });
 
@@ -203,6 +249,7 @@ function registerAuthHandlers() {
     const response = await handleVaultOperation(() => vaultStore.unlockVault(payload));
     if (response.ok) {
       lockManager.setUnlocked(true);
+      applyWindowState({ hasVault: true, isUnlocked: true });
       vaultStore.purgeDeletedCredentials().catch(() => {});
       vaultStore.purgeActivityHistory().catch(() => {});
       automaticBackups.run().catch(() => {});
@@ -211,13 +258,17 @@ function registerAuthHandlers() {
   });
 
   handleAppRequest("vault:lock", async () => {
-    authenticator.clear();
-    pathGrants.clear();
-    saveApprovalAbort?.abort();
-    lockManager.setUnlocked(false);
-    extensionPairing.cancelPairing(); // an unused pairing code does not outlive the unlock
-    loginWindows.closeAll();
-    return vaultStore.lockVault();
+    return lockDesktopVault("manual", false);
+  });
+
+  handleAppRequest("app:get-desktop-integration", () => ({ ok: true, result: desktopIntegration.status() }));
+  handleAppRequest("app:set-desktop-integration", async (_event, preferences) => {
+    try { return { ok: true, result: await desktopIntegration.configure(preferences) }; }
+    catch { return { ok: false, message: "Could not apply startup and tray settings. Use the installed Windows app and try again." }; }
+  });
+  handleAppRequest("app:hide-locked-window", () => {
+    if (vaultStore.isUnlocked()) return { ok: false, message: "Lock the vault before returning to the tray." };
+    return { ok: desktopIntegration.hideLocked() };
   });
 
   handleAppRequest("vault:get-dashboard-data", async () => {
@@ -1031,15 +1082,7 @@ app.whenReady().then(async () => {
   });
   lockManager = createLockManager({
     onLock: (reason) => {
-      authenticator.clear();
-      pathGrants.clear();
-      saveApprovalAbort?.abort();
-      vaultStore.lockVault();
-      extensionPairing.cancelPairing(); // an unused code does not outlive the unlock
-      loginWindows.closeAll();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("vault:auto-locked", { reason });
-      }
+      lockDesktopVault(reason);
     }
   });
   loadLockPolicy();
@@ -1050,16 +1093,26 @@ app.whenReady().then(async () => {
   loadExtensionSettings();
   registerImportExportHandlers();
   registerSettingsHandlers();
+  desktopIntegration = createDesktopIntegration({
+    app, Tray, Menu, configPath: path.join(app.getPath("userData"), "desktop-integration.json"),
+    iconPath: DEFAULT_ICON_PATH, getWindow: () => mainWindow,
+    isUnlocked: () => vaultStore.isUnlocked(), lockVault: lockDesktopVault, openWindow: showMainWindow
+  });
+  await desktopIntegration.load();
   createMainWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
-    }
+    } else showMainWindow();
   });
 });
 
-app.on("window-all-closed", () => {
+function disposeDesktopServices() {
+  if (servicesDisposed) return;
+  servicesDisposed = true;
+  pathGrants.clear(); saveApprovalAbort?.abort();
+  desktopIntegration?.dispose();
   automaticBackups?.stop();
   clearInterval(trashMaintenance);
   authenticator?.clear();
@@ -1076,7 +1129,10 @@ app.on("window-all-closed", () => {
     vaultStore.lockVault();
   }
 
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+}
+
+app.on("before-quit", () => { desktopIntegration?.beginQuit(); disposeDesktopServices(); });
+app.on("window-all-closed", () => {
+  disposeDesktopServices();
+  if (process.platform !== "darwin") app.quit();
 });

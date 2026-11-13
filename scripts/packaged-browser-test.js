@@ -40,6 +40,8 @@ async function main() {
       await fs.readFile(path.join(__dirname, "../extension", file)), `installed extension is current: ${file}`);
   }
   const archiveFiles = asar.listPackage(path.join(resources, "app.asar"));
+  assert.deepEqual(await fs.readFile(path.join(appCode, "src/services/desktopIntegration.js")),
+    await fs.readFile(path.join(__dirname, "../src/services/desktopIntegration.js")), "installed desktop startup/tray service is current");
   assert.equal(archiveFiles.some((file) => /[\\/]\.tmp[\\/]|vault-auth\.json|vault-data\.slv$/.test(file)), false);
 
   const { createBrowserSetup } = fromApp("services/browserSetup");

@@ -338,6 +338,19 @@ cursor instead of the generic busy cursor. Page-boundary behavior is unchanged.
 The Windows Setup installer is built; extracted-source checks and packaged
 Chromium/Firefox pairing, save, fill, update and lock checks pass.
 
+Pending the next desktop package: Settings > General includes Start with Windows,
+Start in system tray and Close to tray, all off by default. Windows sign-in can
+start an existing vault quietly in the tray, always locked; a direct launch opens
+the window. Tray Open SLV shows a compact, branded unlock form, and successful
+unlock restores the dashboard size. Cancel, Escape and the unlock window's close
+button return to the tray, clearing input and invalidating pending unlock attempts.
+Closing the dashboard with Close to tray enabled locks immediately. The tray menu
+provides Open SLV, Lock Vault and Quit; quitting and Windows shutdown bypass the
+hide-on-close behavior. First-vault setup and unavailable-tray cases stay visible.
+Startup registration is available only in installed Windows builds and respects
+Windows Startup Apps disabling it. Development tests use mock startup registration
+and isolated vaults; no real startup preference is enabled by these checks.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

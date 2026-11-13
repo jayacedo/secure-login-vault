@@ -42,6 +42,10 @@ document.addEventListener("keydown", (e) => {
 
   // ── Escape: close the topmost open modal ──────────────────────────────────
   if (e.key === "Escape") {
+    const trayCancel = document.querySelector("#unlock-cancel-btn");
+    if (trayCancel && !document.querySelector(".modal-overlay.is-open")) {
+      e.preventDefault(); trayCancel.click(); return;
+    }
     // Priority: sub-modals first, then primary modals
     const subModalOrder = [
       "#csv-import-overlay",
@@ -157,6 +161,8 @@ document.addEventListener("keydown", (e) => {
 async function initAuth() {
   try {
     const state = await window.secureLoginVault.auth.getState();
+    // Tray close/cancel can happen before this process has ever shown a dashboard.
+    if (!_unsubscribeAutoLocked) _unsubscribeAutoLocked = window.secureLoginVault.auth.onAutoLocked(handleAutoLocked);
     renderFromState(state);
   } catch {
     renderError("Vault status could not be loaded.");
@@ -165,6 +171,7 @@ async function initAuth() {
 
 function renderFromState(state) {
   updateStatus(state);
+  document.body.classList.toggle("compact-unlock", Boolean(state.compactUnlock && !state.isUnlocked));
 
   if (state.isUnlocked) {
     renderDashboard(state);
@@ -247,9 +254,10 @@ function renderUnlockForm(state) {
   const authCard = getAuthCard();
   authCard.innerHTML = `
     <form class="auth-form" id="unlock-vault-form" novalidate>
+      ${state.compactUnlock ? `<div class="compact-unlock-brand">${renderBrandMark("compact")}<div><strong>${escapeHtml(getBrandName())}</strong><small>Local vault</small></div><span>${renderLockIcon()} Locked</span></div>` : ""}
       <div>
-        <p class="eyebrow">Returning user</p>
-        <h2>Login</h2>
+        ${state.compactUnlock ? "" : '<p class="eyebrow">Returning user</p>'}
+        <h2>${state.compactUnlock ? "Welcome back" : "Login"}</h2>
         <p class="form-note">Enter the master password to unlock this vault session.</p>
       </div>
 
@@ -269,12 +277,17 @@ function renderUnlockForm(state) {
         </div>` : ""}
 
       <button class="primary-button" type="submit">Unlock Vault</button>
+      ${state.compactUnlock ? '<button class="secondary-button" type="button" id="unlock-cancel-btn">Cancel</button>' : ""}
       <p class="form-message" id="form-message" role="status"></p>
     </form>
   `;
 
   const form = document.querySelector("#unlock-vault-form");
   setupPasswordToggles(form);
+  form.querySelector("#unlock-cancel-btn")?.addEventListener("click", async () => {
+    form.querySelector("#master-password").value = "";
+    await window.secureLoginVault.settings.hideLockedWindow();
+  });
 
   const forgotButton = form.querySelector("#forgot-password-btn");
   if (forgotButton) {
@@ -293,6 +306,7 @@ function renderUnlockForm(state) {
     });
   }
   form.addEventListener("submit", handleUnlockVault);
+  form.querySelector("#master-password").focus();
 }
 
 function renderPasswordInput({ id, label, autocomplete }) {
@@ -2927,6 +2941,9 @@ async function openSettingsModal() {
     if (res.ok) appInfo = res.result;
   } catch { /* swallow */ }
 
+  const desktopResponse = await window.secureLoginVault.settings.getDesktopIntegration();
+  const desktopPrefs = desktopResponse.ok ? desktopResponse.result : {};
+
   const currentTheme    = getPref(PREF_THEME, "light");
   const currentTextSize = getTextSize();
   const currentAutoLock = getPref(PREF_AUTO_LOCK, "0");
@@ -3025,6 +3042,24 @@ async function openSettingsModal() {
               </div>
             </div>
           </div>
+        </section>
+        <section class="settings-section">
+          <h3 class="settings-section-title">Windows startup &amp; system tray</h3>
+          <label class="settings-row desktop-preference-row" for="desktop-start-windows">
+            <span class="settings-row-label"><span class="settings-row-name">Start with Windows</span><span class="settings-row-hint">Start SLV when you sign in to Windows. Your vault always starts locked.</span></span>
+            <input id="desktop-start-windows" type="checkbox" ${desktopPrefs.startWithWindows ? "checked" : ""} ${desktopPrefs.startupSupported ? "" : "disabled"} />
+          </label>
+          <label class="settings-row desktop-preference-row" for="desktop-start-tray">
+            <span class="settings-row-label"><span class="settings-row-name">Start in system tray</span><span class="settings-row-hint">At Windows sign-in, stay quiet until you click the tray icon. Opening SLV yourself still shows its window.</span></span>
+            <input id="desktop-start-tray" type="checkbox" ${desktopPrefs.startInTray ? "checked" : ""} ${desktopPrefs.supported ? "" : "disabled"} />
+          </label>
+          <label class="settings-row desktop-preference-row" for="desktop-close-tray">
+            <span class="settings-row-label"><span class="settings-row-name">Close to tray</span><span class="settings-row-hint">Closing the dashboard locks the vault and keeps SLV in the tray. Use the tray menu to quit.</span></span>
+            <input id="desktop-close-tray" type="checkbox" ${desktopPrefs.closeToTray ? "checked" : ""} ${desktopPrefs.supported ? "" : "disabled"} />
+          </label>
+          <p class="settings-section-hint">${desktopPrefs.startupSupported ? "Tray menu: Open SLV, Lock Vault, Quit. Canceling the compact unlock window leaves SLV locked in the tray." : "Start with Windows is available in the installed Windows app. Tray options can be used independently."}</p>
+          <button class="primary-button settings-action-btn" type="button" id="desktop-preferences-apply" ${desktopPrefs.supported ? "" : "disabled"}>Apply</button>
+          <p class="form-message" id="desktop-preferences-status" role="status">${escapeHtml(desktopPrefs.warning || "")}</p>
         </section>
         <section class="settings-section">
           <h3 class="settings-section-title">Appearance</h3>
@@ -3688,6 +3723,23 @@ async function openSettingsModal() {
   overlay.querySelector("#settings-manage-groups-btn").addEventListener("click", openManageGroupsModal);
   overlay.querySelector("#settings-apply-active-group-btn").addEventListener("click", runApplyActiveGroup);
   loadActiveGroupControl();
+
+  overlay.querySelector("#desktop-preferences-apply").addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    const status = overlay.querySelector("#desktop-preferences-status");
+    try {
+      const result = await window.secureLoginVault.settings.setDesktopIntegration({
+        startWithWindows: overlay.querySelector("#desktop-start-windows").checked,
+        startInTray: overlay.querySelector("#desktop-start-tray").checked,
+        closeToTray: overlay.querySelector("#desktop-close-tray").checked
+      });
+      status.textContent = result.ok ? (result.result.warning || "Startup and tray settings saved.") : result.message;
+      status.classList.toggle("is-error", !result.ok);
+      if (result.ok) overlay.querySelector("#desktop-start-windows").checked = result.result.startWithWindows;
+    } catch { status.textContent = "Could not save startup and tray settings."; }
+    finally { button.disabled = false; }
+  });
 
   // ── Help & FAQ (opens its own modal on top) ──────────────────────────────────
   overlay.querySelector("#settings-open-help-btn").addEventListener("click", openHelpModal);

@@ -6,6 +6,13 @@ SLV stores vault data in an encrypted SQLite database. The browser extension con
 
 **Current source versions:** desktop **1.0.25**, extension **0.6.1**. Desktop 1.0.25 fixes the busy cursor on disabled CSV pagination controls. It includes the icon-only dashboard tools and masked CSV import review introduced in 1.0.24. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
+**Pending the next installer:** Settings > General adds opt-in Windows startup
+and system tray controls. Sign-in can start SLV quietly, locked in the tray.
+Opening the tray icon shows a compact unlock window; entering the master password
+opens the dashboard. Cancel returns to the tray still locked. Close to tray locks
+immediately, and the tray menu includes Open SLV, Lock Vault and Quit. Start with
+Windows requires an installed Windows build; these settings default to off.
+
 Settings now uses six sections: **General**, **Security**, **Browsers**, **Organization**,
 **Backup & Data**, and **About**. Browser pairings appear together under **Browsers**;
 installation instructions are tucked into **Installation & troubleshooting**.

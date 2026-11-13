@@ -22,6 +22,8 @@
 :root[data-text-size="small"] { font-size: 87.5%; }
 :root[data-text-size="default"] { font-size: 100%; }
 :root[data-text-size="large"] { font-size: 112.5%; }
+.desktop-preference-row input[type="checkbox"] { width: 20px; height: 20px; min-height: 20px; flex-shrink: 0; accent-color: var(--accent); }
+.desktop-preference-row .settings-row-hint { font-weight: 400; }
 .settings-text-size-control { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 body {
@@ -39,6 +41,17 @@ body.is-dashboard {
   min-width: 1120px;
   background: var(--bg);
 }
+
+body.compact-unlock { min-width: 0; background: var(--panel); }
+body.compact-unlock .app-shell { width: 100%; min-height: 100vh; padding: 0; background: var(--panel); }
+body.compact-unlock .auth-layout { display: block; padding: 24px; border: 0; border-radius: 0; box-shadow: none; background: var(--panel); }
+body.compact-unlock .intro-column { display: none; }
+body.compact-unlock .auth-card { padding: 0; min-height: 0; border: 0; box-shadow: none; background: var(--panel); }
+.compact-unlock-brand { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+.compact-unlock-brand .brand-mark { width: 40px; height: 40px; flex-shrink: 0; margin: 0; }
+.compact-unlock-brand small { display: block; color: var(--muted); font-size: .75rem; }
+.compact-unlock-brand > span { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--muted); font-size: .7rem; }
+.compact-unlock-brand > span svg { width: 14px; height: 14px; }
 
 svg {
   width: 20px;
