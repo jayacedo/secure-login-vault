@@ -302,6 +302,13 @@ Client search, Favorites and QR replacement/removal retain the correct action.
 Authenticator UI checks cover card routing, metadata, missing/deleted clients,
 locked access, copy/focus and narrow layouts. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.23 removes Category from the credential table and moves group badges
+beneath the website details. The five columns are Website, Username, Password,
+2FA and Manage. Categories remain stored and available in Edit, search and filters.
+The narrower table retains aligned website actions and horizontal scrolling when
+needed. Existing UI checks cover the new headers, group placement, category filters,
+Edit values and authenticator actions. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

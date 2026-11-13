@@ -423,7 +423,6 @@ function renderDashboard(state) {
             <span role="columnheader">Username</span>
             <span role="columnheader">Password</span>
             <span role="columnheader" class="head-2fa">2FA</span>
-            <span role="columnheader">Category</span>
             <span role="columnheader" class="head-manage">Manage</span>
           </div>
           <div id="credential-list-body">
@@ -507,6 +506,7 @@ function renderCredentialRow(credential, query = "") {
         <span class="cell-main">
           <strong title="${escapeHtml(credential.websiteName)}">${hl(credential.websiteName)}</strong>
           <small title="${escapeHtml(credential.websiteUrl || "No URL")}">${hl(credential.websiteUrl || "No URL")}</small>
+          ${credential.groupName ? `<small class="group-badge" title="Group: ${escapeHtml(credential.groupName)}">${hl(credential.groupName)}</small>` : ""}
           ${tags ? `<span class="tag-row">${tags}</span>` : ""}
         </span>
         ${credential.websiteUrl ? `
@@ -563,11 +563,6 @@ function renderCredentialRow(credential, query = "") {
           title="Generate authenticator code" aria-label="Generate 2FA code for ${escapeHtml(credential.websiteName)}">
           ${renderQrIcon()}<span>Generate</span></button>`
           : `<span class="two-factor-empty" title="No saved QR" aria-label="No saved QR">&mdash;</span>`}
-      </span>
-
-      <span role="cell" class="cell-category">
-        ${hl(credential.category)}
-        ${credential.groupName ? `<small class="group-badge" title="Group">${hl(credential.groupName)}</small>` : ""}
       </span>
 
       <span role="cell" class="cell-manage">

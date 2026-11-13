@@ -27,12 +27,18 @@ async function main() {
   const masterPassword = "Authenticator UI dummy master password";
   assert.equal((await api(`auth.createVault(${JSON.stringify({ masterPassword, confirmPassword: masterPassword })})`)).ok, true);
   await run("initAuth()");
-  const data = { websiteName: "Authenticator dummy", websiteUrl: "https://authenticator.test", username: "Dummy", password: "Dummy-only-password", qrCode: image };
+  const data = { websiteName: "Authenticator dummy", websiteUrl: "https://authenticator.test", username: "Dummy", password: "Dummy-only-password", qrCode: image, groupName: "Demo client", category: "WordPress" };
   const added = await api(`credentials.add(${JSON.stringify(data)})`); assert.equal(added.ok, true); const id = added.result.id;
   const withoutQr = (await api(`credentials.add(${JSON.stringify({ ...data, websiteName: 'No QR dummy', qrCode: '' })})`)).result.id;
   await run("refreshCredentials()");
   await until(() => run("document.querySelectorAll('.credential-row-item').length===2"));
-  assert.deepEqual(await run("[...document.querySelectorAll('.credential-row-head [role=columnheader]')].map(el=>el.textContent)"), ['Website','Username','Password','2FA','Category','Manage']);
+  assert.deepEqual(await run("[...document.querySelectorAll('.credential-row-head [role=columnheader]')].map(el=>el.textContent)"), ['Website','Username','Password','2FA','Manage']);
+  assert.equal(await run(`document.querySelector('.credential-row-item[data-id="${id}"] .cell-website .group-badge').textContent`), 'Demo client');
+  await run("searchState.category='WordPress';runSearch()");
+  assert.equal(await run("document.querySelectorAll('.credential-row-item').length"),2);
+  await run("searchState.category='Hosting';runSearch()");
+  assert.equal(await run("document.querySelectorAll('.credential-row-item').length"),0);
+  await run("searchState.category=null;runSearch()");
   assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
   assert.equal(await run(`document.querySelector('.credential-row-item[data-id="${withoutQr}"] .two-factor-empty').getAttribute('aria-label')`), 'No saved QR');
   const list = (await api('credentials.getAll()')).result;
@@ -58,7 +64,7 @@ async function main() {
   await run("searchState.onlyFavorites=true;runSearch()");
   assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
   await run("searchState.query='';searchState.onlyFavorites=false;runSearch()");
-  win.setMinimumSize(400,500); win.setSize(760,760);
+  win.setMinimumSize(400,500); win.setSize(620,760);
   await run("document.documentElement.setAttribute('data-theme','light')"); win.webContents.invalidate(); await sleep(400);
   assert.equal(await run("(()=>{const table=document.querySelector('.credential-table');table.scrollLeft=table.scrollWidth;return table.clientWidth<table.scrollWidth&&table.scrollLeft>0})()"), true);
   fs.writeFileSync(path.join(root, '2fa-column-narrow.png'), (await win.webContents.capturePage()).toPNG());
@@ -74,6 +80,8 @@ async function main() {
   await api(`credentials.update(${id},${JSON.stringify(data)})`); await run("refreshCredentials()");
   assert.equal(await run("document.querySelectorAll('[data-action=generate-code]').length"), 1);
   await run(`openCredentialModal(${id})`);
+  assert.equal(await run("document.querySelector('#m-category').value"), 'WordPress');
+  assert.equal(await run("document.querySelector('#m-group').value"), 'Demo client');
   await run("document.querySelector('[data-qr-id=m-qr][data-qr-action=code]').click()");
   const ready = () => until(() => run("/^\\d{6}$/.test(document.querySelector('#authenticator-code')?.textContent)"));
   await ready();

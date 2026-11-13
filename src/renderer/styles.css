@@ -901,10 +901,10 @@ kbd {
 
 .credential-row {
   display: grid;
-  /* Website | Username | Password | 2FA | Category | Manage (fav/edit/delete only —
+  /* Website | Username | Password | 2FA | Manage (fav/edit/delete only —
      copy/open actions now live inline within their own cell on hover) */
-  grid-template-columns: minmax(180px, 1.7fr) minmax(120px, 1fr) 120px 112px 110px 112px;
-  min-width: 800px;
+  grid-template-columns: minmax(180px, 1.7fr) minmax(120px, 1fr) 120px 112px 112px;
+  min-width: 690px;
   align-items: center;
 }
 
@@ -1420,13 +1420,6 @@ mark.search-highlight {
   color: var(--muted);
 }
 
-.cell-category {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-}
-
 .group-badge {
   background: var(--accent-soft, var(--panel-muted));
   color: var(--accent-strong, var(--accent));
@@ -1435,6 +1428,12 @@ mark.search-highlight {
   padding: 1px 7px;
   border-radius: 999px;
   line-height: 1.4;
+}
+
+.cell-website .group-badge {
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 4px;
 }
 
 /* ─── Contextual row actions ─────────────────────────────────────────────────
