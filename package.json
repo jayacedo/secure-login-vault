@@ -1,6 +1,6 @@
 {
   "name": "secure-login-vault",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Offline-first Windows desktop credential vault built with Electron.",
   "main": "src/main.js",
   "author": "Secure Login Vault",

@@ -505,8 +505,8 @@ function renderCredentialRow(credential, query = "") {
 
       <span role="cell" class="cell-website">
         <span class="cell-main">
-          <strong>${hl(credential.websiteName)}</strong>
-          <small>${hl(credential.websiteUrl || "No URL")}</small>
+          <strong title="${escapeHtml(credential.websiteName)}">${hl(credential.websiteName)}</strong>
+          <small title="${escapeHtml(credential.websiteUrl || "No URL")}">${hl(credential.websiteUrl || "No URL")}</small>
           ${tags ? `<span class="tag-row">${tags}</span>` : ""}
         </span>
         ${credential.websiteUrl ? `

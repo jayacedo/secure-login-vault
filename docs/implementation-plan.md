@@ -287,6 +287,12 @@ existing editor action. Authenticator tests cover search, favorites, QR changes,
 missing entries, group isolation, cancellation, focus return and table layouts.
 Extension 0.6.1 is unchanged.
 
+Desktop 1.0.21 aligns Copy URL and Open Website actions in fixed slots within the
+website cell. The lane is capped at 360 pixels and shrinks with the column; long
+names and URLs use ellipsis and expose their full text on hover. Hover and keyboard
+focus retain the existing actions without shifting their horizontal positions.
+No credential data or browser behavior changes. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

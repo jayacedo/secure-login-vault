@@ -1460,6 +1460,21 @@ mark.search-highlight {
   overflow: hidden;
 }
 
+/* Keep website actions in the same two slots for short and long labels.
+   Cap the content lane on wide tables; shrink it with the website column. */
+.cell-website {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 62px;
+  width: 100%;
+  max-width: 360px;
+  padding-right: 12px;
+}
+
+.cell-website .cell-actions {
+  transform: none;
+  transition: opacity 0.12s ease;
+}
+
 .cell-main strong,
 .cell-main small,
 .cell-main > span:not(.tag-row):not(.tag-pill) {
