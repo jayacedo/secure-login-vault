@@ -243,6 +243,14 @@ interrupted replacement. Temporary key and database buffers are cleared on exit.
 covers all desktop request channels, late reads/dialogs, staged exports and a second
 process. Extension 0.6.0 and the local-only product scope remain unchanged.
 
+Desktop 1.0.17 bundles extension 0.6.1, which replaces the inline “SLV” text with
+the existing vault symbol as a compact teal SVG icon. It adds a hover highlight
+and “Fill with Secure Login Vault” tooltip while preserving the accessible name,
+focus outline, trusted-click guard and account chooser. No new permissions or
+network resources are needed. Inline UI checks cover mouse filling, keyboard
+activation and Escape focus return. Firefox 0.6.1 requires a newly signed XPI;
+existing 0.6.0 remains compatible with the desktop.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

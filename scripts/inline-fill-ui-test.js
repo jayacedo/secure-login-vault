@@ -12,7 +12,7 @@ let win, server;
 async function main() {
   await app.whenReady();
   server = http.createServer((_req, res) => {
-    res.setHeader("Content-Type", "text/html");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.end(`<!doctype html><style>body{font:18px system-ui;padding:40px;background:#eef3f7}main{display:flex;gap:100px}form{display:grid;gap:14px;width:260px}input,button{font:inherit;padding:10px}label{display:grid}</style><h1>SLV inline fill — dummy page</h1><main><form id="first"><h2>Another login</h2><input name="username"><input type="password" name="password"></form><form id="chosen"><h2>Client login</h2><label>Username<input name="username" autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password"></label><button>Log in</button></form></main><form id="signup"><input autocomplete="new-password" type="password"></form>`);
   });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
@@ -46,6 +46,9 @@ async function main() {
   }
   await until("fixture.calls.some(x=>x.type==='inline-ready')");
   await click('#chosen input[type=password]'); await until("fixture.shadow?.querySelector('.slv-button')");
+  assert.equal(await run("fixture.shadow.querySelector('.slv-button').getAttribute('aria-label')"), "Fill with Secure Login Vault");
+  assert.equal(await run("fixture.shadow.querySelector('.slv-button').title"), "Fill with Secure Login Vault");
+  fs.writeFileSync(path.join(root,"inline-logo.png"),(await win.webContents.capturePage()).toPNG());
   assert.equal(await run("fixture.calls.some(x=>x.type==='inline-list')"),false);
   await run("fixture.shadow.querySelector('.slv-button').click()");
   assert.equal(await run("fixture.calls.some(x=>x.type==='inline-list')"),false,"synthetic open ignored");
@@ -61,6 +64,14 @@ async function main() {
   assert.equal(await run("globalThis.slvInlineContext"),null);
   console.log("PASS trusted clicks only, safe labels, selected form only, no automatic submit and no password in chooser");
   await click('.close',true);
+  await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r", unmodifiedText: "\r" });
+  await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await until("fixture.shadow.querySelector('.account')");
+  await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  assert.equal(await run("fixture.shadow.querySelector('section')"), null);
+  assert.equal(await run("document.activeElement === document.querySelector('#chosen input[type=password]')"), true);
+  console.log("PASS accessible icon label, keyboard open and Escape focus return");
   await run("document.querySelector('#chosen input[type=password]').value='';fixture.delay=400");
   await click('.slv-button',true); await click('.account',true);
   await run("history.replaceState({},'', '/changed')"); await sleep(500);

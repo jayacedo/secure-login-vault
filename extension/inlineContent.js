@@ -69,14 +69,30 @@
       :host { color-scheme:dark; } * { box-sizing:border-box; }
       button { font:600 13px/1.4 system-ui,sans-serif; cursor:pointer; border:1px solid #526575; border-radius:7px; background:#17222e; color:#edf5fa; padding:8px; }
       button:focus-visible { outline:2px solid #63e6bf; outline-offset:2px; } button:disabled { opacity:.6; cursor:wait; }
-      .slv-button { position:fixed; height:28px; padding:3px 6px; font-size:11px; color:#6ee7c1; border-color:#3c9279; }
+      .slv-button { position:fixed; display:flex; align-items:center; justify-content:center; width:28px; height:28px; padding:3px; color:#34d399; border-color:#3c9279; background:#141c24; }
+      .slv-button:hover { background:#203c3e; border-color:#63e6bf; color:#63e6bf; }
+      .slv-button svg { display:block; width:20px; height:20px; pointer-events:none; }
       section { position:fixed; padding:14px; max-height:calc(100vh - 24px); overflow:auto; border:1px solid #3c9279; border-radius:10px; background:#141c24; box-shadow:0 8px 24px #0006; color:#edf5fa; font:13px/1.5 system-ui,sans-serif; }
       header { display:flex; align-items:center; justify-content:space-between; gap:8px; } h2 { margin:0; font-size:14px; }
       p { color:#b5c4d0; overflow-wrap:anywhere; margin:8px 0; } .account { display:block; width:100%; text-align:left; margin-top:8px; overflow-wrap:anywhere; }
       .account span { display:block; font-weight:400; color:#b5c4d0; } .close { padding:2px 7px; }
     `;
     const button = document.createElement("button"); button.type = "button"; button.className = "slv-button";
-    button.textContent = "SLV"; button.setAttribute("aria-label", "Choose a login from Secure Login Vault");
+    button.title = "Fill with Secure Login Vault"; button.setAttribute("aria-label", button.title);
+    // Draw the existing vault mark locally: crisp at small sizes, with no image
+    // requests or additional web-accessible extension resources.
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("aria-hidden", "true"); icon.setAttribute("focusable", "false");
+    for (const [tag, attributes] of [
+      ["path", { d: "M12 2v2M12 20v2M2 12h2M20 12h2", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" }],
+      ["circle", { cx: "12", cy: "12", r: "8", fill: "none", stroke: "currentColor", "stroke-width": "2" }],
+      ["circle", { cx: "12", cy: "12", r: "3", fill: "currentColor" }]
+    ]) {
+      const part = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [name, value] of Object.entries(attributes)) part.setAttribute(name, value);
+      icon.append(part);
+    }
+    button.append(icon);
     button.setAttribute("aria-expanded", "false");
     button.addEventListener("click", event => {
       if (!event.isTrusted || !enabled) return;

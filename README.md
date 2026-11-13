@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.16**, extension **0.6.0**. This desktop update hardens local requests, locking, concurrent vault operations and backup restoration. The extension is unchanged; an already installed signed Firefox 0.6.0 needs no update.
+**Current source versions:** desktop **1.0.17**, extension **0.6.1**. The inline Fill button now uses the SLV logo instead of text, with a hover highlight, a “Fill with Secure Login Vault” tooltip and keyboard support. Desktop Setup bundles the updated extension. Reload Chrome/Edge and refresh login pages; Firefox needs the newly signed 0.6.1 XPI to show the new icon. Existing 0.6.0 extensions remain compatible.
 
 Settings now uses six sections: **General**, **Security**, **Browsers**, **Organization**,
 **Backup & Data**, and **About**. Browser pairings appear together under **Browsers**;
@@ -112,8 +112,8 @@ Use a build produced from this source, or build it using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.16.exe` | Installed desktop app, with browser-extension setup support |
-| `Secure Login Vault 1.0.16.exe` | Portable desktop app; browser-helper setup is unavailable |
+| `Secure Login Vault Setup 1.0.17.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.17.exe` | Portable desktop app; browser-helper setup is unavailable |
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -134,12 +134,12 @@ The Setup installer bundles Chrome/Edge and Firefox extensions plus the native h
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
-After an extension update, reload it on the browser's extensions page. Desktop 1.0.16 uses extension 0.6.0 for inline suggestions; incompatible versions do not fall back to plaintext communication. Local hardening needs only the desktop update.
+After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.17 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
 
 ### Fill, save and update
 
 - **Fill:** open the extension on a login page, select a matching saved login and click **Fill**. SLV fills the fields without submitting the form. Manually added vault entries work too when their saved website address matches the page's origin.
-- **Inline fill (optional):** enable **Inline fill suggestions** in the popup, approve website access, and reload open login pages. Focus a username or password field, click the small **SLV** button, then choose an account. It uses the same matching and desktop approval settings as popup Fill and never submits the form. No vault lookup happens until you click SLV. This first version supports ordinary top-level forms; embedded, shadow-DOM and form-less logins may need popup Fill or manual entry.
+- **Inline fill (optional):** enable **Inline fill suggestions** in the popup, approve website access, and reload open login pages. Focus a username or password field, click the small **SLV logo** button, then choose an account. It uses the same matching and desktop approval settings as popup Fill and never submits the form. No vault lookup happens until you click the logo. This first version supports ordinary top-level forms; embedded, shadow-DOM and form-less logins may need popup Fill or manual entry.
 - **Manual save:** type the login details on the page, open the extension and click **Save this login**. Confirm Add or Update in SLV.
 - **Automatic offers:** enable **Automatic save offers** in the extension popup, approve optional website access, and reload open login pages. Ordinary form submissions can trigger a Save or Update card. Unchanged saved logins stay quiet.
 - **Dismissal:** use **Not now** or **Never for this site**. The extension settings let you allow offers on that site again.
@@ -218,7 +218,7 @@ npm.cmd run test:packaged-firefox
 The build creates the Setup installer and portable executable in `release/`. The packaged-browser test extracts the actual installer's files and checks its helper with dummy credentials and simulated registry writes; it does not run the installer wizard.
 
 For only the Setup installer, use `npm.cmd run dist -- --win nsis --publish never`.
-Firefox packaging also creates `dist/secure-login-vault-firefox-0.6.0.zip` for Mozilla signing.
+Firefox packaging also creates `dist/secure-login-vault-firefox-0.6.1.zip` for Mozilla signing.
 
 After editing the shared transport implementation, regenerate its browser copy before checking or building:
 

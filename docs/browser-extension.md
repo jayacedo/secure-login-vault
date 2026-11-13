@@ -115,12 +115,12 @@ confirmation text. Save always needs desktop confirmation. Closing, declining, t
 out, or losing the connection cancels a pending confirmation. A locked vault refuses
 saves. A conflicting password change during confirmation requires retrying.
 
-## Inline fill suggestions (extension 0.6.0, optional)
+## Inline fill suggestions (extension 0.6.0+, logo button in 0.6.1, optional)
 
 1. Open the extension popup and expand **Inline fill suggestions**.
 2. Enable it and approve optional website access. It shares the existing HTTPS/localhost permission with save offers; each feature has its own toggle.
 3. Reload any login pages already open, then focus a username or password field.
-4. Click **SLV** beside the field and choose a matching account. Confirm in the desktop app if **Ask Before Filling** is on. Nothing is submitted.
+4. Click the **SLV logo** beside the field (text ?SLV? in 0.6.0) and choose a matching account. Confirm in the desktop app if **Ask Before Filling** is on. Nothing is submitted.
 
 No account lookup runs on page load or field focus. Account names and usernames appear only after a click; passwords are never returned through chooser messages. A choice expires after 60 seconds and is bound to the active tab, full page URL, document and selected form. Navigation, dismissal, a replaced form, disabled access or a locked vault prevents filling. The selected form alone is filled.
 
