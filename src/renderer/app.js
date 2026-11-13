@@ -411,10 +411,12 @@ function renderDashboard(state) {
           <h2 id="credential-list-title">Credentials</h2>
           <div class="health-dashboard-actions">
             <span id="credential-count-label">${dashboardData.credentials.length} items</span>
-            <button class="icon-text-button" type="button" id="check-vault-health-btn">${renderShieldIcon()}<span>Check vault health</span></button>
-            <button class="icon-text-button" type="button" id="recently-deleted-btn">${renderTrashIcon()}<span>Recently Deleted</span></button>
-            <button class="icon-text-button" type="button" id="review-duplicates-btn">Review duplicates</button>
-            <button class="icon-text-button" type="button" id="activity-history-btn">Activity History</button>
+            <div class="credential-tool-buttons" role="group" aria-label="Credential tools">
+              <button class="icon-text-button dashboard-icon-button" type="button" id="check-vault-health-btn" aria-label="Check vault health">${renderShieldIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Check vault health</span></button>
+              <button class="icon-text-button dashboard-icon-button" type="button" id="recently-deleted-btn" aria-label="Recently deleted">${renderTrashIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Recently deleted</span></button>
+              <button class="icon-text-button dashboard-icon-button" type="button" id="review-duplicates-btn" aria-label="Review duplicates">${renderCopyIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Review duplicates</span></button>
+              <button class="icon-text-button dashboard-icon-button" type="button" id="activity-history-btn" aria-label="Activity history">${renderHistoryIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Activity history</span></button>
+            </div>
           </div>
         </div>
         <div class="credential-table" role="table" aria-label="Credential list">
@@ -6299,6 +6301,14 @@ function renderDiceIcon() {
       <circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none"></circle>
       <circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none"></circle>
       <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"></circle>
+    </svg>
+  `;
+}
+
+function renderHistoryIcon() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 11a9 9 0 1 1 2.7 7.4M3 4v7h7M12 7v5l3 2"></path>
     </svg>
   `;
 }

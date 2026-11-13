@@ -313,7 +313,11 @@ Pending the next desktop package: Help, Settings, Add Credential and Lock use
 consistent 44-pixel icon-only buttons. Tooltips appear on hover and focus, and
 accessible labels preserve their names. Add Credential keeps its accent background;
 Settings uses a gear symbol. The compact header retains horizontal actions on narrow
-windows. This source update is verified in development; installer packaging and
+windows. Vault Health, Recently Deleted, Review Duplicates and Activity History
+also use labeled icon-only controls. All eight actions share a subtle raised,
+tilted hover/focus effect and a pressed state; reduced-motion settings disable
+the movement. Credential tools stay grouped as the header wraps on narrow windows.
+This source update is verified in development; installer packaging and
 the version bump are deferred until the next batch of changes is ready.
 
 The browser companion uses an independent phase sequence. Connection, pairing,
