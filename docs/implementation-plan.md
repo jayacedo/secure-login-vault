@@ -293,6 +293,15 @@ names and URLs use ellipsis and expose their full text on hover. Hover and keybo
 focus retain the existing actions without shifting their horizontal positions.
 No credential data or browser behavior changes. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.22 adds Generate 2FA directly to Client Vault cards with saved QR images.
+The action opens the existing code view without opening Edit, and closing returns
+focus to the button. Client list/search queries expose QR presence only; the
+guarded main-process action loads the chosen client image on demand. The existing
+session/cancellation and clipboard protections also apply to this entry point.
+Client search, Favorites and QR replacement/removal retain the correct action.
+Authenticator UI checks cover card routing, metadata, missing/deleted clients,
+locked access, copy/focus and narrow layouts. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

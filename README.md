@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.21**, extension **0.6.1**. Website Copy link and Open website icons now stay aligned between credential rows, with a capped text area and ellipsis for long names/URLs. The dedicated **2FA** column beside Password opens authenticator codes directly. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.22**, extension **0.6.1**. Client Vault cards with a saved QR now offer **Generate 2FA**, opening authenticator codes directly without Edit. Credentials keep the dedicated **2FA** column beside Password. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 Settings now uses six sections: **General**, **Security**, **Browsers**, **Organization**,
 **Backup & Data**, and **About**. Browser pairings appear together under **Browsers**;
@@ -42,7 +42,7 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 ### Authenticator codes from a setup QR
 
 1. Edit a Credential or Client Vault entry and upload a clear image of its **authenticator setup QR** in **2FA QR Code**. Crop a sheet or screenshot to one QR first.
-2. Save the entry to retain its QR. On the credential dashboard, choose **Generate** in its **2FA** column beside Password. Entries without a saved QR show **—**. In Client Vault, open the entry and choose **Generate code** beside the thumbnail.
+2. Save the entry to retain its QR. On the credential dashboard, choose **Generate** in its **2FA** column beside Password. Entries without a saved QR show **—**. In Client Vault, choose **Generate 2FA** on the client card; cards without a saved QR omit this action. Both editors also retain **Generate code** beside the thumbnail.
 3. Use **Copy code** and paste it into the website's verification field. The view updates with a countdown; Copy generates the current code even at rollover. Check the first code against your existing authenticator before relying on it.
 
 - This works offline with standard `otpauth://totp` setup QR images: SHA1/SHA256/SHA512, 6 or 8 digits and 15–120 second periods. Ordinary sign-in/approval links, HOTP, Steam codes and authenticator migration QR codes are unsupported. An unreadable sheet is rejected; always crop to one setup QR.
@@ -50,7 +50,7 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 - The QR image remains inside the encrypted vault and encrypted backups. **JSON credential exports include QR images and therefore their setup secrets; CSV exports omit them.** A setup QR can recreate the authenticator, so protect it like a password. Keeping password and authenticator together means vault access exposes both; a separate phone authenticator provides more separation.
 - QR decoding runs in a worker with image, memory and time limits. The decoded key stays in main-process session memory, is cleared on close/lock/reload, and expires after five minutes. JavaScript/runtime memory cannot be guaranteed erased. No separate seed field or generated-code history is saved.
 - The desktop view receives the current code and account label. The browser extension receives neither the setup key nor codes. Copy clears SLV's clipboard text at code expiry or after 30 seconds, preserving unrelated clipboard text. Closing the view leaves the copied code available until that timeout; locking clears it immediately.
-- The dashboard only receives a saved-QR presence flag. Generate loads the selected entry's QR in the main process, respecting the current group and unlocked session. Upload, replace and remove remain in Edit. A saved QR indicates availability, not that it has been validated as a supported authenticator setup; Generate reports unsupported images.
+- Credential rows and Client Vault cards receive only a saved-QR presence flag. Generate loads the selected entry's QR in the main process, respecting the unlocked session and, for credentials, the current group. Upload, replace and remove remain in Edit. A saved QR indicates availability, not that it has been validated as a supported authenticator setup; Generate reports unsupported images.
 
 Validation: `npm run test:authenticator` (RFC 6238 vectors, QR validation, session and clipboard checks) and `npm run test:authenticator-app` (desktop workflow and lock checks).
 
@@ -139,8 +139,8 @@ Use a build produced from this source, or build it using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.21.exe` | Installed desktop app, with browser-extension setup support |
-| `Secure Login Vault 1.0.21.exe` | Portable desktop app; browser-helper setup is unavailable |
+| `Secure Login Vault Setup 1.0.22.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.22.exe` | Portable desktop app; browser-helper setup is unavailable |
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -161,7 +161,7 @@ The Setup installer bundles Chrome/Edge and Firefox extensions plus the native h
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
-After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.21 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
+After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.22 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
 
 ### Fill, save and update
 

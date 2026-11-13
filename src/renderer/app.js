@@ -2124,6 +2124,13 @@ function setupClientVaultInteractions() {
     grid.addEventListener("click", async (e) => {
       if (e.target.closest('[data-action="quick-link"]')) return; // let the anchor navigate
 
+      const codeBtn = e.target.closest('[data-action="client-generate-code"]');
+      if (codeBtn) {
+        e.stopPropagation();
+        openAuthenticator(Number(codeBtn.dataset.id), codeBtn, "client");
+        return;
+      }
+
       const signInBtn = e.target.closest('[data-action="client-sign-in"]');
       if (signInBtn) {
         e.stopPropagation(); // don't open the client's edit modal
@@ -2271,6 +2278,11 @@ function renderClientCard(client, query = "") {
             .join("")}
         </div>
       ` : ""}
+      ${client.hasQrCode ? `<div class="client-authenticator-action">
+        <button class="two-factor-button" type="button" data-action="client-generate-code"
+          data-id="${client.id}" title="Generate authenticator code"
+          aria-label="Generate 2FA code for ${escapeHtml(client.name)}">${renderQrIcon()}<span>Generate 2FA</span></button>
+      </div>` : ""}
       ${signIns.length ? `
         <div class="signin-links" aria-label="Sign in">
           ${signIns

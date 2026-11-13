@@ -274,6 +274,14 @@ function registerAuthHandlers() {
       });
     }],
     ["vault:authenticator-read", token => authenticator.read(token)],
+    ["vault:authenticator-client", id => {
+      if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Choose a saved client.");
+      return authenticator.start(async () => {
+        const client = await vaultStore.getClient(id);
+        if (!client.qrCode) throw createPublicError("This client has no saved QR. Add one in Edit first.");
+        return client.qrCode;
+      });
+    }],
     ["vault:authenticator-copy", token => authenticator.copy(token)],
     ["vault:authenticator-stop", token => authenticator.stop(token)],
     ["vault:duplicates-list", () => vaultStore.getDuplicateReview()],

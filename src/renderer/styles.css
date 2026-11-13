@@ -3045,6 +3045,8 @@ small.group-badge {
   box-shadow: 0 6px 20px rgba(23, 32, 47, 0.08);
 }
 
+.client-authenticator-action { display: flex; align-items: center; }
+
 .client-card.is-favorite {
   border-left: 3px solid var(--warning);
 }

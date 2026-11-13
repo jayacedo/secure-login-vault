@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   authenticator: {
     start: image => ipcRenderer.invoke("vault:authenticator-start", image),
     startCredential: id => ipcRenderer.invoke("vault:authenticator-credential", id),
+    startClient: id => ipcRenderer.invoke("vault:authenticator-client", id),
     read: token => ipcRenderer.invoke("vault:authenticator-read", token),
     copy: token => ipcRenderer.invoke("vault:authenticator-copy", token),
     stop: token => ipcRenderer.invoke("vault:authenticator-stop", token)

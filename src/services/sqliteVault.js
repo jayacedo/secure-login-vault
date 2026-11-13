@@ -532,6 +532,7 @@ function normalizeClient(row) {
     sslExpiry: row.ssl_expiry || "",
     notes: row.notes || "",
     qrCode: row.qr_code || "",
+    hasQrCode: row.has_qr_code === 1 || Boolean(row.qr_code),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -547,7 +548,8 @@ async function getClients(filePath, key) {
   return withDecryptedDatabase(filePath, key, (db) => {
     return queryAll(
       db,
-      `SELECT ${CLIENT_COLUMNS} FROM clients ORDER BY favorite DESC, updated_at DESC, name COLLATE NOCASE`
+      `SELECT ${CLIENT_COLUMNS}, CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code
+       FROM clients ORDER BY favorite DESC, updated_at DESC, name COLLATE NOCASE`
     ).map(normalizeClient);
   });
 }
@@ -555,8 +557,8 @@ async function getClients(filePath, key) {
 async function getClientById(filePath, key, id) {
   return withDecryptedDatabase(filePath, key, (db) => {
     // Includes qr_code, unlike the list/search queries above/below — the QR
-    // image is only needed when opening a single client for editing, not
-    // when pulling every client into the grid.
+    // image is only needed for editing or an explicit Generate 2FA request,
+    // not when pulling every client into the grid.
     const row = queryOne(db, `SELECT ${CLIENT_COLUMNS}, qr_code FROM clients WHERE id = ?`, [id]);
     if (!row || !row.id) throw createPublicError("Client not found.");
     return normalizeClient(row);
@@ -622,7 +624,7 @@ async function searchClients(filePath, key, { query = "", onlyFavorites = false 
     const term = `%${query.trim()}%`;
     const hasQuery = query.trim().length > 0;
 
-    let sql = `SELECT ${CLIENT_COLUMNS} FROM clients WHERE 1=1`;
+    let sql = `SELECT ${CLIENT_COLUMNS}, CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code FROM clients WHERE 1=1`;
     const params = [];
 
     if (hasQuery) {

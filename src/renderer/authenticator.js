@@ -8,7 +8,7 @@ function closeAuthenticator() {
   if (authenticatorReturnFocus?.isConnected) authenticatorReturnFocus.focus();
   authenticatorReturnFocus = null;
 }
-async function openAuthenticator(image, trigger) {
+async function openAuthenticator(image, trigger, entryKind = "credential") {
   closeAuthenticator(); const request = ++authenticatorRequest; authenticatorReturnFocus = trigger || document.activeElement;
   let overlay = document.querySelector("#authenticator-overlay");
   if (!overlay) {
@@ -68,7 +68,9 @@ async function openAuthenticator(image, trigger) {
   find("#authenticator-close").focus();
   try {
     const response = typeof image === "number"
-      ? await window.secureLoginVault.authenticator.startCredential(image)
+      ? await (entryKind === "client"
+        ? window.secureLoginVault.authenticator.startClient(image)
+        : window.secureLoginVault.authenticator.startCredential(image))
       : await window.secureLoginVault.authenticator.start(image);
     if (request !== authenticatorRequest) { if (response.ok) window.secureLoginVault.authenticator.stop(response.result.token).catch(() => {}); return; }
     if (!response.ok) return failed(response.message || "Could not read this authenticator QR.");
