@@ -684,6 +684,59 @@ dd {
   align-items: center;
 }
 
+.dashboard-actions.dashboard-icon-actions {
+  flex-direction: row;
+  align-items: center;
+}
+
+button.dashboard-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  overflow: visible;
+}
+
+.dashboard-icon-button .dashboard-action-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: .78rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dashboard-icon-button:hover .dashboard-action-tooltip,
+.dashboard-icon-button:focus .dashboard-action-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+@media (min-width: 1181px) {
+  .sidebar-lock .dashboard-action-tooltip {
+    top: auto;
+    bottom: calc(100% + 8px);
+    right: auto;
+    left: 0;
+  }
+}
+
 .icon-text-button {
   min-height: 42px;
   padding: 0 14px;

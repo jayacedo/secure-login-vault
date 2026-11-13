@@ -360,9 +360,9 @@ function renderDashboard(state) {
 
       <div class="sidebar-session">
         <span>Unlocked ${formatDateTime(state.unlockedAt)}</span>
-        <button class="secondary-button sidebar-lock" type="button" id="lock-vault-button">
+        <button class="secondary-button sidebar-lock dashboard-icon-button" type="button" id="lock-vault-button" aria-label="Lock vault">
           ${renderLockIcon()}
-          <span>Lock</span>
+          <span class="dashboard-action-tooltip" aria-hidden="true">Lock vault</span>
         </button>
       </div>
     </aside>
@@ -373,18 +373,18 @@ function renderDashboard(state) {
           <p class="eyebrow">Credential workspace</p>
           <h1 id="dashboard-title">Vault</h1>
         </div>
-        <div class="dashboard-actions">
-          <button class="icon-text-button" type="button" id="open-help-btn" aria-label="Help &amp; FAQ">
+        <div class="dashboard-actions dashboard-icon-actions">
+          <button class="icon-text-button dashboard-icon-button" type="button" id="open-help-btn" aria-label="Help &amp; FAQ">
             ${renderHelpIcon()}
-            <span>Help</span>
+            <span class="dashboard-action-tooltip" aria-hidden="true">Help &amp; FAQ</span>
           </button>
-          <button class="icon-text-button" type="button" id="open-settings-btn" aria-label="Settings">
+          <button class="icon-text-button dashboard-icon-button" type="button" id="open-settings-btn" aria-label="Settings">
             ${renderSettingsIcon()}
-            <span>Settings</span>
+            <span class="dashboard-action-tooltip" aria-hidden="true">Settings</span>
           </button>
-          <button class="primary-button add-button" type="button" id="add-credential-btn">
+          <button class="primary-button add-button dashboard-icon-button" type="button" id="add-credential-btn" aria-label="Add credential">
             ${renderPlusIcon()}
-            <span>Add Credential</span>
+            <span class="dashboard-action-tooltip" aria-hidden="true">Add credential</span>
           </button>
         </div>
       </header>
@@ -2037,9 +2037,9 @@ async function renderClientVault(state) {
 
       <div class="sidebar-session">
         <span>Unlocked ${formatDateTime(state.unlockedAt)}</span>
-        <button class="secondary-button sidebar-lock" type="button" id="lock-vault-button">
+        <button class="secondary-button sidebar-lock dashboard-icon-button" type="button" id="lock-vault-button" aria-label="Lock vault">
           ${renderLockIcon()}
-          <span>Lock</span>
+          <span class="dashboard-action-tooltip" aria-hidden="true">Lock vault</span>
         </button>
       </div>
     </aside>
@@ -5962,14 +5962,7 @@ function renderSettingsIcon() {
   return `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="3"></circle>
-      <path d="M12 2v3"></path>
-      <path d="M12 19v3"></path>
-      <path d="m4.9 4.9 2.1 2.1"></path>
-      <path d="m17 17 2.1 2.1"></path>
-      <path d="M2 12h3"></path>
-      <path d="M19 12h3"></path>
-      <path d="m4.9 19.1 2.1-2.1"></path>
-      <path d="m17 7 2.1-2.1"></path>
+      <path d="m9 3 .7-1h4.6l.7 3 2 .8 2.6-.9 2.3 4-1.9 2.1v2l1.9 2.1-2.3 4-2.6-.9-2 .8-.7 3H9.7L9 19l-2-.8-2.6.9-2.3-4L4 13v-2L2.1 8.9l2.3-4 2.6.9L9 5V3Z"></path>
     </svg>
   `;
 }
