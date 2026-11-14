@@ -545,6 +545,13 @@ save/fill behavior changes.
 The 1.0.48 Setup installer and unsigned Firefox 0.6.3 ZIP/source archives are built.
 Bundled Chrome/Firefox popup CSS matches source and both manifests report 0.6.3.
 
+Desktop 1.0.49 bundles extension 0.6.4. The popup returns to a standard edge-to-edge
+surface: no outer padding, contrasting backdrop, inset card border or decorative
+shadow. Rounded buttons, inputs and status cards remain. Existing popup and
+synthetic UI checks pass; no real account data is accessed.
+The 1.0.49 Setup and unsigned Firefox 0.6.4 ZIP/source archives are built; bundled
+Chrome/Firefox styling matches source and the reviewer source rebuild passes.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

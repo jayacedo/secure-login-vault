@@ -1,7 +1,5 @@
 :root {
   --bg: #ffffff;
-  --popup-backdrop: #edf1f5;
-  --popup-shadow: 0 4px 12px -4px #17202a33, 0 1px 3px #17202a14;
   --text: #17202a;
   --muted: #5d6b79;
   --line: #d9e0e7;
@@ -16,8 +14,6 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #141c24;
-    --popup-backdrop: #0d131a;
-    --popup-shadow: 0 4px 12px -4px #0009, 0 1px 3px #0005;
     --text: #e8edf2;
     --muted: #9aa8b6;
     --line: #2a3643;
@@ -35,15 +31,13 @@
 }
 
 html {
-  background: var(--popup-backdrop);
-  border-radius: 22px;
+  background: var(--bg);
 }
 
 body {
-  width: 336px;
+  width: 320px;
   margin: 0;
-  padding: 8px;
-  background: transparent;
+  background: var(--bg);
   color: var(--text);
   font: 14px/1.5 system-ui, "Segoe UI", sans-serif;
 }
@@ -51,15 +45,12 @@ body {
 main {
   display: grid;
   gap: 14px;
-  padding: 15px;
+  padding: 16px;
   max-height: 580px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
   background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--popup-shadow);
 }
 
 header {

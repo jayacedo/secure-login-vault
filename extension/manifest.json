@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Secure Login Vault",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Connects your browser to the Secure Login Vault desktop app.",
   "minimum_chrome_version": "110",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9AFtk1mU/BnaQ462OSTuYlpE4gO6lPNY/SprMQfswpguH1jUVEyTgHaL40kw8LwojOa/nPh0Pfn/hvPi+j3OhuWBEBh7mES1ho20m2jFxVghV1xf51k6JV3fqCvzOBTjj2DhxKeIDIt0wTLPVEdeBetq//7hoAUFn9TKJ7bOULburfghESVWzxBZmsOVk9lMtrYTPG1OQhgZ+cmrzFJZL9xL9Ph5VmKRSxTc3hjUNER6C6LqfeyQHNvn2dWCMj1gBcMKg6r1EPFtz8NkCWYX3nnOWEt885DSWKcPb7fMGlZzo7SYnT0O3H5a7NBpJ3JjGBthIW5Qi5WQTuWx5ivTJwIDAQAB",

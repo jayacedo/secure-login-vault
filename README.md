@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.48**, extension **0.6.3**. The extension popup has rounded corners, softer controls and a subtle floating-card shadow in light and dark modes. Long content scrolls inside the card. Reload Chrome/Edge's unpacked extension. Firefox needs the new Mozilla-signed 0.6.3 XPI; updating the desktop alone does not update an installed Firefox add-on.
+**Current source versions:** desktop **1.0.49**, extension **0.6.4**. The extension uses a standard edge-to-edge popup with rounded controls inside. The inset card, contrasting backing and decorative outer shadow have been removed. Reload Chrome/Edge's unpacked extension. Firefox needs the new Mozilla-signed 0.6.4 XPI; updating the desktop alone does not update an installed Firefox add-on.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
