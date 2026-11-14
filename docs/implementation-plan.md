@@ -442,6 +442,17 @@ The 1.0.39 Setup installer is built. Packaged Undo UI, Chromium/Firefox helper,
 existing app integration and all 90 desktop request-boundary checks pass using
 synthetic accounts only.
 
+Desktop 1.0.40 adds clickable Website/Username headers and a six-option sort
+menu, including newest-created and newest-updated order. The device remembers
+only the sort preference; invalid saved values fall back to Recently updated.
+Sorting moves existing row nodes, preserving selected/hidden rows and Find
+logins, and reapplies after list refreshes. Accessible headers expose direction.
+Synthetic Electron tests cover all orders, natural numbers, stable ties, blank
+usernames/email fallback, dashboard filters, selection retention, lock/reload
+persistence and unchanged credential data. No real accounts are used.
+The 1.0.40 Setup installer is built. Packaged sorting, Chromium/Firefox helpers,
+bulk actions/Undo and existing app integration checks pass with synthetic data.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

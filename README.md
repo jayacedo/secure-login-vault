@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.39**, extension **0.6.1**. Desktop 1.0.39 adds Undo for the latest bulk group or category change, with checks against later edits. Selection search and reviewed bulk actions remain available. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.40**, extension **0.6.1**. Desktop 1.0.40 adds remembered credential sorting by Website, Username, Recently added and Recently updated. Sorting preserves bulk selections and selection search. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -53,6 +53,22 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
   the mapping, blank-field defaults, invalid rows and possible duplicates before
   confirmation. Possible duplicates are skipped by default; existing entries are
   unchanged. Add/Edit Credential and CSV exports now call the address "Login URL".
+
+### Sort credentials
+
+Click the **Website** or **Username** column heading to toggle A–Z and Z–A.
+The sort menu beside the item count also offers **Recently added** and
+**Recently updated**, both newest first. Recently updated is the default.
+The chosen order is remembered on this device across locks and restarts.
+
+Sorting applies to the current dashboard results, including search, category,
+group and Favorites filters. Bulk selections and the Find logins search stay
+intact when sorting. Username uses the displayed email fallback when needed;
+blank usernames stay last. Names sort without case distinctions and with natural
+number ordering, such as Site 2 before Site 10. Sorting does not edit credentials,
+timestamps or activity history. Only the sort option is saved as a local preference.
+
+Validation: `npm run test:sort-app`, using a new synthetic vault only.
 
 ### Move selected credentials to a group
 

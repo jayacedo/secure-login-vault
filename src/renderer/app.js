@@ -457,6 +457,7 @@ function renderDashboard(state) {
           <h2 id="credential-list-title">Credentials</h2>
           <div class="health-dashboard-actions">
             <span id="credential-count-label">${dashboardData.credentials.length} items</span>
+            ${renderCredentialSortControl()}
             <div class="credential-tool-buttons" role="group" aria-label="Credential tools">
               <button class="icon-text-button dashboard-icon-button" type="button" id="bulk-select-toggle" aria-label="Select credentials" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="dashboard-action-tooltip" aria-hidden="true">Select credentials</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="check-vault-health-btn" aria-label="Check vault health">${renderShieldIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Check vault health</span></button>
@@ -478,8 +479,8 @@ function renderDashboard(state) {
         <div class="credential-table" role="table" aria-label="Credential list">
           <div class="credential-row credential-row-head" role="row">
             <span role="columnheader" class="bulk-select-cell"><input type="checkbox" id="bulk-select-all" aria-label="Select all shown credentials" title="Select all shown credentials"></span>
-            <span role="columnheader">Website</span>
-            <span role="columnheader">Username</span>
+            <span role="columnheader"><button type="button" class="credential-sort-heading" data-credential-sort="website">Website <span class="sort-indicator" aria-hidden="true">↕</span></button></span>
+            <span role="columnheader"><button type="button" class="credential-sort-heading" data-credential-sort="username">Username <span class="sort-indicator" aria-hidden="true">↕</span></button></span>
             <span role="columnheader">Password</span>
             <span role="columnheader" class="head-2fa">2FA</span>
             <span role="columnheader" class="head-manage">Manage</span>
@@ -506,6 +507,7 @@ function renderDashboard(state) {
   });
   setupDashboardInteractions();
   setupBulkSelection();
+  setupCredentialSorting();
   loadDashboardData();
 }
 
@@ -560,7 +562,7 @@ function renderCredentialRow(credential, query = "") {
 
   return `
     <div class="credential-row credential-row-item ${credential.favorite ? "is-favorite" : ""}"
-         role="row" data-id="${credential.id}">
+         role="row" data-id="${credential.id}" ${renderCredentialSortData(credential)}>
       ${renderBulkSelectionCell(credential)}
 
       <span role="cell" class="cell-website">
@@ -742,6 +744,7 @@ function bindCredentialActions() {
   // Clone to remove old listeners, then re-attach
   const fresh = listBody.cloneNode(true);
   listBody.parentNode.replaceChild(fresh, listBody);
+  applyCredentialSort();
 
   fresh.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-action]");

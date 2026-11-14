@@ -998,6 +998,12 @@ kbd {
   overflow: auto;
 }
 
+.credential-sort { width: 170px; }
+.credential-sort-heading { display: inline-flex; align-items: center; gap: 6px; padding: 8px 0; border: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; cursor: pointer; }
+.credential-sort-heading:hover { color: var(--accent); }
+.credential-sort-heading:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.sort-indicator { color: var(--accent); }
+
 .credential-row {
   display: grid;
   /* Website | Username | Password | 2FA | Manage (fav/edit/delete only —

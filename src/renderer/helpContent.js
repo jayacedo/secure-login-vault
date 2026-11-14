@@ -1,5 +1,9 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Sort Credentials", items: [
+    { q: "How do I sort my logins?", a: "Click Website or Username in the table header to toggle A–Z and Z–A. The menu beside the item count also offers Recently added and Recently updated, newest first. Recently updated is the default. Your preferred order is remembered on this device across locks and restarts." },
+    { q: "Will sorting clear my selection or change my entries?", a: "No. Sorting reorders the current results while preserving selected rows, hidden selections and Find logins. Your dashboard filters still apply. It does not change credentials, timestamps or activity history. Username sorts the displayed email when no username is saved, keeps blanks last, and handles names with numbers naturally." }
+  ] },
   { title: "Select, Find & Organize Credentials", items: [
     { q: "Can I undo a bulk group or category change?", a: "Choose Undo in the notification after applying. It restores only the assignments changed by the latest bulk action. The notification stays until dismissed, replaced by another bulk action or the vault locks. Locking, closing or restarting SLV ends Undo availability. A new successful bulk action replaces it, including one where all selected entries were already assigned. There is no undo stack or redo." },
     { q: "Why was Undo refused?", a: "Undo checks every affected entry before saving. If any was edited or deleted, or an original group/category was renamed or removed, the whole Undo is rejected so later work is preserved. Unrelated edits and dashboard filters do not block it. A failed save can be retried. Undo changes only the original assignments and update time, preserves login details and password history, and records Updated activity events." },
