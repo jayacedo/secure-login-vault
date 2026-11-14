@@ -43,6 +43,7 @@ function initBackToTop() {
   window.addEventListener("scroll", update, { passive: true });
   document.addEventListener("scroll", update, { passive: true, capture: true });
   window.addEventListener("resize", update, { passive: true });
+  new MutationObserver(update).observe(appShell, { childList: true });
   button.addEventListener("click", () => {
     const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth";
     window.scrollTo({ top: 0, behavior });
@@ -98,6 +99,7 @@ document.addEventListener("keydown", (e) => {
     for (const selector of subModalOrder) {
       const el = document.querySelector(selector);
       if (el && el.classList.contains("is-open")) {
+        if (selector === "#help-modal-overlay") { e.preventDefault(); closeHelpModal(); return; }
         if (selector === "#csv-import-overlay" && csvReviewState?.busy) { e.preventDefault(); return; }
         el.classList.remove("is-open");
         if (selector === "#csv-import-overlay") closeCsvImportReview();
@@ -125,12 +127,6 @@ document.addEventListener("keydown", (e) => {
           }
           loadActiveGroupControl();
           refreshCredentials();
-        }
-        // Re-surface settings if the help sub-modal was closed that way
-        if (selector === "#help-modal-overlay" && _helpModalReopenSettings) {
-          _helpModalReopenSettings = false;
-          const settingsOverlay = document.querySelector("#settings-modal-overlay");
-          if (settingsOverlay) settingsOverlay.classList.add("is-open");
         }
         e.preventDefault();
         return;
@@ -6063,8 +6059,10 @@ function getOrCreateHelpOverlay() {
 // Tracks whether Settings was open when Help was launched, so closing Help
 // can restore it — same pattern used by the Manage Categories modal.
 let _helpModalReopenSettings = false;
+let _helpReturnFocus = null;
 
 function openHelpModal() {
+  _helpReturnFocus = document.activeElement;
   const settingsOverlay = document.querySelector("#settings-modal-overlay");
   _helpModalReopenSettings = Boolean(settingsOverlay && settingsOverlay.classList.contains("is-open"));
   // See note in openManageCategoriesModal: deliberately not removing
@@ -6095,7 +6093,7 @@ function openHelpModal() {
     <div class="modal-container settings-modal-container help-modal-container" role="dialog" aria-modal="true" aria-labelledby="help-modal-heading">
       <div class="modal-header">
         <h2 id="help-modal-heading">Help &amp; FAQ</h2>
-        <button class="modal-close-btn" type="button" id="help-close-btn" title="Close">
+        <button class="modal-close-btn" type="button" id="help-close-btn" aria-label="Close Help" title="Close">
           ${renderCloseIcon()}
         </button>
       </div>
@@ -6121,6 +6119,14 @@ function openHelpModal() {
 
   overlay.querySelector("#help-close-btn").addEventListener("click", closeHelpModal);
   overlay.querySelector("#help-done-btn").addEventListener("click", closeHelpModal);
+  overlay.onkeydown = event => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeHelpModal(); }
+    if (event.key === "Tab") {
+      const controls = [...overlay.querySelectorAll("button, input")].filter(control => !control.disabled && control.getClientRects().length);
+      if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus(); }
+      else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
+    }
+  };
 
   // ── Accordion toggle ──────────────────────────────────────────────────────
   overlay.querySelectorAll(".faq-question").forEach((btn) => {
@@ -6134,6 +6140,7 @@ function openHelpModal() {
 
   // ── Live search/filter ────────────────────────────────────────────────────
   const searchInput = overlay.querySelector("#faq-search-input");
+  searchInput.focus();
   const emptyState = overlay.querySelector("#faq-empty-state");
   searchInput.addEventListener("input", () => {
     const query = searchInput.value.trim().toLowerCase();
@@ -6174,6 +6181,8 @@ function closeHelpModal() {
     const settingsOverlay = document.querySelector("#settings-modal-overlay");
     if (settingsOverlay) settingsOverlay.classList.add("is-open");
   }
+  if (_helpReturnFocus?.isConnected) _helpReturnFocus.focus({preventScroll:true});
+  _helpReturnFocus = null;
 }
 
 // ─── About Modal ─────────────────────────────────────────────────────────────

@@ -513,6 +513,18 @@ Back to top, search/sort/details and client/lock transitions. Existing Favorites
 quick-filter and Show selected tests and packaged Chromium/Firefox helper checks
 pass. Tests verify credential data remains unchanged by layout interactions.
 
+Desktop 1.0.46 completes a synthetic stability pass. Help now focuses its search,
+keeps Tab inside the dialog and returns focus to its launcher on close/Escape,
+including when opened from Settings. Back to top recalculates on workspace
+replacement. Help instructions now name Actions and include Favorites Undo.
+The pairing test accepts the current locked-session wording case-insensitively;
+the denied-request assertion remains unchanged. A combined workflow test covers
+shortcuts, Help, filters/sort/selection/Favorites Undo, view transitions and lock.
+The 1.0.46 Setup installer is built. Source and packaged stability checks pass,
+along with layout, tray, browser-link/pairing, all 93 desktop request guards,
+syntax checks and packaged Chromium/Firefox helper tests. All vault and browser
+transport checks use isolated synthetic data; no real account data is accessed.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

@@ -67,7 +67,7 @@ async function main() {
   await check("a code cannot be started while the vault is locked", async () => {
     const res = await api("settings.startExtensionPairing()");
     assert.equal(res.ok, false);
-    assert.match(res.message, /Unlock/);
+    assert.match(res.message, /unlock/i);
   });
 
   assert.equal((await api(`auth.createVault(${JSON.stringify({ masterPassword: MASTER, confirmPassword: MASTER })})`)).ok, true, "vault creation");
