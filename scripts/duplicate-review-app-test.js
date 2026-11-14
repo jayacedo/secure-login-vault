@@ -54,7 +54,41 @@ async function main() {
   assert.equal((await api("credentials.getAll()")).result.length, 1);
   assert.equal((await api("credentials.getDeleted()")).result.entries.length, 1);
   const removedId = (await api("credentials.getDeleted()")).result.entries[0].id;
-  await api(`credentials.restoreDeleted(${removedId})`); await api('groups.setActive("Client A")');
+  await api(`credentials.restoreDeleted(${removedId})`);
+  // Use real pointer events, two independent sets, and both the circle and label.
+  // A single-set DOM .click() test cannot catch hit-testing or cross-set issues.
+  const otherData = { ...data, websiteName: 'Second site original', websiteUrl: 'https://other-duplicate.test/login', groupName: 'Client C' };
+  const third = (await api(`credentials.add(${JSON.stringify(otherData)})`)).result.id;
+  const fourth = (await api(`credentials.add(${JSON.stringify({ ...otherData, websiteName: 'Second site copy' })})`)).result.id;
+  await run('openDuplicateReview()'); await ready();
+  assert.equal(await run('document.querySelectorAll(".duplicate-set").length'), 2);
+  const pointerClick = async selector => {
+    await run(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`);
+    await sleep(180);
+    const point = await run(`(() => { const el=document.querySelector(${JSON.stringify(selector)}), r=el.getBoundingClientRect(); return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}; })()`);
+    win.show(); win.focus(); win.webContents.focus();
+    win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
+    win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
+    await sleep(120);
+  };
+  const keepSelector = id => `[data-duplicate-keep="${id}"]`;
+  const setSelector = id => `.duplicate-set:has(${keepSelector(id)})`;
+  await pointerClick(keepSelector(third));
+  assert.equal(await run(`document.querySelector('${keepSelector(third)}').checked`), true, 'native circle click selects a keeper');
+  assert.equal(await run(`document.querySelector('${setSelector(third)} [data-duplicate-action=review]').disabled`), false, 'one choice enables its own cleanup');
+  assert.equal(await run(`document.querySelector('${setSelector(first)} [data-duplicate-action=review]').disabled`), true, 'other sets need no choice');
+  await pointerClick(`${setSelector(fourth)} .duplicate-card:has(${keepSelector(fourth)}) .duplicate-keep strong`);
+  assert.equal(await run(`document.querySelector('${keepSelector(fourth)}').checked`), true, 'native name click switches the keeper');
+  assert.equal(await run(`document.querySelector('${keepSelector(third)}').checked`), false);
+  await pointerClick(`${setSelector(fourth)} [data-duplicate-action=review]`);
+  assert.match(await run(`document.querySelector('${setSelector(fourth)} .duplicate-confirmation').textContent`), /Keep "Second site copy"/);
+  assert.equal(await run(`document.querySelector('${setSelector(first)} .duplicate-confirmation').childElementCount`), 0);
+  await pointerClick(`${setSelector(fourth)} [data-duplicate-action=confirm]`);
+  await until(async () => (await api('credentials.getAll()')).result.length === 3, 'one set cleanup');
+  const remaining = (await api('credentials.getAll()')).result.map(entry => entry.id);
+  assert.ok(remaining.includes(first) && remaining.includes(second) && remaining.includes(fourth), 'unselected set and chosen keeper remain');
+  console.log('PASS native circle/name selection and cleanup of one set without selecting other sets');
+  await api('groups.setActive("Client A")');
   await run("openDuplicateReview()"); await ready();
   assert.equal(await run("document.querySelectorAll('.duplicate-card').length"), 0);
   const child = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, "../src/preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true } });
