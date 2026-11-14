@@ -40,7 +40,7 @@ The Setup installer bundles `resources/extension-firefox` as well as the existin
 
 For a public AMO listing, use the prepared [listing and readiness notes](mozilla-listing.md),
 [privacy explanation](extension-privacy.md) and [reviewer instructions](mozilla-reviewer-notes.md).
-These materials do not publish the add-on; outstanding download, licensing and
+These materials do not publish the add-on; outstanding download, license-field and
 interactive verification steps are recorded in the readiness notes.
 
 The ZIP is **unsigned**, not a permanent installable Firefox add-on. Mozilla signing

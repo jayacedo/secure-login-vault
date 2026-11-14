@@ -60,26 +60,27 @@ https://github.com/jayacedo/secure-login-vault/issues
 chooser on the local reviewer fixture; desktop save confirmation using dummy data.
 Do not use the owner's real-account screenshots from chat.
 
-## License decision
+## License
 
-The owner wants free use while retaining code ownership. `package.json` currently
-says `UNLICENSED`; public source availability does not grant an open-source license.
-Do not select MIT, GPL or another open-source license without a new owner decision.
+The owner approved free personal/internal business use while retaining code
+ownership. The [SLV Free-Use License](../LICENSE.md) now covers both the desktop
+application and browser extension, with exceptions for third-party licenses,
+GitHub platform rights and authorized distribution/reviewer testing.
 
-Proposed custom AMO license text for owner review:
+Use AMO's custom license option and paste the full text from `LICENSE.md`. Do not
+select MIT, GPL or another open-source license. Public license URL:
+https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md
 
-> Copyright (c) 2026 Jay Acedo. All rights reserved.
-> Permission is granted to install and use official, unmodified Secure Login Vault
-> extension releases free of charge for personal and internal business use.
-> This permission does not grant rights to modify, redistribute, sublicense or sell
-> the extension or its source code. Mozilla may sign and distribute submitted
-> releases under the author's agreement with Mozilla. The software is provided
-> as is, without warranties, to the extent permitted by applicable law.
+For the draft GitHub release, add:
 
-This is a proposed extension license, not a change to the repository or desktop
-license. Finalize the rights-holder name and license before submitting. Users and
-reviewers also need permission to use the desktop companion; resolve its terms
-alongside the installer download.
+> Free for personal and internal business use under the
+> [SLV Free-Use License](https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md).
+> Third-party components retain their own licenses.
+
+Attach `LICENSE.md` alongside the existing installer so the terms can be downloaded
+with it. The existing installer and Firefox archives have not been rebuilt for this
+documentation/license update; their embedded metadata may still say `UNLICENSED`.
+The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4.
 
 ## Review materials
 
@@ -99,8 +100,8 @@ alongside the installer download.
    not accessible to Mozilla. The unauthenticated GitHub API confirmed that the
    repository is public and Issues are enabled, but returned no public releases
    on 2026-11-15. A public installer download is still needed.
-3. Finalize the custom extension license and desktop-use terms. Check that the
-   GitHub repository, setup guide, privacy page and Issues link are publicly accessible.
+3. Include the finalized free-use terms in the release and AMO license field.
+   Check that the setup guide, privacy page and license links are publicly accessible.
 4. Check the Firefox consent declaration against all data flows. The manifest
    already requires `authenticationInfo` and `browsingActivity`. Login emails are
    used as authentication identifiers, and a browser-family label is sent during

@@ -451,4 +451,8 @@ npm.cmd run extension:sync-secure
 
 ## License
 
-The project is currently marked `UNLICENSED` in [package.json](package.json).
+Official desktop and browser-extension releases are free to use for personal and
+internal business use under the [SLV Free-Use License](LICENSE.md). Ownership is
+retained; this is not an open-source license. Modification, rebranding and public
+redistribution of original SLV code require permission, subject to the exceptions
+in the license. Third-party components keep their own license terms.

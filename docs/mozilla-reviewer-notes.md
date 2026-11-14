@@ -14,6 +14,9 @@ Status: prepared notes; installer URL and interactive clean-install check pendin
   `31c1e6a89301470742a4fe374a9a5c79049237572adfba4eaf4ec425111cea38`.
   Verify the published download has this hash; update it if the installer changes.
 - Source: https://github.com/jayacedo/secure-login-vault
+- Desktop and extension license:
+  https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md
+  Free personal/internal business use; includes permission for reviewer builds and tests.
 
 No service account, subscription or real website credentials are needed. Use a
 fresh Windows test account or VM and a fresh Firefox profile. Create a new test
