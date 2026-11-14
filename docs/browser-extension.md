@@ -65,7 +65,7 @@ can stay paired together and share the existing vault. Settings supports individ
 
 ## Development setup
 
-Use desktop 1.0.47 with extension 0.6.2: update both, then reload the extension. Existing
+Use desktop 1.0.48 with extension 0.6.3: update both, then reload the extension. Existing
 remembered pairing remains usable. The extension's **Pairing security** section offers
 memory-only pairing for the current browser session. See [Browser security](browser-security.md)
 for the encrypted protocol, threat limits, storage tradeoff and tests.

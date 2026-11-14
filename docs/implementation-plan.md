@@ -537,6 +537,14 @@ real accounts and existing browser profiles were not accessed.
 The 1.0.47 Setup installer is built; packaged Chromium and Firefox helper checks
 pass. Extension 0.6.2 and its reproducible source ZIP are ready for Mozilla signing.
 
+Desktop 1.0.48 bundles extension 0.6.3. Popup styling adds an inset rounded card,
+theme-aware backdrop and shadow, softer control corners and internal scrolling
+for long content. Light/dark synthetic previews and the existing popup/UI checks
+pass. Browser-controlled outer window framing is unchanged. No account data or
+save/fill behavior changes.
+The 1.0.48 Setup installer and unsigned Firefox 0.6.3 ZIP/source archives are built.
+Bundled Chrome/Firefox popup CSS matches source and both manifests report 0.6.3.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
