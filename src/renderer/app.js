@@ -3505,6 +3505,18 @@ async function openSettingsModal() {
           <div class="settings-subgroup">
             <h4 class="settings-subgroup-title">Backup check</h4>
             <p class="settings-section-hint">Test an encrypted backup with its master password. SLV restores a temporary copy, checks it, then removes it. Your current vault stays unchanged.</p>
+            <div class="backup-check-summary" id="backup-check-summary" role="status" aria-live="polite">
+              <strong>Last backup check</strong>
+              <p id="backup-last-empty" class="settings-section-hint">Loading check summary…</p>
+              <dl id="backup-last-details" hidden>
+                <dt>Result</dt><dd id="backup-last-result"></dd>
+                <dt>Last checked</dt><dd id="backup-last-date"></dd>
+                <dt>Backup checked</dt><dd id="backup-last-file"></dd>
+                <dt>Backup created</dt><dd id="backup-last-created"></dd>
+              </dl>
+              <p id="backup-last-notice" class="settings-section-hint"></p>
+              <p id="backup-last-warning" class="settings-section-hint settings-warning-hint"></p>
+            </div>
             <button class="secondary-button settings-action-btn" type="button" id="settings-backup-check-btn">
               ${renderShieldIcon()} <span>Verify &amp; test backup</span>
             </button>
@@ -3833,6 +3845,7 @@ function setupAutomaticBackups(overlay) {
   const message = overlay.querySelector("#auto-backup-status");
   let state;
   function render(value) {
+    refreshBackupCheckStatus();
     state = value;
     enabled.value = value.enabled ? "on" : "off";
     keep.value = String(value.keep);
@@ -3872,6 +3885,39 @@ function setupAutomaticBackups(overlay) {
   keep.addEventListener("change", configure);
   overlay.querySelector("#settings-tab-data").addEventListener("click", refresh);
   refresh();
+}
+
+async function refreshBackupCheckStatus() {
+  const panel = document.querySelector("#backup-check-summary");
+  if (!panel) return;
+  const request = String(Number(panel.dataset.request || 0) + 1);
+  panel.dataset.request = request;
+  try {
+    const response = await window.secureLoginVault.importExport.getBackupCheckStatus();
+    if (!panel.isConnected || panel.dataset.request !== request) return;
+    if (!response.ok) throw new Error(response.message);
+    const { lastCheck, newerAutomaticBackup, warning } = response.result;
+    panel.querySelector("#backup-last-empty").hidden = Boolean(lastCheck);
+    panel.querySelector("#backup-last-empty").textContent = "No backup check recorded yet. Run a check to save its result here.";
+    panel.querySelector("#backup-last-details").hidden = !lastCheck;
+    panel.querySelector("#backup-last-warning").textContent = warning || "";
+    const notice = panel.querySelector("#backup-last-notice");
+    notice.textContent = "";
+    if (lastCheck) {
+      const passed = lastCheck.outcome === "passed";
+      const result = panel.querySelector("#backup-last-result");
+      result.textContent = passed ? "Passed" : "Failed";
+      result.className = passed ? "backup-result-passed" : "backup-result-failed";
+      panel.querySelector("#backup-last-date").textContent = new Date(lastCheck.checkedAt).toLocaleString();
+      panel.querySelector("#backup-last-file").textContent = lastCheck.fileName;
+      panel.querySelector("#backup-last-created").textContent = lastCheck.backupCreatedAt ? new Date(lastCheck.backupCreatedAt).toLocaleString() : "Not verified";
+      notice.textContent = passed
+        ? (newerAutomaticBackup ? "A newer automatic backup is available. Verify it to check that copy too." : "This records the selected backup at check time. Later file changes are not monitored.")
+        : "The last check did not pass. Check the backup password and try again; a failed check does not necessarily mean the file is damaged.";
+    }
+  } catch {
+    if (panel.isConnected && panel.dataset.request === request) panel.querySelector("#backup-last-warning").textContent = "Could not load the backup check summary. Reopen Settings to try again.";
+  }
 }
 
 function closeSettingsModal() {
@@ -5464,6 +5510,7 @@ function closeBackupCheck() {
   const input = state.overlay?.querySelector("input");
   if (input) input.value = "";
   state.overlay?.remove();
+  refreshBackupCheckStatus();
   window.secureLoginVault.importExport.cancelBackupCheck({ filePath: state.filePath }).catch(() => {});
   document.querySelector("#settings-backup-check-btn")?.focus();
 }
@@ -5521,6 +5568,7 @@ async function runBackupCheck() {
       pending = window.secureLoginVault.importExport.verifyBackup({ filePath: state.filePath, masterPassword: input.value });
       input.value = "";
       const response = await pending;
+      refreshBackupCheckStatus();
       if (backupCheckState !== state) return;
       if (!response.ok) throw new Error(response.message);
       const { counts, backupCreatedAt } = response.result;

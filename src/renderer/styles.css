@@ -2965,6 +2965,13 @@ mark.search-highlight {
 
 .backup-check-container { max-width: 520px; }
 #backup-check-password[hidden] { display: none; }
+.backup-check-summary { margin: 14px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.backup-check-summary dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 16px; margin: 14px 0; font-size: 13px; }
+.backup-check-summary dt { color: var(--muted); }
+.backup-check-summary dd { margin: 0; overflow-wrap: anywhere; }
+.backup-check-summary [hidden] { display: none; }
+.backup-result-passed { color: var(--accent); font-weight: 700; }
+.backup-result-failed { color: var(--danger); font-weight: 700; }
 
 .about-modal-container {
   max-width: 380px;

@@ -742,6 +742,8 @@ function registerLoginHandlers() {
 }
 
 function registerImportExportHandlers() {
+  handleAppRequest("vault:backup-check-status", async () => ({ ok: true,
+    result: backupVerification.status(automaticBackups.status().latestBackup) }));
   handleAppRequest("vault:pick-backup-check", async () => {
     const picked = await withNativeDialog(() => dialog.showOpenDialog(mainWindow, {
       title: "Select an encrypted backup to verify", properties: ["openFile"],
@@ -1055,7 +1057,8 @@ app.whenReady().then(async () => {
   try { await backupVerification.prepare(); }
   catch {
     // An unavailable check folder must not prevent access to the user's vault.
-    backupVerification = { cancel() {}, async verify() { throw createPublicError("Backup check folder is unavailable. Restart SLV and try again."); } };
+    backupVerification = { cancel() {}, status() { return { lastCheck: null, warning: "Backup check folder is unavailable. Restart SLV and try again.", newerAutomaticBackup: null }; },
+      async verify() { throw createPublicError("Backup check folder is unavailable. Restart SLV and try again."); } };
   }
   automaticBackups = createAutomaticBackups({ configPath: path.join(app.getPath("userData"), "automatic-backups.json"), vault: vaultStore });
   authenticator = createAuthenticator({ vault: vaultStore, clipboard });

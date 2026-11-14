@@ -21,7 +21,8 @@ function createAutomaticBackups({ configPath, vault, now = Date.now }) {
   const owns = name => typeof name === "string" && new RegExp(`^slv-auto-${state.id}-[0-9]{13}-[a-f0-9]{12}\\.slvbackup$`).test(name);
   const status = () => ({ enabled: state.enabled, folder: state.folder, keep: state.keep,
     lastSuccess: state.lastSuccess, nextDue: state.lastSuccess ? state.lastSuccess + DAY_MS : 0,
-    running, error });
+    running, error,
+    latestBackup: state.files[0] ? { fileName: state.files[0], createdAt: Number(state.files[0].split("-").at(-2)) } : null });
   async function load() {
     try {
       const saved = JSON.parse(await fs.readFile(configPath, "utf8"));

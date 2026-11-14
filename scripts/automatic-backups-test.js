@@ -21,6 +21,7 @@ async function main() {
   await service.configure({enabled:true,keep:7});
   await service.run();
   const first = (await fs.readdir(folder))[0];
+  assert.deepEqual(service.status().latestBackup, { fileName: first, createdAt: clock });
   assert.ok(first.endsWith(".slvbackup"));
   const raw = await fs.readFile(path.join(folder,first),"utf8");
   assert.equal(raw.includes("never-write-plaintext-credential"),false);

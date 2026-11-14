@@ -38,6 +38,7 @@ async function main() {
   const check = createBackupVerification({ directory });
   try {
     await check.prepare();
+    assert.equal(check.status().lastCheck, null);
     await store.createVault({ masterPassword: password, confirmPassword: password });
     await store.createCredential({ websiteName: "Synthetic example", websiteUrl: "https://example.test/login", username: "dummy-user", password: "dummy-secret" });
     const backup = path.join(root, "synthetic.slvbackup");
@@ -51,6 +52,18 @@ async function main() {
     assert.equal(result.verified, true);
     assert.equal(result.integrity, "ok");
     assert.equal(result.counts.credentials, 1);
+    const saved = JSON.parse(await fs.readFile(`${directory}.json`, "utf8"));
+    assert.deepEqual(Object.keys(saved.lastCheck).sort(), ["backupCreatedAt", "checkedAt", "fileName", "outcome"]);
+    assert.equal(saved.lastCheck.fileName, "synthetic.slvbackup");
+    assert.equal(saved.lastCheck.outcome, "passed");
+    const restarted = createBackupVerification({ directory });
+    await restarted.prepare();
+    assert.deepEqual(restarted.status().lastCheck, saved.lastCheck, "summary survives a new service instance");
+    const createdAt = Date.parse(result.backupCreatedAt);
+    assert.equal(restarted.status({ createdAt: createdAt - 1 }).newerAutomaticBackup, false);
+    assert.equal(restarted.status({ createdAt }).newerAutomaticBackup, false);
+    assert.equal(restarted.status({ createdAt: createdAt + 1 }).newerAutomaticBackup, true);
+    assert.equal(restarted.status().newerAutomaticBackup, null);
     assert.equal(result.fingerprint, crypto.createHash("sha256").update(snapshot).digest("hex"));
     assert(!JSON.stringify(result).includes("dummy-secret"));
     assert.deepEqual(await fs.readdir(directory), [], "success removes the rehearsal vault");
@@ -59,6 +72,8 @@ async function main() {
     assert.deepEqual(await fs.readFile(authPath), authBefore);
     assert.equal(store.isUnlocked(), true);
     await assert.rejects(check.verify(backup, "wrong dummy password"), /password|incorrect/i);
+    assert.equal(check.status().lastCheck.outcome, "failed");
+    assert.equal(check.status().lastCheck.backupCreatedAt, null);
     assert.deepEqual(await fs.readdir(directory), []);
     // The password from backup creation still works after the current vault changes.
     const newPassword = "new dummy master passphrase only";
@@ -82,10 +97,12 @@ async function main() {
     await store.createEncryptedBackup(broken);
     assert.equal((await check.verify(broken, newPassword)).counts.credentials, 2, "recovery-enabled vault backups also restore");
     assert.deepEqual(await fs.readdir(directory), []);
+    const beforeCancel = await fs.readFile(`${directory}.json`, "utf8");
     const pending = check.verify(backup, password);
     await assert.rejects(check.verify(backup, password), /already running/);
     check.cancel();
     await assert.rejects(pending, /cancelled/);
+    assert.equal(await fs.readFile(`${directory}.json`, "utf8"), beforeCancel, "cancellation preserves previous check");
     assert.deepEqual(await fs.readdir(directory), [], "cancel removes temporary files");
     const short = createBackupVerification({ directory, timeoutMs: 1 });
     await assert.rejects(short.verify(backup, password), /too long/);
@@ -95,6 +112,13 @@ async function main() {
     await fs.writeFile(path.join(directory, "unrelated.txt"), "leave me");
     await check.prepare();
     assert.deepEqual(await fs.readdir(directory), ["unrelated.txt"], "startup removes only known rehearsal folders");
+    await fs.writeFile(`${directory}.json`, "invalid summary");
+    await restarted.prepare();
+    assert.equal(restarted.status().lastCheck, null);
+    assert.match(restarted.status().warning, /could not be loaded/);
+    const unavailable = createBackupVerification({ directory, statusPath: path.join(root, "missing-folder/status.json") });
+    assert.equal((await unavailable.verify(backup, password)).verified, true, "metadata write failure does not misreport backup failure");
+    assert.match(unavailable.status().warning, /could not be saved/);
     console.log("PASS backup recovery, original-file isolation, old password, corruption, cancellation, concurrency, timeout and startup cleanup (synthetic data only)");
   } finally {
     check.cancel(); store.lockVault();

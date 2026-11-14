@@ -30,6 +30,7 @@ async function main() {
   const password = "synthetic backup UI test passphrase";
   const args = JSON.stringify({ filePath: backup, masterPassword: password });
   assert.equal((await api("importExport.pickBackupCheckFile()")).ok, false, "locked check refused");
+  assert.equal((await api("importExport.getBackupCheckStatus()")).ok, false, "summary unavailable while locked");
   assert.equal((await api(`auth.createVault(${JSON.stringify({ masterPassword: password, confirmPassword: password })})`)).ok, true);
   await api('credentials.add({websiteName:"Synthetic only",password:"synthetic-secret-only"})');
   await api('importExport.pickExportPath({defaultName:"synthetic.slvbackup",format:"backup"})');
@@ -47,6 +48,7 @@ async function main() {
   await until(() => run("!document.querySelector('#backup-check-run').disabled"), "wrong password result");
   assert.match(await run("document.querySelector('#backup-check-status').textContent"), /password|incorrect/i);
   assert.equal(await run("document.querySelector('#backup-check-input').value"), "");
+  assert.equal((await api("importExport.getBackupCheckStatus()")).result.lastCheck.outcome, "failed");
   await run(`document.querySelector('#backup-check-input').value=${JSON.stringify(password)};document.querySelector('#backup-check-run').click()`);
   await until(() => run("document.querySelector('#backup-check-status').textContent.includes('Backup check passed')"), "successful rehearsal");
   assert.match(await run("document.querySelector('#backup-check-status').textContent"), /1 credential/);
@@ -56,7 +58,26 @@ async function main() {
   assert.deepEqual(fs.readFileSync(backup), source);
   assert.deepEqual(fs.readdirSync(path.join(root, "backup-checks")), []);
   fs.writeFileSync(path.join(root, "backup-check.png"), (await win.webContents.capturePage()).toPNG());
-  await run("document.querySelector('#backup-check-cancel').click();document.querySelector('#settings-backup-check-btn').click()");
+  await run("document.querySelector('#backup-check-cancel').click();closeSettingsModal()");
+  await run("openSettingsModal()");
+  await run("document.querySelector('#settings-tab-data').click()");
+  await until(() => run("document.querySelector('#backup-last-result').textContent==='Passed'"), "summary survives closing Settings");
+  assert.equal(await run("document.querySelector('#backup-last-file').textContent"), "synthetic.slvbackup");
+  assert.equal(await run("document.querySelector('#backup-check-summary').textContent.includes('synthetic-secret-only')"), false);
+  const savedSummary = fs.readFileSync(path.join(root, "backup-checks.json"), "utf8");
+  // Create a newer automatic backup from the same synthetic vault.
+  const folder = path.join(root, "automatic"); fs.mkdirSync(folder);
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+  await api("settings.chooseAutomaticBackupFolder()");
+  await api("settings.configureAutomaticBackups({enabled:true,keep:7})");
+  await run("refreshBackupCheckStatus()");
+  assert.match(await run("document.querySelector('#backup-last-notice').textContent"), /newer automatic backup/);
+  await run("document.querySelector('#settings-tab-data').click();localStorage.setItem('slv_theme','coffee');applyTheme('coffee');document.querySelector('#backup-check-summary').scrollIntoView({block:'center',behavior:'instant'})");
+  await sleep(350);
+  fs.writeFileSync(path.join(root, "backup-summary.png"), (await win.webContents.capturePage()).toPNG());
+  await api("settings.configureAutomaticBackups({enabled:false,keep:7})");
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [backup] });
+  await run("document.querySelector('#settings-backup-check-btn').click()");
   await until(() => run("Boolean(document.querySelector('#backup-check-input'))"), "cancel prompt");
   await run(`document.querySelector('#backup-check-input').value=${JSON.stringify(password)};document.querySelector('#backup-check-run').click()`);
   await until(workerStarted, "worker started before cancel");
@@ -65,12 +86,14 @@ async function main() {
   await sleep(100);
   assert.equal(await run("Boolean(document.querySelector('#backup-check-overlay'))"), false);
   assert.equal((await api(`importExport.verifyBackup(${args})`)).ok, false, "cancel revokes chosen path");
+  assert.equal(fs.readFileSync(path.join(root, "backup-checks.json"), "utf8"), savedSummary);
   await api("importExport.pickBackupCheckFile()");
   const pending = api(`importExport.verifyBackup(${args})`);
   await until(workerStarted, "worker started before lock");
   await api("auth.lockVault()");
   assert.equal((await pending).ok, false, "lock cancels pending check");
   await until(() => fs.readdirSync(path.join(root, "backup-checks")).length === 0, "lock cleanup");
+  assert.equal(fs.readFileSync(path.join(root, "backup-checks.json"), "utf8"), savedSummary);
   console.log(`PASS backup Settings UI, retry, grant isolation, cancellation and lock cleanup; synthetic data only\nScreenshot: ${path.join(root, "backup-check.png")}`);
   app.exit(0);
 }
