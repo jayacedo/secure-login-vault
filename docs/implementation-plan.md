@@ -501,6 +501,18 @@ failure, stale/session/scope guards, Undo, menu focus/dismissal and Favorites-vi
 refresh. Existing bulk/Undo/Show selected tests, all 93 desktop request guard
 checks and packaged Chromium/Firefox helper checks pass.
 
+Desktop 1.0.45 gives the credential dashboard a viewport-sized layout with an
+independently scrolling list and sticky column headings. Search, sorting, quick
+filters and bulk controls remain visible. Back to top scrolls that list, toolbar
+spacing adapts to shorter windows, and Actions opens upward when necessary.
+The layout scope clears on Client Vault navigation and lock; no database or
+extension behavior changes.
+The 1.0.45 Setup installer is built. Synthetic source/packaged layout tests pass
+at wide, compact and minimum window sizes with large text, menu layering, scroll,
+Back to top, search/sort/details and client/lock transitions. Existing Favorites,
+quick-filter and Show selected tests and packaged Chromium/Firefox helper checks
+pass. Tests verify credential data remains unchanged by layout interactions.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

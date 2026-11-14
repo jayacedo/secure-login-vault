@@ -149,7 +149,11 @@ function closeBulkActions(restoreFocus = false) {
 
 function setupBulkActions() {
   const toggle = document.querySelector("#bulk-actions-toggle"), menu = document.querySelector("#bulk-actions-menu");
-  const open = () => { menu.hidden = false; toggle.setAttribute("aria-expanded", "true"); menu.querySelector("button:not(:disabled)")?.focus(); };
+  const open = () => {
+    menu.classList.remove("is-above"); menu.hidden = false;
+    menu.classList.toggle("is-above", menu.getBoundingClientRect().bottom > innerHeight - 12);
+    toggle.setAttribute("aria-expanded", "true"); menu.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
+  };
   toggle.addEventListener("click", () => menu.hidden ? open() : closeBulkActions(true));
   toggle.addEventListener("keydown", event => { if (event.key === "ArrowDown") { event.preventDefault(); open(); } });
   menu.addEventListener("keydown", event => {
@@ -165,6 +169,7 @@ function setupBulkActions() {
   menu.parentElement.addEventListener("focusout", event => { if (!menu.parentElement.contains(event.relatedTarget)) closeBulkActions(); });
 }
 document.addEventListener("pointerdown", event => { if (!event.target.closest(".bulk-actions")) closeBulkActions(); });
+window.addEventListener("resize", () => closeBulkActions());
 
 async function openBulkFavorites(favorite) {
   if (!bulkSelectedIds.size || bulkMoveDialog) return;

@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.44**, extension **0.6.1**. Desktop 1.0.44 groups bulk operations into a compact Actions menu and adds reviewed Add to Favorites / Remove from Favorites with Undo. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.45**, extension **0.6.1**. Desktop 1.0.45 keeps dashboard search, filters and bulk controls in view while the credential list scrolls, with sticky column headings and responsive toolbar spacing. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -77,6 +77,15 @@ Validation: `npm run test:details-app`, with synthetic entries, a dummy QR and a
 mocked clipboard. No real account or clipboard contents are read by this test.
 
 ### Quick filters
+
+The credential list scrolls inside the dashboard, keeping search, filters and
+bulk controls visible. Column headings stay at the top of the list. Back to top
+returns the list to its first entry and focuses search. The list is keyboard
+focusable, toolbar controls wrap in smaller windows, and Actions opens upward
+when there is not enough room below. Client Vault and unlock retain their own
+layouts. Validation: `npm run test:dashboard-layout-app`, using synthetic entries
+at wide, compact and minimum window sizes, including large text and light/Coffee
+themes. No real accounts are used.
 
 Use the menu beside sorting to show **Has 2FA**, **No login URL**, or
 **Uncategorized**. Has 2FA means a QR image is saved; it does not verify that

@@ -1047,6 +1047,7 @@ kbd {
 .bulk-actions { position: relative; }
 .bulk-actions-menu { position: absolute; z-index: 5; top: calc(100% + 6px); left: 0; min-width: 220px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px #0004; }
 .bulk-actions-menu[hidden] { display: none; }
+.bulk-actions-menu.is-above { top: auto; bottom: calc(100% + 6px); }
 .bulk-actions-menu button { display: block; width: 100%; padding: 10px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font: inherit; }
 .bulk-actions-menu button:hover, .bulk-actions-menu button:focus-visible { background: var(--panel-muted); color: var(--accent); }
 #bulk-show-selected[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
@@ -3862,3 +3863,39 @@ button.dashboard-icon-button:focus-visible,
   color: var(--text);
 }
 .settings-modal-container .theme-options { flex-wrap: wrap; }
+
+/* The vault list owns scrolling; its search and action controls stay in view. */
+body.is-dashboard.has-credential-list .dashboard-shell { height: 100dvh; min-height: 0; }
+body.has-credential-list .dashboard-sidebar { min-height: 0; overflow-y: auto; }
+body.has-credential-list .dashboard-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+body.has-credential-list .dashboard-main > :not(.credential-panel) { flex-shrink: 0; }
+body.has-credential-list .credential-panel { flex: 1; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); overflow: visible; }
+body.has-credential-list .credential-panel > .panel-header { grid-row: 1; border-radius: 8px 8px 0 0; gap: 10px; }
+body.has-credential-list .bulk-selection-bar { grid-row: 2; position: relative; z-index: 3; }
+body.has-credential-list .credential-table { grid-row: 3; display: block; min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-padding-top: 48px; border-radius: 0 0 8px 8px; position: relative; z-index: 0; }
+body.has-credential-list .credential-table:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+body.has-credential-list .credential-row-head { position: sticky; top: 0; z-index: 1; height: 46px; background: var(--panel); }
+body.has-credential-list #credential-list-body { min-width: 690px; }
+body.has-credential-list .is-selecting #credential-list-body { min-width: 726px; }
+body.has-credential-list .health-dashboard-actions { flex: 1 1 600px; min-width: 0; gap: 8px; }
+body.has-credential-list #credential-count-label { overflow-wrap: anywhere; margin-right: auto; }
+body.has-credential-list .credential-sort { flex: 0 1 170px; }
+body.has-credential-list .credential-tool-buttons { gap: 8px; flex-shrink: 0; }
+body.has-credential-list .dashboard-toolbar { flex-wrap: wrap; gap: 10px; }
+body.has-credential-list .search-box { flex: 1 1 300px; min-width: 0; }
+body.has-credential-list .active-group-banner { margin: 0; }
+@media (max-width: 1180px) {
+  body.has-credential-list .dashboard-shell { grid-template-rows: auto minmax(0, 1fr); }
+  body.has-credential-list .dashboard-sidebar { overflow: visible; }
+}
+@media (max-height: 780px) {
+  body.has-credential-list .dashboard-main { padding: 12px 18px; gap: 10px; }
+  body.has-credential-list .dashboard-header .eyebrow { margin-bottom: 4px; }
+  body.has-credential-list .dashboard-toolbar { padding: 8px 10px; }
+  body.has-credential-list .credential-panel > .panel-header { padding: 8px 12px; }
+  body.has-credential-list .bulk-selection-bar { padding: 8px 12px; gap: 8px; }
+}
+@media (max-width: 760px) {
+  body.has-credential-list .dashboard-toolbar { flex-direction: row; }
+  body.has-credential-list .health-dashboard-actions { justify-content: flex-start; }
+}

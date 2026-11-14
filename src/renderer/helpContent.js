@@ -1,5 +1,8 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Dashboard Scrolling", items: [
+    { q: "Can I keep search and filters visible while browsing a long list?", a: "Yes. The credential list scrolls inside the dashboard, while search, sorting, filters and bulk controls stay in place. Column headings remain at the top of the list. Tab into the list to scroll with the keyboard. Back to top returns to the first entry and focuses search. In smaller windows, controls wrap and the Actions menu opens upward when needed." }
+  ] },
   { title: "Quick Filters", items: [
     { q: "How do I narrow the credential list?", a: "Use the menu beside sorting: Has 2FA shows entries with a saved QR image, No login URL shows blank addresses, and Uncategorized includes Other or no category. A saved QR does not confirm that 2FA is enabled on the site or that its QR is supported. These choices combine with search, Favorites, category and active group. The count shows matches within those results." },
     { q: "What does Clear filter reset?", a: "Clear filter returns this menu to All logins while keeping search, Favorites, category, group and sorting. Changing a quick filter clears bulk selection. Find logins preserves selections within the chosen filter, and Select all shown only selects matching rows. Refresh keeps the quick filter; locking or restarting resets it. Filters never change saved credentials." }

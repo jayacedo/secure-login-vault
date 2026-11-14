@@ -38,13 +38,15 @@ function initBackToTop() {
   const update = () => {
     if (scheduled) return;
     scheduled = true;
-    requestAnimationFrame(() => { button.hidden = window.scrollY < 320; scheduled = false; });
+    requestAnimationFrame(() => { button.hidden = Math.max(window.scrollY, document.querySelector(".credential-table")?.scrollTop || 0) < 320; scheduled = false; });
   };
   window.addEventListener("scroll", update, { passive: true });
+  document.addEventListener("scroll", update, { passive: true, capture: true });
   window.addEventListener("resize", update, { passive: true });
   button.addEventListener("click", () => {
     const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth";
     window.scrollTo({ top: 0, behavior });
+    document.querySelector(".credential-table")?.scrollTo({ top: 0, behavior });
     document.querySelector("#credential-search, #client-search")?.focus({ preventScroll: true });
   });
   update();
@@ -196,6 +198,7 @@ async function initAuth() {
 }
 
 function renderFromState(state) {
+  if (!state.isUnlocked) document.body.classList.remove("has-credential-list");
   if (!state.isUnlocked) credentialQuickFilter = "all";
   if (!state.isUnlocked) closeCredentialDetails(false);
   if (!state.isUnlocked) clearBulkUndo(true);
@@ -360,6 +363,7 @@ function renderDashboard(state) {
   resetBulkSelection();
   _lastAuthState = state;
   document.body.classList.add("is-dashboard");
+  document.body.classList.add("has-credential-list");
   appShell.className = "dashboard-shell";
   appShell.setAttribute("aria-labelledby", "dashboard-title");
   const dashboardData = createEmptyDashboardData();
@@ -488,7 +492,7 @@ function renderDashboard(state) {
           <span id="bulk-selection-results" class="bulk-selection-results" role="status"></span>
           <small>Select up to 500. Find logins keeps your selections; refreshing or changing dashboard filters clears them.</small>
         </div>
-        <div class="credential-table" role="table" aria-label="Credential list">
+        <div class="credential-table" role="table" aria-label="Credential list" tabindex="0">
           <div class="credential-row credential-row-head" role="row">
             <span role="columnheader" class="bulk-select-cell"><input type="checkbox" id="bulk-select-all" aria-label="Select all shown credentials" title="Select all shown credentials"></span>
             <span role="columnheader"><button type="button" class="credential-sort-heading" data-credential-sort="website">Website <span class="sort-indicator" aria-hidden="true">↕</span></button></span>
@@ -1182,7 +1186,7 @@ async function handleLockVault() {
   searchState.category = null;
   clearTimeout(searchState.debounceTimer);
   const state = await window.secureLoginVault.auth.getState();
-  document.body.classList.remove("is-dashboard");
+  document.body.classList.remove("is-dashboard", "has-credential-list");
   appShell.className = "app-shell";
   appShell.setAttribute("aria-labelledby", "app-title");
   appShell.innerHTML = `
@@ -2081,6 +2085,7 @@ const clientSearchState = {
 };
 
 async function renderClientVault(state) {
+  document.body.classList.remove("has-credential-list");
   closeCredentialDetails(false);
   resetBulkSelection();
   _lastAuthState = state;
