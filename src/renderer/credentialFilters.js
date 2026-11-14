@@ -34,17 +34,20 @@ function updateCredentialFilterSummary() {
   if (!body || !label) return;
   const rows = [...body.querySelectorAll(".credential-row-item")];
   const visible = rows.filter(row => !row.hidden).length;
-  const selectionSearch = bulkSelectionEnabled && document.querySelector("#bulk-selection-search")?.value.trim();
-  const filtering = credentialQuickFilter !== "all" || Boolean(selectionSearch);
-  label.textContent = filtering ? `${visible} of ${rows.length} matching` : searchState.query
+  const selectedOnly = bulkSelectionEnabled && bulkShowSelected;
+  const selectionSearch = bulkSelectionEnabled && !selectedOnly && document.querySelector("#bulk-selection-search")?.value.trim();
+  const filtering = credentialQuickFilter !== "all" || Boolean(selectionSearch) || selectedOnly;
+  label.textContent = selectedOnly ? `${visible} selected shown` : filtering ? `${visible} of ${rows.length} matching` : searchState.query
     ? `${rows.length} result${rows.length === 1 ? "" : "s"} for "${searchState.query}"` : `${rows.length} items`;
   let empty = body.querySelector("#credential-filter-empty");
   if (!empty) {
     empty = document.createElement("p"); empty.id = "credential-filter-empty";
     empty.className = "credential-filter-empty"; empty.setAttribute("role", "status");
-    empty.textContent = "No logins match these filters. Clear the quick filter or adjust your search, category or group.";
     body.append(empty);
   }
+  empty.textContent = selectedOnly
+    ? "No entries selected. Turn off Show selected to choose logins."
+    : "No logins match these filters. Clear the quick filter or adjust your search, category or group.";
   empty.hidden = !filtering || visible !== 0;
   // Avoid two different empty messages when the server-side search has no results.
   body.querySelector(".empty-state")?.toggleAttribute("hidden", filtering && visible === 0);

@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.42**, extension **0.6.1**. Desktop 1.0.42 adds quick filters beside sorting: Has 2FA, No login URL and Uncategorized, with matching counts and a clear control. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.43**, extension **0.6.1**. Desktop 1.0.43 adds Show selected to the bulk-selection bar, gathering selected logins into one view before moving groups or changing categories. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -112,6 +112,19 @@ timestamps or activity history. Only the sort option is saved as a local prefere
 Validation: `npm run test:sort-app`, using a new synthetic vault only.
 
 ### Move selected credentials to a group
+
+**Show selected** in the selection bar displays all selected entries together,
+including those hidden by Find logins. It pauses that search without deleting the
+search text; turning it off restores your search. Sorting still applies. Uncheck
+an entry to remove it from the selection and view. If none remain, turn off Show
+selected to choose more entries. Keyboard focus moves to the next remaining
+checkbox or back to the toggle. The header checkbox can clear the shown selection.
+
+The existing group, category and quick-filter boundaries still apply. Cancel,
+dashboard filter changes, refresh and lock reset the selection and toggle.
+Group/category review uses exactly the remaining selected IDs. Merely selecting,
+reviewing or cancelling does not edit entries. Validation:
+`npm run test:show-selected-app`, using an isolated synthetic vault only.
 
 Choose the **Select credentials** checkbox icon in the Credentials toolbar. Select
 individual rows or use the header checkbox to select all shown entries (up to 500).

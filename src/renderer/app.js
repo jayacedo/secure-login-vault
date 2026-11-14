@@ -476,6 +476,7 @@ function renderDashboard(state) {
           <button class="primary-button" id="bulk-move-btn" type="button" disabled>Move to group</button>
           <button class="secondary-button" id="bulk-category-btn" type="button" disabled>Change category</button>
           <button class="secondary-button" id="bulk-selection-cancel" type="button">Cancel</button>
+          <button class="secondary-button" id="bulk-show-selected" type="button" aria-pressed="false">Show selected</button>
           <input id="bulk-selection-search" class="settings-input bulk-selection-search" type="search" aria-label="Find logins to select" placeholder="Find logins by name, URL, username or group" autocomplete="off">
           <span id="bulk-selection-results" class="bulk-selection-results" role="status"></span>
           <small>Select up to 500. Find logins keeps your selections; refreshing or changing dashboard filters clears them.</small>

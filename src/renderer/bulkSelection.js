@@ -1,5 +1,6 @@
 // Selection contains IDs only and is cleared whenever the visible list refreshes.
 let bulkSelectionEnabled = false;
+let bulkShowSelected = false;
 const bulkSelectedIds = new Set();
 let bulkMoveDialog = null;
 let bulkUndoToast = null;
@@ -58,17 +59,23 @@ function updateBulkSelectionControls() {
   document.querySelector("#bulk-move-btn").disabled = bulkSelectedIds.size === 0;
   document.querySelector("#bulk-category-btn").disabled = bulkSelectedIds.size === 0;
   const checks = [...table.querySelectorAll("[data-select-credential]")];
-  const query = bulkSelectionEnabled ? document.querySelector("#bulk-selection-search").value.trim().toLowerCase() : "";
+  const selectedOnly = bulkSelectionEnabled && bulkShowSelected;
+  const search = document.querySelector("#bulk-selection-search");
+  search.disabled = selectedOnly;
+  document.querySelector("#bulk-show-selected").setAttribute("aria-pressed", String(selectedOnly));
+  const query = bulkSelectionEnabled && !selectedOnly ? search.value.trim().toLowerCase() : "";
   for (const check of checks) {
     check.checked = bulkSelectedIds.has(Number(check.dataset.selectCredential));
     const row = check.closest(".credential-row");
-    row.hidden = !matchesCredentialQuickFilter(row) || Boolean(query && !check.dataset.bulkSearch.includes(query));
+    row.hidden = !matchesCredentialQuickFilter(row) || (selectedOnly ? !check.checked : Boolean(query && !check.dataset.bulkSearch.includes(query)));
     row.classList.toggle("is-bulk-selected", check.checked);
   }
   const visible = checks.filter(check => !check.closest(".credential-row").hidden);
   const hiddenSelected = checks.filter(check => check.checked && check.closest(".credential-row").hidden).length;
   document.querySelector("#bulk-selection-count").textContent = `${bulkSelectedIds.size} selected${hiddenSelected ? ` (${hiddenSelected} hidden)` : ""}`;
-  document.querySelector("#bulk-selection-results").textContent = query ? `${visible.length} matching login${visible.length === 1 ? "" : "s"}` : "";
+  document.querySelector("#bulk-selection-results").textContent = selectedOnly
+    ? "Showing selected entries. Turn off Show selected to resume Find logins."
+    : query ? `${visible.length} matching login${visible.length === 1 ? "" : "s"}` : "";
   const all = document.querySelector("#bulk-select-all");
   all.disabled = visible.length === 0;
   all.checked = visible.length > 0 && visible.every(check => check.checked);
@@ -78,6 +85,7 @@ function updateBulkSelectionControls() {
 
 function resetBulkSelection() {
   bulkSelectionEnabled = false;
+  bulkShowSelected = false;
   bulkSelectedIds.clear();
   const search = document.querySelector("#bulk-selection-search");
   if (search) search.value = "";
@@ -93,6 +101,10 @@ function setupBulkSelection() {
   document.querySelector("#bulk-selection-cancel").addEventListener("click", () => { resetBulkSelection(); document.querySelector("#bulk-select-toggle").focus(); });
   document.querySelector("#bulk-move-btn").addEventListener("click", () => openBulkMove());
   document.querySelector("#bulk-category-btn").addEventListener("click", () => openBulkMove("category"));
+  document.querySelector("#bulk-show-selected").addEventListener("click", () => {
+    bulkShowSelected = !bulkShowSelected;
+    updateBulkSelectionControls();
+  });
   document.querySelector("#bulk-selection-search").addEventListener("input", updateBulkSelectionControls);
   document.querySelector(".credential-table").addEventListener("change", event => {
     if (!bulkSelectionEnabled) return;
@@ -107,7 +119,14 @@ function setupBulkSelection() {
       else if (bulkSelectedIds.size < 500) bulkSelectedIds.add(id);
       else showToast("Select up to 500 entries at a time.", "info");
     }
+    const checksBefore = [...document.querySelectorAll("[data-select-credential]")].filter(check => !check.closest(".credential-row").hidden);
+    const focusedIndex = checksBefore.indexOf(event.target);
     updateBulkSelectionControls();
+    // Unchecking removes the focused row from this view. Keep keyboard focus usable.
+    if (bulkShowSelected && (event.target.closest(".credential-row-item")?.hidden || event.target.disabled)) {
+      const remaining = checksBefore.filter(check => !check.closest(".credential-row").hidden);
+      (remaining[Math.min(Math.max(focusedIndex, 0), remaining.length - 1)] || document.querySelector("#bulk-show-selected")).focus();
+    }
   });
   updateBulkSelectionControls();
 }

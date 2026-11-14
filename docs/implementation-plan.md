@@ -477,6 +477,18 @@ including combined filters, counts/empty states, bulk selection, sorting, detail
 refresh, lock reset and unchanged entries. Existing sort, details and bulk-action
 tests and packaged Chromium/Firefox helper checks pass with synthetic vaults.
 
+Desktop 1.0.43 adds Show selected to the bulk-selection bar. The toggle pauses
+Find logins while retaining its text, shows selected IDs together, and restores
+the search when turned off. Unchecking removes rows immediately with keyboard
+focus recovery. Counts and an empty-selection message reflect the view. Sorting
+and existing group/category review work unchanged; cancel, dashboard filters,
+refresh and lock reset the toggle. No database or extension changes are needed.
+The 1.0.43 Setup installer is built. Source and packaged Show selected tests pass
+for hidden selections, Find restoration, sorting, uncheck/focus, empty state,
+select-all, group/category review and reset paths, with unchanged synthetic
+entries. Existing bulk-action, sort and quick-filter tests and packaged Chromium
+and Firefox helper checks pass.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
