@@ -46,6 +46,23 @@ function createAutomaticBackups({ configPath, vault, now = Date.now }) {
     if (!state.folder || await fs.realpath(state.folder) !== state.folder) throw new Error("Backup folder is unavailable or has moved.");
     if (!(await fs.stat(state.folder)).isDirectory()) throw new Error("Choose a backup folder.");
   }
+  // Select only the newest successful backup recorded by this installation.
+  // Never accept a path from the renderer or silently fall back to an older file.
+  const latestForVerification = () => serial(async () => {
+    await requireUnlocked();
+    const name = state.files[0];
+    if (!state.folder || !owns(name)) throw Object.assign(new Error("No automatic backup is recorded yet. Create one or choose another backup."), { isPublic: true });
+    try {
+      await verifiedFolder();
+      const target = path.join(state.folder, name);
+      if (path.dirname(target) !== state.folder) throw new Error("Invalid backup location");
+      const stat = await fs.lstat(target);
+      if (!stat.isFile() || stat.isSymbolicLink() || await fs.realpath(target) !== target) throw new Error("Invalid backup file");
+      return target;
+    } catch {
+      throw Object.assign(new Error("The latest automatic backup is unavailable. Reconnect its drive or choose another backup."), { isPublic: true });
+    }
+  });
   // Caller supplies only a path returned by the native folder picker.
   const chooseFolder = folder => serial(async () => {
     await requireUnlocked();
@@ -111,7 +128,7 @@ function createAutomaticBackups({ configPath, vault, now = Date.now }) {
     } finally { running = false; }
     return status();
   });
-  return { load, status, chooseFolder, configure, run,
+  return { load, status, chooseFolder, configure, run, latestForVerification,
     start() { if (!timer) { timer = setInterval(() => { run().catch(() => {}); }, 60000); timer.unref(); } },
     stop() { clearInterval(timer); timer = null; }
   };

@@ -3517,9 +3517,15 @@ async function openSettingsModal() {
               <p id="backup-last-notice" class="settings-section-hint"></p>
               <p id="backup-last-warning" class="settings-section-hint settings-warning-hint"></p>
             </div>
-            <button class="secondary-button settings-action-btn" type="button" id="settings-backup-check-btn">
-              ${renderShieldIcon()} <span>Verify &amp; test backup</span>
-            </button>
+            <div class="settings-action-row">
+              <button class="primary-button settings-action-btn" type="button" id="settings-backup-latest-btn" disabled>
+                ${renderShieldIcon()} <span>Verify latest automatic backup</span>
+              </button>
+              <button class="secondary-button settings-action-btn" type="button" id="settings-backup-check-btn">
+                ${renderFolderIcon()} <span>Choose another backup</span>
+              </button>
+            </div>
+            <p class="settings-section-hint" id="backup-latest-hint">Checking for an automatic backup…</p>
           </div>
 
           <div class="settings-subgroup">
@@ -3833,7 +3839,8 @@ async function openSettingsModal() {
     btn.addEventListener("click", () => runExportFlow(btn.dataset.export, btn));
   });
   overlay.querySelector("#settings-restore-btn").addEventListener("click", runRestoreFlow);
-  overlay.querySelector("#settings-backup-check-btn").addEventListener("click", runBackupCheck);
+  overlay.querySelector("#settings-backup-check-btn").addEventListener("click", () => runBackupCheck());
+  overlay.querySelector("#settings-backup-latest-btn").addEventListener("click", () => runBackupCheck("latest"));
 }
 
 function setupAutomaticBackups(overlay) {
@@ -3896,7 +3903,13 @@ async function refreshBackupCheckStatus() {
     const response = await window.secureLoginVault.importExport.getBackupCheckStatus();
     if (!panel.isConnected || panel.dataset.request !== request) return;
     if (!response.ok) throw new Error(response.message);
-    const { lastCheck, newerAutomaticBackup, warning } = response.result;
+    const { lastCheck, newerAutomaticBackup, warning, hasLatestAutomaticBackup } = response.result;
+    const latestButton = document.querySelector("#settings-backup-latest-btn");
+    latestButton.dataset.available = String(hasLatestAutomaticBackup);
+    latestButton.disabled = !hasLatestAutomaticBackup || document.querySelector("#settings-modal-overlay").dataset.actionsBusy === "true";
+    document.querySelector("#backup-latest-hint").textContent = hasLatestAutomaticBackup
+      ? "Selects the newest automatic backup recorded by this installation, then asks for its backup password."
+      : "No automatic backup recorded yet. Create one above, or choose an existing backup.";
     panel.querySelector("#backup-last-empty").hidden = Boolean(lastCheck);
     panel.querySelector("#backup-last-empty").textContent = "No backup check recorded yet. Run a check to save its result here.";
     panel.querySelector("#backup-last-details").hidden = !lastCheck;
@@ -4720,9 +4733,11 @@ function setSettingsStatus(message, isError = false) {
 }
 
 function setSettingsButtonsDisabled(disabled) {
+  const overlay = document.querySelector("#settings-modal-overlay");
+  if (overlay) overlay.dataset.actionsBusy = String(disabled);
   document
     .querySelectorAll("#settings-modal-overlay .settings-action-btn")
-    .forEach((btn) => (btn.disabled = disabled));
+    .forEach((btn) => (btn.disabled = disabled || (btn.id === "settings-backup-latest-btn" && btn.dataset.available !== "true")));
 }
 
 // ── Change Master Password flow ────────────────────────────────────────────────
@@ -5512,20 +5527,21 @@ function closeBackupCheck() {
   state.overlay?.remove();
   refreshBackupCheckStatus();
   window.secureLoginVault.importExport.cancelBackupCheck({ filePath: state.filePath }).catch(() => {});
-  document.querySelector("#settings-backup-check-btn")?.focus();
+  document.querySelector(state.mode === "latest" ? "#settings-backup-latest-btn" : "#settings-backup-check-btn")?.focus();
 }
 
-async function runBackupCheck() {
+async function runBackupCheck(mode = "choose") {
   if (backupCheckState) return;
-  const state = backupCheckState = {};
-  const picked = await window.secureLoginVault.importExport.pickBackupCheckFile();
+  const state = backupCheckState = { mode };
+  const picked = await (mode === "latest" ? window.secureLoginVault.importExport.selectLatestBackupCheck()
+    : window.secureLoginVault.importExport.pickBackupCheckFile());
   if (backupCheckState !== state) {
     if (picked.ok && picked.result.filePath) window.secureLoginVault.importExport.cancelBackupCheck({ filePath: picked.result.filePath }).catch(() => {});
     return;
   }
   if (!picked.ok || picked.result.canceled) {
     backupCheckState = null;
-    if (!picked.ok) setSettingsStatus(picked.message, true);
+    if (!picked.ok) document.querySelector("#backup-last-warning").textContent = picked.message;
     return;
   }
   state.filePath = picked.result.filePath;

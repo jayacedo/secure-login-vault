@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     pickRestoreFile:  ()                        => ipcRenderer.invoke("vault:pick-restore-file"),
     restoreBackup:    (opts)                    => ipcRenderer.invoke("vault:restore-backup", opts),
     pickBackupCheckFile: () => ipcRenderer.invoke("vault:pick-backup-check"),
+    selectLatestBackupCheck: () => ipcRenderer.invoke("vault:select-latest-backup-check"),
     getBackupCheckStatus: () => ipcRenderer.invoke("vault:backup-check-status"),
     verifyBackup: opts => ipcRenderer.invoke("vault:verify-backup", opts),
     cancelBackupCheck: opts => ipcRenderer.invoke("vault:cancel-backup-check", opts)

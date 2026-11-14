@@ -743,7 +743,14 @@ function registerLoginHandlers() {
 
 function registerImportExportHandlers() {
   handleAppRequest("vault:backup-check-status", async () => ({ ok: true,
-    result: backupVerification.status(automaticBackups.status().latestBackup) }));
+    result: { ...backupVerification.status(automaticBackups.status().latestBackup),
+      hasLatestAutomaticBackup: Boolean(automaticBackups.status().latestBackup) } }));
+  handleAppRequest("vault:select-latest-backup-check", async () => handleVaultOperation(async () => {
+    const filePath = await automaticBackups.latestForVerification();
+    assertVaultOperationActive();
+    pathGrants.grant("backup-check", filePath);
+    return { filePath };
+  }));
   handleAppRequest("vault:pick-backup-check", async () => {
     const picked = await withNativeDialog(() => dialog.showOpenDialog(mainWindow, {
       title: "Select an encrypted backup to verify", properties: ["openFile"],

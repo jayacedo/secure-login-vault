@@ -16,12 +16,14 @@ async function main() {
   const configPath = path.join(root, "automatic-backups.json");
   let service = createAutomaticBackups({configPath,vault,now:()=>clock});
   await service.load();await service.run();
+  await assert.rejects(service.latestForVerification(), /No automatic backup/);
   assert.deepEqual(await fs.readdir(folder),[],"disabled initially");
   await service.chooseFolder(folder);
   await service.configure({enabled:true,keep:7});
   await service.run();
   const first = (await fs.readdir(folder))[0];
   assert.deepEqual(service.status().latestBackup, { fileName: first, createdAt: clock });
+  assert.equal(await service.latestForVerification(), path.join(folder, first));
   assert.ok(first.endsWith(".slvbackup"));
   const raw = await fs.readFile(path.join(folder,first),"utf8");
   assert.equal(raw.includes("never-write-plaintext-credential"),false);
@@ -46,8 +48,17 @@ async function main() {
   await fs.access(path.join(folder,"manual.slvbackup"));await fs.access(path.join(folder,fakeAutomatic));
   assert.equal(await fs.readFile(path.join(folder,"unrelated.txt"),"utf8"),"keep me");
   service=createAutomaticBackups({configPath,vault,now:()=>clock});await service.load();await service.run();
+  const newest = path.join(folder, service.status().latestBackup.fileName);
+  assert.equal(await service.latestForVerification(), newest);
+  await fs.rename(newest, newest + ".moved");
+  await assert.rejects(service.latestForVerification(), /unavailable/, "missing newest file must not silently select an older backup");
+  await fs.mkdir(newest);
+  await assert.rejects(service.latestForVerification(), /unavailable/, "directories are not backup files");
+  await fs.rmdir(newest);
+  await fs.rename(newest + ".moved", newest);
   assert.equal((await fs.readdir(folder)).length,10,"restart preserves schedule");
   vault.lockVault();clock+=DAY_MS;await service.run();assert.equal(service.status().lastSuccess,clock-DAY_MS);
+  await assert.rejects(service.latestForVerification(), /Unlock/);
   await vault.unlockVault({masterPassword:password});await service.run();assert.equal(service.status().lastSuccess,clock);
   console.log("PASS retention owns only its files, restart persistence and overdue backups wait for unlock");
 
@@ -60,6 +71,7 @@ async function main() {
   vault.createEncryptedBackup=realBackup;
   await service.run({force:true});assert.equal(service.status().error,"");
   await service.configure({enabled:false,keep:14});clock+=DAY_MS;const stopped=service.status().lastSuccess;await service.run();assert.equal(service.status().lastSuccess,stopped);
+  assert.equal(await service.latestForVerification(), path.join(folder, service.status().latestBackup.fileName), "existing backups stay selectable when scheduling is off");
   const other=path.join(root,"other");await fs.mkdir(other);await service.chooseFolder(other);
   assert.equal(service.status().enabled,false);assert.equal((await fs.readdir(folder)).length,10);
   await assert.rejects(service.configure({enabled:true,keep:0}));

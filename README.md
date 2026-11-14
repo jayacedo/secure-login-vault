@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.33**, extension **0.6.1**. Desktop 1.0.33 remembers the last backup check in Settings > Backup & Data, showing its result, filename and dates, plus a notice when a newer automatic backup is available. **Verify & test backup** rehearses recovery in a temporary vault without replacing the current one. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.34**, extension **0.6.1**. Desktop 1.0.34 adds **Verify latest automatic backup** in Settings > Backup & Data. It selects the newest tracked backup and asks for its backup password. **Choose another backup** keeps manual selection available. The saved check summary shows the result, filename and dates. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -134,7 +134,9 @@ A folder on the same drive does not protect against that drive failing. Choose a
 
 ### Verify a backup without replacing the current vault
 
-In **Settings > Backup & Data**, choose **Verify & test backup**, select a `.slvbackup` file, and enter the master password used when it was created. SLV takes an encrypted snapshot, runs the real restore and unlock flow in a separate temporary vault, and checks SQLite integrity, references and essential schema fields. The result shows record counts and the backup creation date; saved passwords are never displayed.
+In **Settings > Backup & Data**, click **Verify latest automatic backup** to select the newest successful automatic backup recorded by this installation, or **Choose another backup** to pick a `.slvbackup` file yourself. Enter the master password used when it was created. SLV takes an encrypted snapshot, runs the real restore and unlock flow in a separate temporary vault, and checks SQLite integrity, references and essential schema fields. The result shows record counts and the backup creation date; saved passwords are never displayed.
+
+The latest-backup button is disabled until an automatic backup is recorded. It still works for existing backups when scheduling is off. If the latest file or its drive is unavailable, SLV explains the problem rather than selecting an older copy. This action authorizes a backup check only; it does not restore over the current vault or create a new backup.
 
 The current vault and source backup are not modified. Temporary files remain encrypted and are removed before success is reported. Closing the check or locking SLV stops it; leftover rehearsal folders after an unexpected exit are cleaned on next startup. Checks run in a worker, allow files up to 256 MB, and time out after 60 seconds. A passing check applies to that snapshot at check time; it does not validate website logins, QR codes or the future reliability of the storage device.
 
@@ -162,8 +164,8 @@ Use a build produced from this source, or build it using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.33.exe` | Installed desktop app, with browser-extension setup support |
-| `Secure Login Vault 1.0.33.exe` | Optional portable build; browser-helper setup is unavailable |
+| `Secure Login Vault Setup 1.0.34.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.34.exe` | Optional portable build; browser-helper setup is unavailable |
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -184,7 +186,7 @@ The Setup installer bundles Chrome/Edge and Firefox extensions plus the native h
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
-After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.33 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
+After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.34 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
 
 ### Fill, save and update
 
