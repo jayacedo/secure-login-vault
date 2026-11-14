@@ -366,6 +366,13 @@ Tray/unlock integration checks also pass. The 1.0.27 Windows Setup installer is
 built; extracted-source and packaged Chromium/Firefox checks pass for pairing,
 save, fill, update, lock and encrypted persistence. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.28 uses a normal arrow cursor for disabled desktop buttons instead of
+the shared busy cursor. This covers both Activity History and CSV import pagination
+and removes the need for a CSV-only override. Explicit loading styles remain
+separate. Activity History and CSV import app checks pass, including pagination.
+The 1.0.28 Windows Setup installer is built; extracted-source and packaged
+Chromium/Firefox checks pass. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

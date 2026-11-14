@@ -276,7 +276,7 @@ button {
 }
 
 button:disabled {
-  cursor: wait;
+  cursor: default;
   opacity: 0.74;
 }
 
@@ -3433,7 +3433,6 @@ small.group-badge {
 .csv-preview-table td { font-size: .85rem; }
 .csv-preview-table small { display: block; color: var(--muted); margin-top: 4px; }
 .csv-preview-pages { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
-.csv-preview-pages button:disabled { cursor: default; }
 #csv-import-error { color: var(--danger); }
 
 .import-mode-options {
