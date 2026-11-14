@@ -38,6 +38,11 @@ The Setup installer bundles `resources/extension-firefox` as well as the existin
 
 ## Permanent installation and signing
 
+For a public AMO listing, use the prepared [listing and readiness notes](mozilla-listing.md),
+[privacy explanation](extension-privacy.md) and [reviewer instructions](mozilla-reviewer-notes.md).
+These materials do not publish the add-on; outstanding download, licensing and
+interactive verification steps are recorded in the readiness notes.
+
 The ZIP is **unsigned**, not a permanent installable Firefox add-on. Mozilla signing
 is required for release Firefox. Submit the ZIP through the
 [Mozilla Developer Hub](https://addons.mozilla.org/developers/) and choose either a
