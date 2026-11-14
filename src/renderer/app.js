@@ -1,5 +1,5 @@
 // ── Phase 10: Preference keys (must be at top — used before initTheme() call) ─
-const PREF_THEME         = "slv_theme";          // "light" | "dark" | "system"
+const PREF_THEME         = "slv_theme";          // "light" | "dark" | "coffee" | "system"
 const PREF_TEXT_SIZE     = "slv_text_size";      // "small" | "default" | "large"
 const PREF_AUTO_LOCK     = "slv_auto_lock";       // seconds, 0 = off
 const PREF_BACKGROUND_LOCK = "slv_background_lock_grace"; // seconds, 0 = instant
@@ -2678,7 +2678,9 @@ function setPref(key, value) {
 
 function applyTheme(theme) {
   const root = document.documentElement;
-  if (theme === "dark") {
+  if (theme === "coffee") root.dataset.palette = "coffee";
+  else delete root.dataset.palette;
+  if (theme === "dark" || theme === "coffee") {
     root.setAttribute("data-theme", "dark");
   } else if (theme === "system") {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2686,6 +2688,7 @@ function applyTheme(theme) {
   } else {
     root.setAttribute("data-theme", "light");
   }
+  syncThemeAccentContrast();
   const swatch = document.querySelector("#brand-accent-input");
   if (swatch && brandAccentPreview === null && !getBrandAccent()) {
     swatch.value = getComputedStyle(root).getPropertyValue("--accent").trim();
@@ -2755,6 +2758,30 @@ function applyAccentColor(accent) {
   } else {
     root.style.removeProperty("--accent");
     root.style.removeProperty("--accent-strong");
+  }
+  syncThemeAccentContrast();
+}
+
+function syncThemeAccentContrast() {
+  const root = document.documentElement;
+  const properties = ["--accent", "--accent-strong"];
+  if (root.dataset.palette !== "coffee") {
+    for (const property of properties) root.style.removeProperty(`${property}-text`);
+    return;
+  }
+  const luminance = hex => {
+    const channels = hex.match(/[a-f\d]{2}/gi).map(value => parseInt(value, 16) / 255)
+      .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+  };
+  const colors = getComputedStyle(root), ink = "#231810", inkLuminance = luminance(ink);
+  for (const property of properties) {
+    const value = colors.getPropertyValue(property).trim();
+    if (!/^#[a-f\d]{6}$/i.test(value)) continue;
+    const background = luminance(value);
+    const lightContrast = 1.05 / (background + .05);
+    const darkContrast = (Math.max(background, inkLuminance) + .05) / (Math.min(background, inkLuminance) + .05);
+    root.style.setProperty(`${property}-text`, darkContrast >= lightContrast ? ink : "#ffffff");
   }
 }
 
@@ -3093,12 +3120,13 @@ async function openSettingsModal() {
           <div class="settings-row">
             <div class="settings-row-label">
               <span class="settings-row-name">Theme</span>
-              <span class="settings-row-hint">Choose light, dark, or follow the OS setting.</span>
+              <span class="settings-row-hint">Choose Light, Dark, warm Coffee, or follow Windows. Saves as you choose; your custom accent still applies.</span>
             </div>
             <div class="settings-row-control">
-              <div class="segmented-control" role="group" aria-label="Theme">
+              <div class="segmented-control theme-options" role="group" aria-label="Theme">
                 <button class="seg-btn ${currentTheme === "light"  ? "is-active" : ""}" data-theme="light"  type="button">Light</button>
                 <button class="seg-btn ${currentTheme === "dark"   ? "is-active" : ""}" data-theme="dark"   type="button">Dark</button>
+                <button class="seg-btn ${currentTheme === "coffee" ? "is-active" : ""}" data-theme="coffee" type="button">Coffee</button>
                 <button class="seg-btn ${currentTheme === "system" ? "is-active" : ""}" data-theme="system" type="button">System</button>
               </div>
             </div>
@@ -3639,9 +3667,12 @@ async function openSettingsModal() {
     setSettingsStatus("Text size saved.");
   });
   overlay.querySelectorAll(".seg-btn[data-theme]").forEach((btn) => {
+    btn.setAttribute("aria-pressed", String(btn.classList.contains("is-active")));
     btn.addEventListener("click", () => {
-      overlay.querySelectorAll(".seg-btn[data-theme]").forEach((b) => b.classList.remove("is-active"));
-      btn.classList.add("is-active");
+      overlay.querySelectorAll(".seg-btn[data-theme]").forEach((b) => {
+        b.classList.toggle("is-active", b === btn);
+        b.setAttribute("aria-pressed", String(b === btn));
+      });
       const theme = btn.dataset.theme;
       setPref(PREF_THEME, theme);
       applyTheme(theme);

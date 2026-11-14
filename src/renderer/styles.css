@@ -3698,3 +3698,59 @@ small.group-badge {
   .activity-pages { display:contents; }
   #activity-prev { order:1; } #activity-next { order:2; } #activity-refresh { order:3; } #activity-done { order:4; }
 }
+
+/* Coffee uses the dark component styling with a warm, independent palette. */
+:root[data-palette="coffee"] {
+  color-scheme: dark;
+  --bg: #1b1613;
+  --panel: #29211d;
+  --panel-muted: #352b25;
+  --text: #f3e9df;
+  --muted: #bdac9e;
+  --line: #57463a;
+  --accent: #d6a56f;
+  --accent-strong: #c28c5b;
+  --accent-text: #231810;
+  --accent-strong-text: #231810;
+  --warning: #e9b269;
+  --warning-soft: rgba(233, 178, 105, .14);
+  --danger: #f18179;
+  --success: #94c89f;
+  --shadow: 0 24px 80px rgba(15, 9, 5, .5);
+}
+
+[data-palette="coffee"] body:not(.is-dashboard) {
+  background: linear-gradient(135deg, rgba(214, 165, 111, .09), transparent 42%), var(--bg);
+}
+
+[data-palette="coffee"] .vault-panel { background: var(--panel); }
+[data-palette="coffee"] .primary-button,
+[data-palette="coffee"] .gen-generate-btn,
+[data-palette="coffee"] .settings-modal-container .seg-btn.is-active {
+  color: var(--accent-text);
+}
+[data-palette="coffee"] .primary-button:hover:not(:disabled),
+[data-palette="coffee"] .gen-generate-btn:hover,
+[data-palette="coffee"] .toast--sensitive { color: var(--accent-strong-text); }
+
+[data-palette="coffee"] .credential-row-item:hover,
+[data-palette="coffee"] .faq-question:hover,
+[data-palette="coffee"] .copy-btn:hover,
+[data-palette="coffee"] .signin-btn:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+[data-palette="coffee"] mark.search-highlight {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+[data-palette="coffee"] .gen-use-btn {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+[data-palette="coffee"] :is(input:focus, button:focus-visible, select:focus-visible, textarea:focus-visible) {
+  outline-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+[data-palette="coffee"] .toast--info {
+  background: var(--panel-muted);
+  color: var(--text);
+}
+.settings-modal-container .theme-options { flex-wrap: wrap; }

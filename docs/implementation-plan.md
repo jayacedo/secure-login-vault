@@ -382,6 +382,17 @@ were checked in an isolated dummy vault. Existing app integration checks pass.
 The 1.0.29 Windows Setup installer is built; extracted-source and packaged
 Chromium/Firefox checks pass. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.30 adds Coffee under Settings > General > Appearance alongside Light,
+Dark and System. It layers an espresso/cream/caramel palette over dark component
+styles, with theme-aware highlights and readable text on accent-filled controls.
+Saved custom accents are retained; Accent Color > Reset restores Coffee's caramel.
+Theme changes persist immediately and theme buttons expose their pressed state.
+Dashboard, Settings, Add Credential and unlock previews were inspected, including
+narrow layouts and large text. Reload persistence, custom accent preview/cancel/
+save/reset and System theme changes were checked with isolated dummy data.
+Existing app integration checks pass. The 1.0.30 Windows Setup installer is built;
+extracted-source and packaged Chromium/Firefox checks pass. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
