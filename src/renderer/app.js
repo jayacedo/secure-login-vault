@@ -6153,7 +6153,7 @@ function openAboutModal() {
           ${renderBrandMark("about-brand")}
         </div>
         <h3 class="about-app-name">${escapeHtml(getBrandName())}</h3>
-        <p class="about-version">Version 1.0.0</p>
+        <p class="about-version">Loading version…</p>
         <div class="about-divider"></div>
         <dl class="about-info">
           <div>
@@ -6170,6 +6170,10 @@ function openAboutModal() {
   overlay.classList.add("is-open");
   overlay.querySelector("#about-close-btn").addEventListener("click", closeAboutModal);
   overlay.querySelector("#about-done-btn").addEventListener("click", closeAboutModal);
+  const versionLabel = overlay.querySelector(".about-version");
+  window.secureLoginVault.settings.getAppInfo().then(response => {
+    versionLabel.textContent = response.ok ? `Version ${response.result.version}` : "Version unavailable";
+  }).catch(() => { versionLabel.textContent = "Version unavailable"; });
 }
 
 function closeAboutModal() {

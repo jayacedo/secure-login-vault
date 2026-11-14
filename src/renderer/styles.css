@@ -3606,8 +3606,47 @@ small.group-badge {
 .settings-navigation { display: flex; flex-direction: column; gap: 6px; padding: 20px 12px; background: var(--panel-muted); border-right: 1px solid var(--line); overflow-y: auto; }
 .settings-nav-button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: .85rem; text-align: left; }
 .settings-nav-button svg { width: 18px; height: 18px; flex-shrink: 0; }
-.settings-nav-button:hover { color: var(--text); background: var(--panel); }
-.settings-nav-button[aria-selected="true"] { color: var(--accent); background: var(--panel); font-weight: 700; box-shadow: inset 3px 0 var(--accent); }
+.settings-nav-button[aria-selected="true"] { --settings-tab-marker: var(--accent); color: var(--accent); background: var(--panel); font-weight: 700; box-shadow: inset 3px 0 var(--accent); }
+.settings-nav-button,
+#settings-panel-about .settings-action-btn,
+#about-modal-overlay button {
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+.settings-nav-button svg,
+#settings-panel-about .settings-action-btn svg,
+#about-modal-overlay button svg { transition: transform 160ms ease; }
+.settings-nav-button:is(:hover, :focus-visible):not(:disabled),
+#settings-panel-about .settings-action-btn:is(:hover, :focus-visible):not(:disabled),
+#about-modal-overlay button:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  transform: perspective(500px) translateY(-2px) rotateX(4deg);
+  box-shadow: inset 3px 0 var(--settings-tab-marker, transparent),
+    0 3px 0 var(--line), 0 7px 12px color-mix(in srgb, var(--text) 12%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
+}
+.settings-nav-button:is(:hover, :focus-visible):not(:disabled) svg,
+#settings-panel-about .settings-action-btn:is(:hover, :focus-visible):not(:disabled) svg,
+#about-modal-overlay button:is(:hover, :focus-visible):not(:disabled) svg { transform: rotate(-6deg) scale(1.08); }
+.settings-nav-button:active:not(:disabled),
+#settings-panel-about .settings-action-btn:active:not(:disabled),
+#about-modal-overlay button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 3px 0 var(--settings-tab-marker, transparent), inset 0 2px 3px color-mix(in srgb, var(--text) 12%, transparent);
+}
+#settings-panel-about .settings-action-btn:focus-visible,
+#about-modal-overlay button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .settings-nav-button, .settings-nav-button svg,
+  #settings-panel-about .settings-action-btn, #settings-panel-about .settings-action-btn svg,
+  #about-modal-overlay button, #about-modal-overlay button svg { transition: none; }
+  .settings-nav-button:is(:hover, :focus-visible, :active):not(:disabled),
+  .settings-nav-button:is(:hover, :focus-visible, :active):not(:disabled) svg,
+  #settings-panel-about .settings-action-btn:is(:hover, :focus-visible, :active):not(:disabled),
+  #settings-panel-about .settings-action-btn:is(:hover, :focus-visible, :active):not(:disabled) svg,
+  #about-modal-overlay button:is(:hover, :focus-visible, :active):not(:disabled),
+  #about-modal-overlay button:is(:hover, :focus-visible, :active):not(:disabled) svg { transform: none; }
+}
 .settings-nav-button:focus-visible, .settings-panel:focus-visible, .settings-installation summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .settings-workspace .settings-modal-body { min-width: 0; min-height: 0; max-height: none; padding: 24px 28px; overscroll-behavior: contain; }
 .settings-modal-container [hidden] { display: none !important; }
