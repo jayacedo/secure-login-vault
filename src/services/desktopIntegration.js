@@ -3,9 +3,10 @@ const { writeJsonAtomic } = require('./fsUtils');
 
 const DEFAULTS = Object.freeze({ startWithWindows: false, startInTray: false, closeToTray: false });
 const STARTUP_ARGUMENT = '--slv-startup';
+class DesktopIntegrationError extends Error {}
 function normalizePreferences(value) {
   if (!value || typeof value !== 'object' || Object.keys(DEFAULTS).some(key => typeof value[key] !== 'boolean')) {
-    throw new Error('Choose valid startup and tray settings.');
+    throw new DesktopIntegrationError('Choose valid startup and tray settings.');
   }
   return Object.fromEntries(Object.keys(DEFAULTS).map(key => [key, value[key]]));
 }
@@ -15,7 +16,10 @@ function createDesktopIntegration({ app, Tray, Menu, configPath, iconPath, getWi
   executable = process.execPath, write = writeJsonAtomic }) {
   const supported = platform === 'win32';
   const startupSupported = supported && app.isPackaged && !portable;
-  const loginOptions = { path: executable, args: [STARTUP_ARGUMENT] };
+  // Electron's Windows launch-item lookup parses path as a command line. Without
+  // quotes, a spaced install path is truncated and a successful registration
+  // incorrectly looks disabled. Use the same quoted path for reads and writes.
+  const loginOptions = { path: `"${executable}"`, args: [STARTUP_ARGUMENT] };
   let preferences = { ...DEFAULTS }, tray = null, quitting = false, saving = false, warning = '';
 
   function loginState() {
@@ -61,11 +65,12 @@ function createDesktopIntegration({ app, Tray, Menu, configPath, iconPath, getWi
     },
     status, refresh,
     async configure(value) {
-      if (saving) throw new Error('Startup settings are already being saved.');
+      if (saving) throw new DesktopIntegrationError('Startup settings are already being saved.');
       const next = normalizePreferences(value);
-      if (!supported || (next.startWithWindows && !startupSupported)) throw new Error('Start with Windows requires the installed Windows app.');
+      if (!supported || (next.startWithWindows && !startupSupported)) throw new DesktopIntegrationError('Start with Windows requires the installed Windows app.');
       saving = true;
       let oldLogin, changedLogin = false;
+      let failureMessage = 'Could not update Windows startup. Check Windows Startup Apps and try again.';
       try {
         if (startupSupported) {
           oldLogin = loginState();
@@ -74,9 +79,10 @@ function createDesktopIntegration({ app, Tray, Menu, configPath, iconPath, getWi
             changedLogin = true;
             app.setLoginItemSettings({ ...loginOptions, openAtLogin: next.startWithWindows, enabled: next.startWithWindows });
             const actual = loginState();
-            if (Boolean(actual.openAtLogin && actual.executableWillLaunchAtLogin) !== next.startWithWindows) throw new Error('Windows did not apply the startup setting.');
+            if (Boolean(actual.openAtLogin && actual.executableWillLaunchAtLogin) !== next.startWithWindows) throw new DesktopIntegrationError('Windows did not apply the startup setting. Check Windows Startup Apps and try again.');
           }
         }
+        failureMessage = 'Could not save startup and tray preferences. Check access to the app data folder and try again.';
         await write(configPath, next);
         preferences = next; refresh();
         return status();
@@ -84,7 +90,7 @@ function createDesktopIntegration({ app, Tray, Menu, configPath, iconPath, getWi
         if (changedLogin && oldLogin) {
           try { app.setLoginItemSettings({ ...loginOptions, openAtLogin: Boolean(oldLogin.openAtLogin), enabled: Boolean(oldLogin.executableWillLaunchAtLogin) }); } catch { /* Status reports the actual Windows registration on the next read. */ }
         }
-        throw error;
+        throw error instanceof DesktopIntegrationError ? error : new DesktopIntegrationError(failureMessage);
       } finally { saving = false; }
     },
     hasTray: () => Boolean(tray),
@@ -101,4 +107,4 @@ function createDesktopIntegration({ app, Tray, Menu, configPath, iconPath, getWi
     dispose() { quitting = true; tray?.destroy(); tray = null; }
   };
 }
-module.exports = { createDesktopIntegration, normalizePreferences, DEFAULTS, STARTUP_ARGUMENT };
+module.exports = { createDesktopIntegration, normalizePreferences, DEFAULTS, STARTUP_ARGUMENT, DesktopIntegrationError };

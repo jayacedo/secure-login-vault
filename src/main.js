@@ -18,7 +18,7 @@ const { createBrowserSetup } = require("./services/browserSetup");
 const browserSavePrompt = require("./services/browserSavePrompt");
 const { createAutomaticBackups } = require("./services/automaticBackups");
 const { createAuthenticator } = require("./services/authenticator");
-const { createDesktopIntegration } = require("./services/desktopIntegration");
+const { createDesktopIntegration, DesktopIntegrationError } = require("./services/desktopIntegration");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -264,7 +264,7 @@ function registerAuthHandlers() {
   handleAppRequest("app:get-desktop-integration", () => ({ ok: true, result: desktopIntegration.status() }));
   handleAppRequest("app:set-desktop-integration", async (_event, preferences) => {
     try { return { ok: true, result: await desktopIntegration.configure(preferences) }; }
-    catch { return { ok: false, message: "Could not apply startup and tray settings. Use the installed Windows app and try again." }; }
+    catch (error) { return { ok: false, message: error instanceof DesktopIntegrationError ? error.message : "Could not apply startup and tray settings. Try again." }; }
   });
   handleAppRequest("app:hide-locked-window", () => {
     if (vaultStore.isUnlocked()) return { ok: false, message: "Lock the vault before returning to the tray." };

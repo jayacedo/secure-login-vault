@@ -20,7 +20,7 @@ async function main() {
  service=createDesktopIntegration(options);await service.load();
  assert.equal(service.hasTray(),false);assert.equal(writes.length,0);
  await service.configure({startWithWindows:true,startInTray:true,closeToTray:true});
- assert.equal(service.status().startWithWindows,true);assert.equal(writes[0].path,options.executable);
+ assert.equal(service.status().startWithWindows,true);assert.equal(writes[0].path,`"${options.executable}"`);
  assert.equal(service.shouldStartHidden(['--slv-startup'],true),true);
  assert.equal(service.shouldStartHidden([],true),false);
  assert.equal(service.shouldStartHidden(['--slv-startup'],false),false,'first-launch setup stays visible');
@@ -41,7 +41,7 @@ async function main() {
  unlocked=false;service.handleClose({preventDefault(){prevented=true;}});assert.equal(prevented,true,'compact unlock X returns to tray');
  const active=trays.at(-1);active.menu[3].click();assert.equal(quit,1);prevented=false;service.handleClose({preventDefault(){prevented=true;}});assert.equal(prevented,false,'Quit bypasses close-to-tray');service.dispose();assert.equal(active.destroyed,true);
  const failing=createDesktopIntegration({...options,write:async()=>{throw Error('disk full');}});await failing.load();
- await assert.rejects(failing.configure({startWithWindows:true,startInTray:true,closeToTray:true}));
+ await assert.rejects(failing.configure({startWithWindows:true,startInTray:true,closeToTray:true}), /Could not save startup and tray preferences/);
  assert.equal(login.openAtLogin,false,'failed preference write rolls back startup');failing.dispose();
  for(const extra of [{portable:true},{app:{...app,isPackaged:false}},{platform:'linux'}]) {
   const unsupported=createDesktopIntegration({...options,...extra});await unsupported.load();

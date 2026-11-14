@@ -354,6 +354,18 @@ The 1.0.26 Windows Setup installer is built. CSV parser and Electron import test
 pass; extracted-source checks and packaged Chromium/Firefox pairing, save, fill,
 update, lock and encrypted persistence checks pass. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.27 fixes Windows startup registration verification for executable paths
+containing spaces. Reads and writes now use the same quoted executable path;
+previously the launch-item lookup could truncate it and roll back a valid setting.
+Settings errors distinguish unsupported installations, Windows registration and
+preference-file failures. A native Windows regression test reproduces the original
+failure and verifies enable, OS disable, re-enable and removal using a unique
+temporary registry entry pointing to a nonexistent executable. That entry is
+removed after testing; the user's SLV startup registration is not changed.
+Tray/unlock integration checks also pass. The 1.0.27 Windows Setup installer is
+built; extracted-source and packaged Chromium/Firefox checks pass for pairing,
+save, fill, update, lock and encrypted persistence. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
