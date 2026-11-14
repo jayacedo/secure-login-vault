@@ -3503,6 +3503,14 @@ async function openSettingsModal() {
           </div>
 
           <div class="settings-subgroup">
+            <h4 class="settings-subgroup-title">Backup check</h4>
+            <p class="settings-section-hint">Test an encrypted backup with its master password. SLV restores a temporary copy, checks it, then removes it. Your current vault stays unchanged.</p>
+            <button class="secondary-button settings-action-btn" type="button" id="settings-backup-check-btn">
+              ${renderShieldIcon()} <span>Verify &amp; test backup</span>
+            </button>
+          </div>
+
+          <div class="settings-subgroup">
             <h4 class="settings-subgroup-title">Restore</h4>
             <div class="settings-action-row">
               <button class="secondary-button settings-action-btn" type="button" id="settings-restore-btn">
@@ -3813,6 +3821,7 @@ async function openSettingsModal() {
     btn.addEventListener("click", () => runExportFlow(btn.dataset.export, btn));
   });
   overlay.querySelector("#settings-restore-btn").addEventListener("click", runRestoreFlow);
+  overlay.querySelector("#settings-backup-check-btn").addEventListener("click", runBackupCheck);
 }
 
 function setupAutomaticBackups(overlay) {
@@ -3866,6 +3875,7 @@ function setupAutomaticBackups(overlay) {
 }
 
 function closeSettingsModal() {
+  closeBackupCheck();
   closeCsvImportReview();
   applyTextSize(getTextSize());
   brandAccentPreview = null;
@@ -5445,6 +5455,98 @@ async function runBackupExport(triggerBtn) {
 }
 
 // ─── Phase 9: Restore ──────────────────────────────────────────────────────────
+
+let backupCheckState = null;
+function closeBackupCheck() {
+  const state = backupCheckState;
+  if (!state) return;
+  backupCheckState = null;
+  const input = state.overlay?.querySelector("input");
+  if (input) input.value = "";
+  state.overlay?.remove();
+  window.secureLoginVault.importExport.cancelBackupCheck({ filePath: state.filePath }).catch(() => {});
+  document.querySelector("#settings-backup-check-btn")?.focus();
+}
+
+async function runBackupCheck() {
+  if (backupCheckState) return;
+  const state = backupCheckState = {};
+  const picked = await window.secureLoginVault.importExport.pickBackupCheckFile();
+  if (backupCheckState !== state) {
+    if (picked.ok && picked.result.filePath) window.secureLoginVault.importExport.cancelBackupCheck({ filePath: picked.result.filePath }).catch(() => {});
+    return;
+  }
+  if (!picked.ok || picked.result.canceled) {
+    backupCheckState = null;
+    if (!picked.ok) setSettingsStatus(picked.message, true);
+    return;
+  }
+  state.filePath = picked.result.filePath;
+  const overlay = state.overlay = document.createElement("div");
+  overlay.className = "modal-overlay is-open";
+  overlay.id = "backup-check-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "backup-check-heading");
+  overlay.innerHTML = `<div class="modal-container backup-check-container">
+    <div class="modal-header"><h2 id="backup-check-heading">Verify &amp; test backup</h2>
+      <button type="button" class="modal-close-btn" aria-label="Close">${renderCloseIcon()}</button></div>
+    <div class="modal-body">
+      <p class="settings-section-hint">Your current vault stays unchanged. This check restores an encrypted temporary copy and verifies that its database opens correctly.</p>
+      <p id="backup-check-file" class="settings-section-hint" style="overflow-wrap:anywhere"></p>
+      <div id="backup-check-password"><label class="field-label" for="backup-check-input">Backup master password</label>
+        <p class="settings-section-hint">Use the password you had when this backup was created.</p>
+        <input id="backup-check-input" class="settings-input" type="password" maxlength="256" autocomplete="off" spellcheck="false"></div>
+      <div id="backup-check-status" role="status" aria-live="polite" style="white-space:pre-line;margin-top:16px"></div>
+    </div>
+    <div class="modal-footer"><button class="secondary-button" id="backup-check-cancel" type="button">Cancel</button>
+      <button class="primary-button" id="backup-check-run" type="button">Verify backup</button></div>
+  </div>`;
+  document.body.append(overlay);
+  overlay.querySelector("#backup-check-file").textContent = state.filePath.split(/[\\/]/).pop();
+  const input = overlay.querySelector("input");
+  const status = overlay.querySelector("#backup-check-status");
+  const confirm = overlay.querySelector("#backup-check-run");
+  const cancel = overlay.querySelector("#backup-check-cancel");
+  overlay.querySelector(".modal-close-btn").addEventListener("click", closeBackupCheck);
+  cancel.addEventListener("click", closeBackupCheck);
+  confirm.addEventListener("click", async () => {
+    if (confirm.disabled) return;
+    if (!input.value) { status.textContent = "Enter the backup's master password."; input.focus(); return; }
+    confirm.disabled = true; input.disabled = true;
+    status.textContent = "Checking backup and testing recovery…";
+    status.style.color = "";
+    let pending;
+    try {
+      pending = window.secureLoginVault.importExport.verifyBackup({ filePath: state.filePath, masterPassword: input.value });
+      input.value = "";
+      const response = await pending;
+      if (backupCheckState !== state) return;
+      if (!response.ok) throw new Error(response.message);
+      const { counts, backupCreatedAt } = response.result;
+      const countLabel = (value, label) => `${value} ${label}${value === 1 ? "" : "s"}`;
+      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "credential")} · ${countLabel(counts.clients, "client")}\n${counts.deletedCredentials} recently deleted · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
+      overlay.querySelector("#backup-check-password").hidden = true;
+      confirm.remove(); cancel.textContent = "Close"; cancel.focus();
+    } catch (error) {
+      if (backupCheckState !== state) return;
+      status.textContent = error.message || "Backup check could not finish. Please try again.";
+      status.style.color = "var(--danger)";
+      confirm.disabled = false; input.disabled = false; input.focus();
+    } finally { input.value = ""; }
+  });
+  overlay.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeBackupCheck(); }
+    if (event.key === "Enter" && event.target === input) { event.preventDefault(); confirm.click(); }
+    if (event.key === "Tab") {
+      const focusable = [...overlay.querySelectorAll("button, input")].filter(el => !el.disabled && !el.hidden && el.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
+  input.focus();
+}
 
 async function runRestoreFlow() {
   setSettingsStatus("");

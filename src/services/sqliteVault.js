@@ -78,6 +78,24 @@ async function verifyEncryptedVaultPayload(payload, key) {
   return true;
 }
 
+async function inspectEncryptedVault(filePath, key) {
+  return withDecryptedDatabase(filePath, key, db => {
+    const integrity = db.exec("PRAGMA integrity_check;");
+    if (integrity.length !== 1 || integrity[0].values.length !== 1 || integrity[0].values[0][0] !== "ok") {
+      throw createPublicError("The restored backup failed the database integrity check.");
+    }
+    if (db.exec("PRAGMA foreign_key_check;").some(result => result.values.length)) {
+      throw createPublicError("The restored backup contains broken database references.");
+    }
+    // Preparing these queries also checks that essential application fields exist.
+    db.exec("SELECT id, website_name, website_url, username, password, email, notes, tags, qr_code FROM credentials LIMIT 0;");
+    db.exec("SELECT id, name, admin_password, hosting_password, ftp_password, db_password, qr_code FROM clients LIMIT 0;");
+    const count = table => Number(queryOne(db, `SELECT COUNT(*) AS total FROM ${table}`).total);
+    return { credentials: count("credentials"), clients: count("clients"),
+      deletedCredentials: count("credential_trash"), historyEntries: count("credential_activity") };
+  });
+}
+
 async function readDashboardData(filePath, key) {
   return withDecryptedDatabase(filePath, key, (db) => {
     const activeGroup = getActiveGroupFilterValue(db);
@@ -1530,6 +1548,7 @@ module.exports = {
   readDashboardData,
   verifyEncryptedVaultFile,
   verifyEncryptedVaultPayload,
+  inspectEncryptedVault,
   rekeyEncryptedVaultFile,
   getCredentials,
   getCredentialsForExport,

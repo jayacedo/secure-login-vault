@@ -17,6 +17,7 @@ const { getPipeName } = require("./native-host/pipeName");
 const { createBrowserSetup } = require("./services/browserSetup");
 const browserSavePrompt = require("./services/browserSavePrompt");
 const { createAutomaticBackups } = require("./services/automaticBackups");
+const { createBackupVerification } = require("./services/backupVerification");
 const { createAuthenticator } = require("./services/authenticator");
 const { createDesktopIntegration, DesktopIntegrationError } = require("./services/desktopIntegration");
 
@@ -31,6 +32,7 @@ let extensionPairing;
 let pairingStorage;
 let browserSetup;
 let automaticBackups;
+let backupVerification;
 let trashMaintenance;
 let authenticator;
 let desktopIntegration;
@@ -141,6 +143,7 @@ function applyWindowState(state) {
 }
 
 function lockDesktopVault(reason, notify = true) {
+  backupVerification?.cancel();
   authenticator?.clear(); pathGrants.clear(); saveApprovalAbort?.abort();
   lockManager?.setUnlocked(false);
   extensionPairing?.cancelPairing(); loginWindows?.closeAll();
@@ -181,9 +184,9 @@ function createMainWindow() {
     const state = applyWindowState(await vaultStore.getState());
     if (!desktopIntegration?.shouldStartHidden(process.argv, state.hasVault)) mainWindow.show();
   });
-  mainWindow.webContents.on("did-start-loading", () => authenticator?.clear());
-  mainWindow.webContents.on("render-process-gone", () => authenticator?.clear());
-  mainWindow.webContents.on("destroyed", () => authenticator?.clear());
+  for (const event of ["did-start-loading", "render-process-gone", "destroyed"]) {
+    mainWindow.webContents.on(event, () => { authenticator?.clear(); backupVerification?.cancel(); });
+  }
 
   // Background auto-lock is enforced here, not in the renderer: minimizing or
   // losing focus starts the grace timer, regaining focus cancels it (alt-tab,
@@ -739,6 +742,26 @@ function registerLoginHandlers() {
 }
 
 function registerImportExportHandlers() {
+  handleAppRequest("vault:pick-backup-check", async () => {
+    const picked = await withNativeDialog(() => dialog.showOpenDialog(mainWindow, {
+      title: "Select an encrypted backup to verify", properties: ["openFile"],
+      filters: [{ name: "Encrypted Backup", extensions: ["slvbackup"] }]
+    }));
+    if (picked.canceled || !picked.filePaths[0]) return { ok: true, result: { canceled: true } };
+    pathGrants.grant("backup-check", picked.filePaths[0]);
+    return { ok: true, result: { filePath: picked.filePaths[0] } };
+  });
+  handleAppRequest("vault:verify-backup", async (_event, { filePath, masterPassword } = {}) => handleVaultOperation(async () => {
+    if (!pathGrants.has("backup-check", filePath)) throw createPublicError("Choose a backup to check first.");
+    const result = await backupVerification.verify(filePath, masterPassword);
+    pathGrants.revoke("backup-check", filePath);
+    return result;
+  }));
+  handleAppRequest("vault:cancel-backup-check", async (_event, { filePath } = {}) => {
+    backupVerification.cancel();
+    pathGrants.revoke("backup-check", filePath);
+    return { ok: true };
+  });
   // ─── Phase 9: Import ────────────────────────────────────────────────────────
 
   handleAppRequest("vault:pick-import-file", async () => {
@@ -853,6 +876,7 @@ function registerImportExportHandlers() {
       // Kept after a failed attempt (e.g. wrong password) so the user can
       // retry; revoked once the restore succeeds.
       authenticator.clear();
+      backupVerification.cancel();
       const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
       pathGrants.clear();
       lockManager.setUnlocked(false); // restore locks the vault
@@ -940,6 +964,7 @@ function registerSettingsHandlers() {
   // Works while the vault is locked; leaves it locked (the user logs in next).
   handleAppRequest("vault:reset-with-recovery-key", async (_event, payload) => {
     authenticator.clear();
+    backupVerification.cancel();
     const response = await handleVaultOperation(() => vaultStore.resetWithRecoveryKey(payload || {}));
     if (response.ok) {
       pathGrants.clear();
@@ -1026,6 +1051,12 @@ async function handleVaultOperation(operation) {
 app.whenReady().then(async () => {
   if (!ownsDesktopInstance) return;
   vaultStore = createVaultStore(app.getPath("userData"));
+  backupVerification = createBackupVerification({ directory: path.join(app.getPath("userData"), "backup-checks") });
+  try { await backupVerification.prepare(); }
+  catch {
+    // An unavailable check folder must not prevent access to the user's vault.
+    backupVerification = { cancel() {}, async verify() { throw createPublicError("Backup check folder is unavailable. Restart SLV and try again."); } };
+  }
   automaticBackups = createAutomaticBackups({ configPath: path.join(app.getPath("userData"), "automatic-backups.json"), vault: vaultStore });
   authenticator = createAuthenticator({ vault: vaultStore, clipboard });
   await automaticBackups.load();
@@ -1109,6 +1140,7 @@ app.whenReady().then(async () => {
 });
 
 function disposeDesktopServices() {
+  backupVerification?.cancel();
   if (servicesDisposed) return;
   servicesDisposed = true;
   pathGrants.clear(); saveApprovalAbort?.abort();

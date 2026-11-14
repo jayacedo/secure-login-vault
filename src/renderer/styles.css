@@ -2963,6 +2963,9 @@ mark.search-highlight {
   max-width: 420px;
 }
 
+.backup-check-container { max-width: 520px; }
+#backup-check-password[hidden] { display: none; }
+
 .about-modal-container {
   max-width: 380px;
 }

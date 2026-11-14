@@ -1,6 +1,6 @@
 {
   "name": "secure-login-vault",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "description": "Offline-first Windows desktop credential vault built with Electron.",
   "main": "src/main.js",
   "author": "Secure Login Vault",
@@ -58,6 +58,8 @@
     "test:browser-save-app": "node scripts/run-electron-test.js scripts/browser-save-app-test.js",
     "test:auto-backups": "node scripts/automatic-backups-test.js",
     "test:auto-backups-app": "node scripts/run-electron-test.js scripts/automatic-backups-app-test.js",
+    "test:backup-check": "node scripts/backup-verification-test.js",
+    "test:backup-check-app": "node scripts/run-electron-test.js scripts/backup-verification-app-test.js",
     "test:history": "node scripts/password-history-test.js",
     "test:history-app": "node scripts/run-electron-test.js scripts/password-history-app-test.js",
     "test:health": "node scripts/vault-health-test.js",
