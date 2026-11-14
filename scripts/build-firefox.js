@@ -2,11 +2,13 @@ const fs = require("fs/promises");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { FIREFOX_EXTENSION_ID } = require("../src/native-host/config");
+const { assertExtensionSource } = require("./package-content-policy");
 const root = path.resolve(__dirname, "..");
 const source = path.join(root, "extension");
 const destination = path.join(root, "dist", "firefox");
 
 async function buildFirefox({ archive = true } = {}) {
+  assertExtensionSource(root);
   const manifest = JSON.parse(await fs.readFile(path.join(source, "manifest.json"), "utf8"));
   delete manifest.key;
   delete manifest.minimum_chrome_version;

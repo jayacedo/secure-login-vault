@@ -93,11 +93,16 @@
     "test:bulk-favorites-app": "node scripts/run-electron-test.js scripts/bulk-favorites-app-test.js",
     "test:dashboard-layout-app": "node scripts/run-electron-test.js scripts/dashboard-layout-app-test.js",
     "test:stability-app": "node scripts/run-electron-test.js scripts/stability-app-test.js",
-    "test:two-step-save": "node scripts/two-step-save-test.js"
+    "test:two-step-save": "node scripts/two-step-save-test.js",
+    "test:package-privacy": "node scripts/package-privacy-test.js",
+    "verify:installer-privacy": "node scripts/package-privacy.js"
   },
   "build": {
     "appId": "com.secureloginvault.app",
     "productName": "Secure Login Vault",
+    "beforePack": "./scripts/before-pack-privacy.js",
+    "afterPack": "./scripts/after-pack-privacy.js",
+    "artifactBuildCompleted": "./scripts/after-artifact-privacy.js",
     "directories": {
       "output": "release"
     },

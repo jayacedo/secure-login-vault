@@ -2,6 +2,8 @@
 
 Prepared 2026-11-15 for desktop 1.0.50 / Firefox extension 0.6.4.
 These are submission materials, not a record of public listing approval.
+**Hold submission:** the public desktop release was deleted by the owner on
+2026-11-15. A verified replacement download is required before submitting.
 The owner chose free use with retained code ownership and GitHub Issues for support.
 
 ## Listing fields
@@ -41,8 +43,7 @@ Once a password is filled, the destination website can read its own form fields.
 Install and setup instructions:
 https://github.com/jayacedo/secure-login-vault/blob/main/docs/firefox.md
 
-Windows desktop download:
-https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50
+Windows desktop download: insert the verified replacement release URL before submitting.
 
 Support:
 https://github.com/jayacedo/secure-login-vault/issues
@@ -74,14 +75,14 @@ Use AMO's custom license option and paste the full text from `LICENSE.md`. Do no
 select MIT, GPL or another open-source license. Public license URL:
 https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md
 
-The published GitHub release includes:
+Include this in the replacement GitHub release:
 
 > Free for personal and internal business use under the
 > [SLV Free-Use License](https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md).
 > Third-party components retain their own licenses.
 
-`LICENSE.md` is attached alongside the installer so the terms can be downloaded
-with it. The existing installer and Firefox archives have not been rebuilt for this
+Attach `LICENSE.md` alongside the installer so the terms can be downloaded
+with it. The withdrawn installer and current Firefox archives were not rebuilt for the
 documentation/license update; their embedded metadata may still say `UNLICENSED`.
 The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4.
 
@@ -98,9 +99,10 @@ The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4
 1. Confirm the existing add-on's distribution channel in Developer Hub. Use that
    existing add-on and keep `secure-login-vault@jayacedo`; do not create a new ID.
    Earlier approval alone does not establish that it is publicly listed.
-2. Use the verified public [v1.0.50 download](https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50)
-   in the submission. Exact asset URL and SHA-256 are recorded in the reviewer
-   notes. The public download and attached license were verified on 2026-11-15.
+2. Provide a verified replacement installer download. The owner removed v1.0.50
+   after its download/hash checks; GitHub now returns 404 for that release.
+   Run the package privacy gates and verify the uploaded binary's SHA-256, then
+   update the reviewer notes. Do not reuse a checksum from a different build.
 3. Include the finalized free-use terms in the AMO license field.
    Check that the setup guide, privacy page and license links are publicly accessible.
 4. Check the Firefox consent declaration against all data flows. The manifest
@@ -118,9 +120,10 @@ The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4
 
 ## Preparation checks (2026-11-15)
 
-- GitHub v1.0.50 is published, not a draft or pre-release. Its installer was
+- GitHub v1.0.50 was initially published, not a draft or pre-release. Its installer was
   downloaded without authentication; SHA-256 matches the release notes and local
-  build. Its attached license text matches `LICENSE.md`. No installer was run.
+  build. Its attached license text matched `LICENSE.md`. No installer was run.
+  The owner subsequently removed the release; the public release API returned 404.
 - `node scripts/firefox-test.js`: passed package/ZIP contents, identity, native
   caller allowlist and simulated per-user registration checks. No real registry
   registration or production vault access was used by this test.

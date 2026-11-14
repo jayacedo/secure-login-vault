@@ -320,19 +320,20 @@ Choose light, dark or system appearance, and customize the app name, logo and ac
 
 ## Windows setup
 
-Download the Windows x64 installer from the [v1.0.50 release page](https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50),
-or visit [the latest release](https://github.com/jayacedo/secure-login-vault/releases/latest).
-You can also build from source using the instructions below.
+**Download status (2026-11-15):** the owner removed the public v1.0.50 release.
+There is currently no verified public installer download. Check the
+[Releases page](https://github.com/jayacedo/secure-login-vault/releases) for future
+releases, or build from source using the instructions below.
 
 | File | Use |
 | --- | --- |
-| [Secure.Login.Vault.Setup.1.0.50.exe](https://github.com/jayacedo/secure-login-vault/releases/download/v1.0.50/Secure.Login.Vault.Setup.1.0.50.exe) | Installed desktop app, with browser-extension setup support |
-| [LICENSE.md](https://github.com/jayacedo/secure-login-vault/releases/download/v1.0.50/LICENSE.md) | Free-use terms for the desktop app and extension |
+| `Secure Login Vault Setup 1.0.50.exe` | Local build; installed desktop app with browser-extension setup support |
+| [LICENSE.md](LICENSE.md) | Free-use terms for the desktop app and extension |
 
-The public installer download was verified on 2026-11-15. SHA-256:
+The previously published installer was verified on 2026-11-15 before withdrawal. SHA-256:
 `31c1e6a89301470742a4fe374a9a5c79049237572adfba4eaf4ec425111cea38`.
 The optional portable build is available through the source build process; it
-does not support browser-helper setup and is not attached to this release.
+does not support browser-helper setup.
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -454,6 +455,7 @@ npm.cmd run extension:sync-secure
 - [Browser setup, workflows and verification](docs/browser-extension.md)
 - [Browser transport security and limitations](docs/browser-security.md)
 - [Firefox setup, testing and signing](docs/firefox.md)
+- [Package privacy gates and installer verification](docs/package-privacy.md)
 - [Implementation plan and development phase history](docs/implementation-plan.md)
 
 ## License

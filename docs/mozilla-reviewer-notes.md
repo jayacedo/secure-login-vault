@@ -1,7 +1,8 @@
 # Secure Login Vault - reviewer notes
 
 Submission target: Firefox extension 0.6.4; Windows desktop companion 1.0.50.
-Status: public installer download verified on 2026-11-15; interactive clean-install check pending.
+Status: not ready to submit. The owner withdrew the public installer release on
+2026-11-15. A replacement public download and interactive clean-install check are pending.
 
 ## Prerequisites
 
@@ -9,18 +10,18 @@ Status: public installer download verified on 2026-11-15; interactive clean-inst
   by the current desktop companion.
 - Add-on ID: `secure-login-vault@jayacedo`.
 - Native messaging host: `com.securelogin.vault`.
-- Release page: https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50
-- Desktop installer: https://github.com/jayacedo/secure-login-vault/releases/download/v1.0.50/Secure.Login.Vault.Setup.1.0.50.exe
-- Published installer SHA-256:
+- Release index: https://github.com/jayacedo/secure-login-vault/releases
+- Desktop installer: **ADD A VERIFIED REPLACEMENT DOWNLOAD BEFORE SUBMISSION**.
+- Historical SHA-256 of the withdrawn 1.0.50 installer:
   `31c1e6a89301470742a4fe374a9a5c79049237572adfba4eaf4ec425111cea38`.
-  Verified by downloading the public asset without authentication and hashing it
-  on 2026-11-15. The installer was not executed during this check.
+  The public asset was downloaded and hashed before withdrawal. Its inventory
+  passed the [package privacy check](package-privacy.md); it was not executed.
+  Replace this hash if the replacement installer differs.
 - Source: https://github.com/jayacedo/secure-login-vault
 - Desktop and extension license:
   https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md
   Free personal/internal business use; includes permission for reviewer builds and tests.
-- Downloadable release license: https://github.com/jayacedo/secure-login-vault/releases/download/v1.0.50/LICENSE.md
-  Verified to match the repository license text on 2026-11-15.
+- Attach the repository license alongside the replacement release installer.
 
 No service account, subscription or real website credentials are needed. Use a
 fresh Windows test account or VM and a fresh Firefox profile. Create a new test

@@ -10,7 +10,8 @@ async function main() {
   const built = await buildFirefox({ archive: false });
   await fs.mkdir(path.join(root, ".tmp"), { recursive: true });
   const stage = await fs.mkdtemp(path.join(root, ".tmp", "firefox-review-source-"));
-  const files = ["scripts/build-firefox.js", "scripts/sync-extension-fill.js",
+  const files = ["scripts/build-firefox.js", "scripts/package-content-policy.js",
+    "scripts/package-content-allowlist.json", "scripts/sync-extension-fill.js",
     "scripts/sync-secure-channel.js", "src/login/formFill.js",
     "src/shared/secureChannel.js", "src/native-host/config.js"];
   for (const file of files) {
