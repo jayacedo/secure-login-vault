@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     previewCategory: choice => ipcRenderer.invoke("vault:preview-credential-category", choice),
     changeCategory: choice => ipcRenderer.invoke("vault:change-credential-category", choice),
     undoBulkChange: token => ipcRenderer.invoke("vault:undo-bulk-change", token),
+    getDetails: id => ipcRenderer.invoke("vault:credential-details", id),
     getActivityHistory: options => ipcRenderer.invoke("vault:activity-history", options),
     getDuplicates: () => ipcRenderer.invoke("vault:duplicates-list"),
     resolveDuplicates: choice => ipcRenderer.invoke("vault:duplicates-resolve", choice),

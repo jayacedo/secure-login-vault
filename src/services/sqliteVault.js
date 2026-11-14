@@ -250,6 +250,19 @@ async function getCredentialPasswordHistory(filePath, key, id) {
   });
 }
 
+async function getCredentialDetails(filePath, key, id) {
+  if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Credential not found.");
+  return withDecryptedDatabase(filePath, key, db => {
+    const row = queryOne(db, `SELECT id, website_name, website_url, category, username, email, notes, tags,
+      favorite, group_name, created_at, updated_at,
+      CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code FROM credentials WHERE id = ?`, [id]);
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (!row.id || (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) throw createPublicError("Credential not found.");
+    const {password, qrCode, ...details} = normalizeCredential(row);
+    return details;
+  });
+}
+
 async function getVaultHealth(filePath, key) {
   return withDecryptedDatabase(filePath, key, db => {
     const activeGroup = getActiveGroupFilterValue(db);
@@ -1681,6 +1694,7 @@ module.exports = {
   getCredentialsForExport,
   getCredentialById,
   getCredentialPasswordHistory,
+  getCredentialDetails,
   getVaultHealth,
   getDuplicateReview,
   resolveDuplicateReview,

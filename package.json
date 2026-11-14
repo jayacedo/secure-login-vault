@@ -1,6 +1,6 @@
 {
   "name": "secure-login-vault",
-  "version": "1.0.40",
+  "version": "1.0.41",
   "description": "Offline-first Windows desktop credential vault built with Electron.",
   "main": "src/main.js",
   "author": "Secure Login Vault",
@@ -15,6 +15,7 @@
     "test:bulk-category": "node scripts/bulk-category-test.js",
     "test:bulk-undo": "node scripts/bulk-undo-test.js",
     "test:sort-app": "node scripts/run-electron-test.js scripts/credential-sort-app-test.js",
+    "test:details-app": "node scripts/run-electron-test.js scripts/credential-details-app-test.js",
     "test:bulk-move-app": "node scripts/run-electron-test.js scripts/bulk-move-app-test.js",
     "test:safety": "node scripts/data-safety-test.js",
     "test:ipc": "node scripts/ipc-guards-test.js",

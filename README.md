@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.40**, extension **0.6.1**. Desktop 1.0.40 adds remembered credential sorting by Website, Username, Recently added and Recently updated. Sorting preserves bulk selections and selection search. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.41**, extension **0.6.1**. Desktop 1.0.41 adds a read-only details panel opened from the website name, with copy/reveal controls, organization details, notes, tags, 2FA and password history. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -53,6 +53,28 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
   the mapping, blank-field defaults, invalid rows and possible duplicates before
   confirmation. Possible duplicates are skipped by default; existing entries are
   unchanged. Add/Edit Credential and CSV exports now call the address "Login URL".
+
+### View credential details
+
+Click a website name to open its details panel on the right. Copy the Login URL,
+username or email, see Group and Category together, and read notes and tags.
+Use **Edit** when you want to change the saved entry.
+
+- The initial details request excludes passwords and QR image bytes. Password
+  **Reveal** and **Copy** fetch the current entry only after the action is clicked.
+  Reveal hides again after 30 seconds or when SLV loses focus. Copy uses the
+  existing sensitive clipboard-clearing preference.
+- **Generate code** uses the existing authenticator flow when a QR image is saved.
+  **Password history** starts collapsed and loads previous passwords on demand,
+  masked by default. It offers Show and Copy; changing a saved password still
+  requires Edit. Merely viewing details does not change the entry or its history.
+- Close or Escape returns focus to the website name. Closing, locking, hiding the
+  app or refreshing the list clears the panel; late requests cannot reopen it.
+  Losing focus also clears revealed password/history content. Group scoping and
+  the current unlocked session apply to all reads.
+
+Validation: `npm run test:details-app`, with synthetic entries, a dummy QR and a
+mocked clipboard. No real account or clipboard contents are read by this test.
 
 ### Sort credentials
 

@@ -453,6 +453,19 @@ persistence and unchanged credential data. No real accounts are used.
 The 1.0.40 Setup installer is built. Packaged sorting, Chromium/Firefox helpers,
 bulk actions/Undo and existing app integration checks pass with synthetic data.
 
+Desktop 1.0.41 adds a read-only credential details drawer opened from website
+names. A guarded metadata-only request excludes password and QR bytes, respects
+active group scope and requires the unlocked main window. Reveal/Copy fetch on
+demand; reveal expires after 30 seconds or blur. Organization, notes and tags are
+readable without Edit. Existing authenticator and password-history services are
+reused, with history in Show/Copy mode and no staged password replacement.
+Close/lock/hide/list refresh clears the panel, invalidates pending reads and
+clears displayed secrets. Synthetic tests cover metadata exclusion, scope,
+copy/reveal/expiry, history, 2FA, Edit, keyboard focus and late replies after lock.
+The 1.0.41 Setup installer is built. Packaged details and Chromium/Firefox helper
+checks pass, along with existing sorting, bulk actions, password history, app
+integration and 91 desktop request guard checks, all using synthetic vaults.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

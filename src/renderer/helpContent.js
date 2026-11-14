@@ -1,5 +1,9 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Credential Details", items: [
+    { q: "Can I inspect a login without editing it?", a: "Click its website name to open the details panel on the right. It shows Login URL, username, email, Group, Category, notes, tags and dates, with copy controls for login fields. Use Edit to make changes. Close or Escape returns to the list. Viewing details does not change the entry." },
+    { q: "How do Reveal, history and 2FA work in details?", a: "The password stays masked until Reveal, and hides again after 30 seconds or when SLV loses focus. Copy works without revealing and uses your sensitive clipboard-clearing setting. Password history starts collapsed, loads on demand and offers Show and Copy. Generate code opens the existing authenticator when a QR image is saved. Close, lock, app hiding or a list refresh clears the panel." }
+  ] },
   { title: "Sort Credentials", items: [
     { q: "How do I sort my logins?", a: "Click Website or Username in the table header to toggle A–Z and Z–A. The menu beside the item count also offers Recently added and Recently updated, newest first. Recently updated is the default. Your preferred order is remembered on this device across locks and restarts." },
     { q: "Will sorting clear my selection or change my entries?", a: "No. Sorting reorders the current results while preserving selected rows, hidden selections and Find logins. Your dashboard filters still apply. It does not change credentials, timestamps or activity history. Username sorts the displayed email when no username is saved, keeps blanks last, and handles names with numbers naturally." }

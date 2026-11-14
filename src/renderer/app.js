@@ -196,6 +196,7 @@ async function initAuth() {
 }
 
 function renderFromState(state) {
+  if (!state.isUnlocked) closeCredentialDetails(false);
   if (!state.isUnlocked) clearBulkUndo(true);
   updateStatus(state);
   document.body.classList.toggle("compact-unlock", Boolean(state.compactUnlock && !state.isUnlocked));
@@ -354,6 +355,7 @@ function renderPasswordInput({ id, label, autocomplete }) {
 let _lastAuthState = null;
 
 function renderDashboard(state) {
+  closeCredentialDetails(false);
   resetBulkSelection();
   _lastAuthState = state;
   document.body.classList.add("is-dashboard");
@@ -567,7 +569,7 @@ function renderCredentialRow(credential, query = "") {
 
       <span role="cell" class="cell-website">
         <span class="cell-main">
-          <strong title="${escapeHtml(credential.websiteName)}">${hl(credential.websiteName)}</strong>
+          <button type="button" class="credential-name-button" data-action="details" data-id="${credential.id}" aria-label="View details for ${escapeHtml(credential.websiteName)}" title="View details: ${escapeHtml(credential.websiteName)}">${hl(credential.websiteName)}</button>
           <small title="${escapeHtml(credential.websiteUrl || "No URL")}">${hl(credential.websiteUrl || "No URL")}</small>
           ${credential.groupName ? `<small class="group-badge" title="Group: ${escapeHtml(credential.groupName)}">${hl(credential.groupName)}</small>` : ""}
           ${tags ? `<span class="tag-row">${tags}</span>` : ""}
@@ -729,6 +731,7 @@ function setActiveGroupBanner(activeGroup, { forceShow = false } = {}) {
 }
 
 function updateCredentialList(credentials) {
+  closeCredentialDetails(false);
   resetBulkSelection();
   const listBody = document.querySelector("#credential-list-body");
   const countLabel = document.querySelector("#credential-count-label");
@@ -751,6 +754,8 @@ function bindCredentialActions() {
     if (!btn) return;
     const action = btn.dataset.action;
     const id = Number(btn.dataset.id);
+
+    if (action === "details") { openCredentialDetails(id, btn); return; }
 
     if (action === "favorite") {
       const res = await window.secureLoginVault.credentials.toggleFavorite(id);
@@ -1146,6 +1151,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  closeCredentialDetails(false);
   clearBulkUndo(true);
   resetBulkSelection();
   closeAuthenticator(); closeQrLightbox();
@@ -1298,6 +1304,7 @@ function setupDashboardInteractions() {
 
 let credentialSearchRequest = 0;
 async function runSearch() {
+  closeCredentialDetails(false);
   resetBulkSelection();
   const request = ++credentialSearchRequest;
   const res = await window.secureLoginVault.credentials.search({
@@ -1935,7 +1942,7 @@ function closeCredentialModal() {
   if (returnToDuplicateReview) { returnToDuplicateReview = false; openDuplicateReview(); }
 }
 
-function setupPasswordHistory(overlay, credentialId) {
+function setupPasswordHistory(overlay, credentialId, {readOnly = false} = {}) {
   const details = overlay.querySelector("#password-history");
   const list = overlay.querySelector("#password-history-list");
   let request = 0;
@@ -1979,8 +1986,9 @@ function setupPasswordHistory(overlay, credentialId) {
         const use = document.createElement("button");
         use.type = "button";
         use.className = "secondary-button";
-        use.textContent = "Use";
+        use.textContent = readOnly ? "Copy" : "Use";
         use.addEventListener("click", () => {
+          if (readOnly) { copyToClipboard(input.value, "Previous password copied!", use, true); return; }
           overlay.querySelector("#m-password").value = input.value;
           overlay.querySelector("#m-password").focus();
           showToast("Previous password selected. Click Update Credential to save it in SLV.", "info");
@@ -2060,6 +2068,7 @@ const clientSearchState = {
 };
 
 async function renderClientVault(state) {
+  closeCredentialDetails(false);
   resetBulkSelection();
   _lastAuthState = state;
   document.body.classList.add("is-dashboard");
@@ -2916,6 +2925,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  closeCredentialDetails(false);
   clearBulkUndo(true);
   resetBulkSelection();
   closeAuthenticator(); closeQrLightbox();
