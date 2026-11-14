@@ -19,7 +19,10 @@ async function main() {
   if (win.webContents.isLoading()) await new Promise(resolve => win.webContents.once("did-finish-load", resolve));
   const run = code => win.webContents.executeJavaScript(code);
   const api = code => run(`window.secureLoginVault.${code}`);
-  const click = selector => run(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const click = async selector => {
+    if (["#bulk-move-btn", "#bulk-category-btn"].includes(selector)) await run("if(document.querySelector('#bulk-actions-menu').hidden) document.querySelector('#bulk-actions-toggle').click()");
+    return run(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  };
   const password = "Synthetic bulk UI master password";
   assert.equal((await api(`auth.createVault(${JSON.stringify({masterPassword:password,confirmPassword:password})})`)).ok, true);
   await api('groups.add("Source")'); await api('groups.add("Destination")');
@@ -86,7 +89,7 @@ async function main() {
   assert.equal(await run("document.querySelector('#bulk-move-review').hidden"),true);
   assert.equal(await run("document.querySelector('#bulk-move-confirm').textContent"),"Review changes");
   await click("#bulk-move-cancel");
-  assert.equal(await run("document.activeElement.id"),"bulk-category-btn");
+  assert.equal(await run("document.activeElement.id"),"bulk-actions-toggle");
   assert.equal((await api(`credentials.getOne(${a})`)).result.category,"Other");
   await run("searchState.category='Other';runSearch()");
   await click("#bulk-select-toggle"); await find("beta"); await click("#bulk-select-all");

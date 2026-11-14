@@ -387,14 +387,15 @@ async function updateCredential(filePath, key, id, data) {
 
 function credentialMoveSnapshot(db, key, choice, sessionId, kind = "group") {
   const category = kind === "category";
-  const destination = category ? choice?.targetCategory : choice?.targetGroup;
+  const favorite = kind === "favorite";
+  const destination = favorite ? choice?.favorite : category ? choice?.targetCategory : choice?.targetGroup;
   const ids = choice?.ids;
   if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => !Number.isSafeInteger(id) || id <= 0)
-    || new Set(ids).size !== ids.length || typeof destination !== "string" || destination.length > 200 || (category && !destination.trim())) {
+    || new Set(ids).size !== ids.length || (favorite ? typeof destination !== "boolean" : typeof destination !== "string" || destination.length > 200 || (category && !destination.trim()))) {
     throw createPublicError(`Select between 1 and 500 credentials and choose a destination ${kind}.`);
   }
-  const targetName = destination.trim();
-  const target = targetName ? queryOne(db, category
+  const targetName = favorite ? "" : destination.trim();
+  const target = favorite ? { favorite: destination } : targetName ? queryOne(db, category
     ? "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE"
     : "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [targetName]) : { id: null, name: "" };
   if (targetName && !target.id) throw createPublicError(`The destination ${kind} no longer exists. Review again.`);
@@ -466,6 +467,35 @@ async function changeCredentialCategory(filePath, key, choice, sessionId, captur
   });
 }
 
+async function previewCredentialFavorites(filePath, key, choice, sessionId) {
+  return withDecryptedDatabase(filePath, key, db => {
+    const snapshot = credentialMoveSnapshot(db, key, choice, sessionId, "favorite");
+    return { revision: snapshot.revision, favorite: snapshot.target.favorite,
+      entries: snapshot.rows.map(row => ({ id: row.id, websiteName: row.website_name,
+        username: row.username || row.email || "", favorite: Boolean(row.favorite) })),
+      unchanged: snapshot.rows.filter(row => Boolean(row.favorite) === snapshot.target.favorite).length };
+  });
+}
+
+async function changeCredentialFavorites(filePath, key, choice, sessionId, captureUndo = () => {}) {
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
+      throw createPublicError("Review and confirm the selected credentials before changing Favorites.");
+    }
+    const snapshot = credentialMoveSnapshot(db, key, choice, sessionId, "favorite");
+    if (snapshot.revision !== choice.revision) throw createPublicError("The selected credentials, Favorites choice or vault session changed. Review again.");
+    const now = new Date().toISOString();
+    let changed = 0;
+    for (const row of snapshot.rows) {
+      if (Boolean(row.favorite) === snapshot.target.favorite) continue;
+      db.run("UPDATE credentials SET favorite = ?, updated_at = ? WHERE id = ?", [snapshot.target.favorite ? 1 : 0, now, row.id]);
+      changed++;
+    }
+    captureUndo(createBulkUndo(db, key, "favorite", snapshot.rows, snapshot.target.favorite));
+    return { changed, unchanged: snapshot.rows.length - changed, favorite: snapshot.target.favorite };
+  });
+}
+
 function bulkUndoFingerprint(db, key, ids) {
   const rows = queryAll(db, `SELECT c.*, (SELECT MAX(a.id) FROM credential_activity a WHERE a.credential_id = c.id) AS last_activity
     FROM credentials c WHERE c.id IN (${ids.map(() => "?").join(",")}) ORDER BY c.id`, ids);
@@ -473,6 +503,7 @@ function bulkUndoFingerprint(db, key, ids) {
 }
 
 function bulkUndoReference(db, kind, name) {
+  if (kind === "favorite") return null;
   if (!name) return null;
   const row = queryOne(db, kind === "group" ? "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE"
     : "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE", [name]);
@@ -480,8 +511,8 @@ function bulkUndoReference(db, kind, name) {
 }
 
 function createBulkUndo(db, key, kind, before, destination) {
-  const field = kind === "group" ? "group_name" : "category";
-  const entries = before.filter(row => (row[field] || "").toLowerCase() !== destination.toLowerCase())
+  const field = kind === "favorite" ? "favorite" : kind === "group" ? "group_name" : "category";
+  const entries = before.filter(row => kind === "favorite" ? Boolean(row.favorite) !== destination : (row[field] || "").toLowerCase() !== destination.toLowerCase())
     .map(row => ({ id: row.id, value: row[field], reference: bulkUndoReference(db, kind, row[field]) }));
   if (!entries.length) return null;
   // Keep only assignment metadata and a keyed fingerprint, never credential secrets.
@@ -499,7 +530,7 @@ async function undoBulkCredentialChange(filePath, key, receipt) {
         throw createPublicError("Cannot undo: an original group or category changed. Nothing was changed.");
       }
     }
-    const sql = receipt.kind === "group" ? "UPDATE credentials SET group_name = ?, updated_at = ? WHERE id = ?"
+    const sql = receipt.kind === "favorite" ? "UPDATE credentials SET favorite = ?, updated_at = ? WHERE id = ?" : receipt.kind === "group" ? "UPDATE credentials SET group_name = ?, updated_at = ? WHERE id = ?"
       : "UPDATE credentials SET category = ?, updated_at = ? WHERE id = ?";
     const now = new Date().toISOString();
     for (const entry of receipt.entries) db.run(sql, [entry.value, now, entry.id]);
@@ -1684,6 +1715,8 @@ module.exports = {
   previewCredentialCategory,
   changeCredentialCategory,
   undoBulkCredentialChange,
+  previewCredentialFavorites,
+  changeCredentialFavorites,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,

@@ -473,11 +473,18 @@ function renderDashboard(state) {
         </div>
         <div id="bulk-selection-bar" class="bulk-selection-bar" hidden>
           <strong id="bulk-selection-count" role="status">0 selected</strong>
-          <button class="primary-button" id="bulk-move-btn" type="button" disabled>Move to group</button>
-          <button class="secondary-button" id="bulk-category-btn" type="button" disabled>Change category</button>
-          <button class="secondary-button" id="bulk-selection-cancel" type="button">Cancel</button>
+          <div class="bulk-actions">
+            <button class="primary-button" id="bulk-actions-toggle" type="button" aria-expanded="false" aria-controls="bulk-actions-menu" disabled>Actions <span aria-hidden="true">▾</span></button>
+            <div id="bulk-actions-menu" class="bulk-actions-menu" role="group" aria-label="Selected credential actions" hidden>
+              <button id="bulk-move-btn" type="button" disabled>Move to group</button>
+              <button id="bulk-category-btn" type="button" disabled>Change category</button>
+              <button id="bulk-favorite-add" type="button" disabled>Add to Favorites</button>
+              <button id="bulk-favorite-remove" type="button" disabled>Remove from Favorites</button>
+            </div>
+          </div>
           <button class="secondary-button" id="bulk-show-selected" type="button" aria-pressed="false">Show selected</button>
           <input id="bulk-selection-search" class="settings-input bulk-selection-search" type="search" aria-label="Find logins to select" placeholder="Find logins by name, URL, username or group" autocomplete="off">
+          <button class="secondary-button" id="bulk-selection-cancel" type="button">Cancel</button>
           <span id="bulk-selection-results" class="bulk-selection-results" role="status"></span>
           <small>Select up to 500. Find logins keeps your selections; refreshing or changing dashboard filters clears them.</small>
         </div>

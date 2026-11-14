@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.43**, extension **0.6.1**. Desktop 1.0.43 adds Show selected to the bulk-selection bar, gathering selected logins into one view before moving groups or changing categories. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.44**, extension **0.6.1**. Desktop 1.0.44 groups bulk operations into a compact Actions menu and adds reviewed Add to Favorites / Remove from Favorites with Undo. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -113,6 +113,20 @@ Validation: `npm run test:sort-app`, using a new synthetic vault only.
 
 ### Move selected credentials to a group
 
+The selection bar groups **Move to group**, **Change category**, **Add to
+Favorites** and **Remove from Favorites** in the **Actions** menu. It stays
+disabled until entries are selected. Find logins, Show selected and Cancel remain
+directly accessible. Use Tab/arrows to navigate the menu and Escape to close it.
+
+For bulk Favorites, review the selected names and changed/unchanged counts, then
+confirm. Existing matching Favorites states are skipped. Only Favorites status
+and update time change, and Updated activity is recorded. **Undo** restores the
+previous flags for changed entries only; the same latest-action, unlock-session
+and stale-entry protections used for group/category Undo apply. Removing items
+from the Favorites view hides them; Undo refreshes that view. A successful no-op
+replaces the previous Undo opportunity. Tests: `npm run test:bulk-favorites` and
+`npm run test:bulk-favorites-app`, using synthetic vaults only.
+
 **Show selected** in the selection bar displays all selected entries together,
 including those hidden by Find logins. It pauses that search without deleting the
 search text; turning it off restores your search. Sorting still applies. Uncheck
@@ -128,7 +142,7 @@ reviewing or cancelling does not edit entries. Validation:
 
 Choose the **Select credentials** checkbox icon in the Credentials toolbar. Select
 individual rows or use the header checkbox to select all shown entries (up to 500).
-Choose **Move to group**, select an existing destination or **Ungrouped**, then
+Choose **Actions > Move to group**, select an existing destination or **Ungrouped**, then
 **Review move** and **Confirm move**. Create new groups in Settings > Organization.
 
 - Only the group assignment and update timestamp change. Passwords, notes, tags,

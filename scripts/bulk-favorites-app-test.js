@@ -1,0 +1,53 @@
+const assert=require("assert/strict"),fs=require("fs"),path=require("path");
+const {app,BrowserWindow}=require("electron");
+const {testTempRoot}=require("./testTemp");
+const root=fs.mkdtempSync(path.join(testTempRoot(),"bulk-favorites-app-"));
+app.setPath("userData",root);process.env.SLV_PIPE_USER=`favorites-${process.pid}`;
+require(path.join(process.env.SLV_TEST_CODE_ROOT || path.join(__dirname,".."),"src/main"));
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(fn){for(let i=0;i<150;i++){if(await fn())return;await sleep(50);}throw Error("Favorites UI timed out");}
+async function main(){
+  await app.whenReady();await until(()=>BrowserWindow.getAllWindows().length);
+  const win=BrowserWindow.getAllWindows()[0];win.webContents.setBackgroundThrottling(false);win.show();win.focus();
+  if(win.webContents.isLoading())await new Promise(resolve=>win.webContents.once("did-finish-load",resolve));
+  const run=code=>win.webContents.executeJavaScript(code),api=code=>run(`window.secureLoginVault.${code}`);
+  const click=selector=>run(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const pw="Synthetic Favorites UI master password";
+  await api(`auth.createVault(${JSON.stringify({masterPassword:pw,confirmPassword:pw})})`);
+  const data={websiteName:"Dummy <img src=x> Alpha",websiteUrl:"https://example.test/login",username:"dummy",password:"Synthetic favorite password",notes:"private synthetic note",category:"Other"};
+  const a=(await api(`credentials.add(${JSON.stringify(data)})`)).result.id;
+  const b=(await api(`credentials.add(${JSON.stringify({...data,websiteName:"Dummy Beta",favorite:true})})`)).result.id;
+  await run("initAuth()");await until(()=>run("document.querySelectorAll('.credential-row-item').length===2"));await run("refreshCredentials()");
+  const before=JSON.stringify((await api("credentials.getAllForExport()")).result);
+  await click("#bulk-select-toggle");assert.equal(await run("document.querySelector('#bulk-actions-toggle').disabled"),true);
+  await click("#bulk-select-all");await click("#bulk-actions-toggle");
+  assert.equal(await run("document.activeElement.id"),"bulk-move-btn");
+  await run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true}))");assert.equal(await run("document.activeElement.id"),"bulk-favorite-remove");
+  await run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");assert.equal(await run("document.activeElement.id"),"bulk-actions-toggle");assert.equal(await run("document.querySelector('#bulk-actions-menu').hidden"),true);
+  win.focus();await until(()=>run("document.hasFocus()"));
+  await click("#bulk-actions-toggle");await run("document.querySelector('#bulk-selection-search').focus()");assert.equal(await run("document.querySelector('#bulk-actions-menu').hidden"),true,JSON.stringify(await run("({active:document.activeElement.id,focused:document.hasFocus(),menu:document.querySelector('#bulk-actions-menu').hidden})")));
+  await click("#bulk-actions-toggle");await run("document.body.dispatchEvent(new Event('pointerdown',{bubbles:true}))");assert.equal(await run("document.querySelector('#bulk-actions-menu').hidden"),true);
+  const open=async add=>{await click("#bulk-actions-toggle");await click(add?"#bulk-favorite-add":"#bulk-favorite-remove");await until(()=>run("document.querySelectorAll('#bulk-move-review li').length===2 && !document.querySelector('#bulk-move-confirm').disabled"));};
+  await open(true);
+  assert.equal(await run("document.querySelectorAll('#bulk-move-review img').length"),0);
+  const text=await run("document.querySelector('#bulk-move-review').textContent");assert(text.includes("1 will change; 1 already favorited"));assert(!text.includes(data.password));assert(!text.includes(data.notes));
+  await click("#bulk-move-cancel");assert.equal(await run("document.activeElement.id"),"bulk-actions-toggle");assert.equal(JSON.stringify((await api("credentials.getAllForExport()")).result),before);
+  win.setSize(1100,780);await run("document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-palette','coffee')");await click("#bulk-actions-toggle");await sleep(150);
+  fs.writeFileSync(path.join(root,"actions-coffee.png"),(await win.webContents.capturePage()).toPNG());
+  await run("closeBulkActions()");await open(true);await click("#bulk-move-confirm");await until(()=>run("!!document.querySelector('#bulk-undo-btn') && !document.querySelector('#bulk-move-overlay')"));
+  assert.equal((await api(`credentials.getOne(${a})`)).result.favorite,true);
+  await click("#bulk-undo-btn");await until(()=>run("!document.querySelector('#bulk-undo-btn')"));assert.equal((await api(`credentials.getOne(${a})`)).result.favorite,false);assert.equal((await api(`credentials.getOne(${b})`)).result.favorite,true);
+  // Stale reviews require another review; no partial update occurs.
+  await click("#bulk-select-toggle");await click("#bulk-select-all");await open(true);
+  const current=(await api(`credentials.getOne(${a})`)).result;await api(`credentials.update(${a},${JSON.stringify({...current,notes:"synthetic later note"})})`);
+  await click("#bulk-move-confirm");await until(()=>run("document.querySelector('#bulk-move-confirm')?.textContent==='Review again'"));assert.equal((await api(`credentials.getOne(${a})`)).result.favorite,false);
+  await click("#bulk-move-confirm");await until(()=>run("document.querySelectorAll('#bulk-move-review li').length===2"));await click("#bulk-move-confirm");await until(()=>run("!!document.querySelector('#bulk-undo-btn') && !document.querySelector('#bulk-move-overlay')"));
+  await run("searchState.onlyFavorites=true;runSearch()");await click("#bulk-select-toggle");await click("#bulk-select-all");await open(false);await click("#bulk-move-confirm");await until(()=>run("document.querySelectorAll('.credential-row-item').length===0 && !!document.querySelector('#bulk-undo-btn')"));
+  await click("#bulk-undo-btn");await until(()=>run("document.querySelectorAll('.credential-row-item').length===2 && !document.querySelector('#bulk-undo-btn')"));
+  await click("#bulk-select-toggle");await click("#bulk-select-all");await open(false);await run("handleLockVault()");assert.equal(await run("!!document.querySelector('#bulk-move-overlay')"),false);
+  assert.equal((await api(`credentials.previewFavorites({ids:[${a}],favorite:false})`)).ok,false);
+  console.log(`PASS synthetic Favorites UI: compact menu keyboard/outside dismissal, safe preview/cancel, mixed add, Undo, stale retry, Favorites removal/Undo refresh and lock cleanup\nScreenshot: ${root}`);
+  app.exit(0);
+}
+setTimeout(()=>{console.error("Favorites UI timeout");app.exit(1);},60000).unref();
+main().catch(error=>{console.error(error);app.exit(1);});

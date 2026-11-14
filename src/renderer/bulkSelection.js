@@ -35,7 +35,7 @@ function showBulkUndo(result, message) {
       if (document.querySelector("#credential-list-body")) await refreshCredentials();
       if (version !== bulkSessionVersion) return;
       document.querySelector("#bulk-select-toggle")?.focus();
-      showToast(`Restored previous ${response.result.kind === "group" ? "groups" : "categories"} for ${response.result.restored} credentials.`, "info");
+      showToast(`Restored previous ${response.result.kind === "favorite" ? "Favorites" : response.result.kind === "group" ? "groups" : "categories"} for ${response.result.restored} credentials.`, "info");
     } catch { if (bulkUndoToast === toast) showToast("Could not undo. Try again.", "error"); }
     finally { if (bulkUndoToast === toast) button.disabled = false; }
   });
@@ -58,6 +58,8 @@ function updateBulkSelectionControls() {
   document.querySelector("#bulk-select-toggle").setAttribute("aria-pressed", String(bulkSelectionEnabled));
   document.querySelector("#bulk-move-btn").disabled = bulkSelectedIds.size === 0;
   document.querySelector("#bulk-category-btn").disabled = bulkSelectedIds.size === 0;
+  for (const id of ["bulk-actions-toggle", "bulk-favorite-add", "bulk-favorite-remove"]) document.getElementById(id).disabled = bulkSelectedIds.size === 0;
+  if (!bulkSelectionEnabled || !bulkSelectedIds.size) closeBulkActions();
   const checks = [...table.querySelectorAll("[data-select-credential]")];
   const selectedOnly = bulkSelectionEnabled && bulkShowSelected;
   const search = document.querySelector("#bulk-selection-search");
@@ -76,6 +78,7 @@ function updateBulkSelectionControls() {
   document.querySelector("#bulk-selection-results").textContent = selectedOnly
     ? "Showing selected entries. Turn off Show selected to resume Find logins."
     : query ? `${visible.length} matching login${visible.length === 1 ? "" : "s"}` : "";
+  document.querySelector("#bulk-selection-results").hidden = !selectedOnly && !query;
   const all = document.querySelector("#bulk-select-all");
   all.disabled = visible.length === 0;
   all.checked = visible.length > 0 && visible.every(check => check.checked);
@@ -84,6 +87,7 @@ function updateBulkSelectionControls() {
 }
 
 function resetBulkSelection() {
+  closeBulkActions();
   bulkSelectionEnabled = false;
   bulkShowSelected = false;
   bulkSelectedIds.clear();
@@ -94,13 +98,16 @@ function resetBulkSelection() {
 }
 
 function setupBulkSelection() {
+  setupBulkActions();
   document.querySelector("#bulk-select-toggle").addEventListener("click", () => {
     if (bulkSelectionEnabled) resetBulkSelection();
     else { bulkSelectionEnabled = true; updateBulkSelectionControls(); document.querySelector("#bulk-select-all").focus(); }
   });
   document.querySelector("#bulk-selection-cancel").addEventListener("click", () => { resetBulkSelection(); document.querySelector("#bulk-select-toggle").focus(); });
-  document.querySelector("#bulk-move-btn").addEventListener("click", () => openBulkMove());
-  document.querySelector("#bulk-category-btn").addEventListener("click", () => openBulkMove("category"));
+  document.querySelector("#bulk-move-btn").addEventListener("click", () => { closeBulkActions(); openBulkMove(); });
+  document.querySelector("#bulk-category-btn").addEventListener("click", () => { closeBulkActions(); openBulkMove("category"); });
+  document.querySelector("#bulk-favorite-add").addEventListener("click", () => { closeBulkActions(); openBulkFavorites(true); });
+  document.querySelector("#bulk-favorite-remove").addEventListener("click", () => { closeBulkActions(); openBulkFavorites(false); });
   document.querySelector("#bulk-show-selected").addEventListener("click", () => {
     bulkShowSelected = !bulkShowSelected;
     updateBulkSelectionControls();
@@ -131,6 +138,93 @@ function setupBulkSelection() {
   updateBulkSelectionControls();
 }
 
+function closeBulkActions(restoreFocus = false) {
+  const menu = document.querySelector("#bulk-actions-menu");
+  if (!menu) return;
+  menu.hidden = true;
+  const toggle = document.querySelector("#bulk-actions-toggle");
+  toggle.setAttribute("aria-expanded", "false");
+  if (restoreFocus) toggle.focus();
+}
+
+function setupBulkActions() {
+  const toggle = document.querySelector("#bulk-actions-toggle"), menu = document.querySelector("#bulk-actions-menu");
+  const open = () => { menu.hidden = false; toggle.setAttribute("aria-expanded", "true"); menu.querySelector("button:not(:disabled)")?.focus(); };
+  toggle.addEventListener("click", () => menu.hidden ? open() : closeBulkActions(true));
+  toggle.addEventListener("keydown", event => { if (event.key === "ArrowDown") { event.preventDefault(); open(); } });
+  menu.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeBulkActions(true); }
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      const items = [...menu.querySelectorAll("button:not(:disabled)")];
+      const index = items.indexOf(document.activeElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      items[next]?.focus();
+    }
+  });
+  menu.parentElement.addEventListener("focusout", event => { if (!menu.parentElement.contains(event.relatedTarget)) closeBulkActions(); });
+}
+document.addEventListener("pointerdown", event => { if (!event.target.closest(".bulk-actions")) closeBulkActions(); });
+
+async function openBulkFavorites(favorite) {
+  if (!bulkSelectedIds.size || bulkMoveDialog) return;
+  const label = favorite ? "Add to Favorites" : "Remove from Favorites";
+  const state = {ids: [...bulkSelectedIds], review: null, busy: false, overlay: document.createElement("div")};
+  bulkMoveDialog = state;
+  const overlay = state.overlay;
+  overlay.id = "bulk-move-overlay"; overlay.className = "modal-overlay is-open"; overlay.tabIndex = -1;
+  overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true"); overlay.setAttribute("aria-labelledby", "bulk-favorites-title");
+  overlay.innerHTML = `<div class="modal-container bulk-move-container"><div class="modal-header"><h2 id="bulk-favorites-title">${label}</h2><button type="button" class="modal-close-btn" aria-label="Close">${renderCloseIcon()}</button></div>
+    <div class="modal-body"><p>Review selected entries before changing their Favorites status.</p><div id="bulk-move-review"></div><p id="bulk-move-status" role="status"></p></div>
+    <div class="modal-footer"><button type="button" class="secondary-button" id="bulk-move-cancel">Cancel</button><button type="button" class="primary-button" id="bulk-move-confirm">${label}</button></div></div>`;
+  document.body.append(overlay);
+  const confirm = overlay.querySelector("#bulk-move-confirm"), message = overlay.querySelector("#bulk-move-status"), review = overlay.querySelector("#bulk-move-review");
+  const cancel = () => { if (!state.busy) { closeBulkMove(); document.querySelector("#bulk-actions-toggle")?.focus(); } };
+  overlay.querySelector(".modal-close-btn").addEventListener("click", cancel);
+  overlay.querySelector("#bulk-move-cancel").addEventListener("click", cancel);
+  const busy = value => { state.busy = value; overlay.querySelectorAll("button").forEach(button => {button.disabled = value;}); if (value) overlay.focus(); else confirm.focus(); };
+  const operate = async () => {
+    if (state.busy) return;
+    busy(true);
+    const choice = {ids: state.ids, favorite};
+    const applying = Boolean(state.review);
+    message.textContent = applying ? "Applying changes…" : "Preparing review…";
+    const version = bulkSessionVersion;
+    try {
+      const api = window.secureLoginVault.credentials;
+      const response = await (applying ? api.changeFavorites({...choice, revision:state.review.revision, confirmed:true}) : api.previewFavorites(choice));
+      if (bulkMoveDialog !== state || version !== bulkSessionVersion) return;
+      if (!response.ok) throw Error(response.message);
+      if (applying) {
+        resetBulkSelection(); await refreshCredentials();
+        if (version !== bulkSessionVersion || !document.querySelector("#credential-list-body")) return;
+        showBulkUndo(response.result, `${response.result.changed} ${favorite ? "added to" : "removed from"} Favorites. ${response.result.unchanged} already ${favorite ? "favorited" : "not favorited"}.`);
+        document.querySelector("#bulk-select-toggle")?.focus();
+        return;
+      }
+      state.review = response.result;
+      const summary = document.createElement("p"); summary.textContent = `${state.review.entries.length - state.review.unchanged} will change; ${state.review.unchanged} already ${favorite ? "favorited" : "not favorited"}.`;
+      const list = document.createElement("ul");
+      for (const entry of state.review.entries) { const item = document.createElement("li"); item.textContent = `${entry.websiteName}${entry.username ? ` · ${entry.username}` : ""} — ${entry.favorite ? "Favorite" : "Not a favorite"}`; list.append(item); }
+      review.replaceChildren(summary, list); confirm.textContent = label; message.textContent = "Undo is available after applying, until your next bulk change or lock.";
+    } catch (error) {
+      if (bulkMoveDialog !== state) return;
+      state.review = null; review.replaceChildren(); confirm.textContent = "Review again"; message.textContent = error.message || "Could not change Favorites. Review again.";
+    } finally { if (bulkMoveDialog === state) busy(false); }
+  };
+  confirm.addEventListener("click", operate);
+  overlay.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancel(); }
+    if (event.key === "Tab") {
+      const items = [...overlay.querySelectorAll("button:not(:disabled)")];
+      if (!items.length) { event.preventDefault(); return; }
+      if (event.shiftKey && document.activeElement === items[0]) {event.preventDefault();items.at(-1).focus();}
+      else if (!event.shiftKey && document.activeElement === items.at(-1)) {event.preventDefault();items[0].focus();}
+    }
+  });
+  await operate();
+}
+
 function closeBulkMove() {
   const state = bulkMoveDialog;
   bulkMoveDialog = null;
@@ -143,7 +237,7 @@ async function openBulkMove(kind = "group") {
   const reviewLabel = category ? "Review changes" : "Review move";
   const confirmLabel = category ? "Confirm changes" : "Confirm move";
   const resultField = category ? "targetCategory" : "targetGroup";
-  const returnButton = category ? "#bulk-category-btn" : "#bulk-move-btn";
+  const returnButton = "#bulk-actions-toggle";
   const credentials = window.secureLoginVault.credentials;
   const state = { ids: [...bulkSelectedIds], review: null, busy: false, overlay: document.createElement("div") };
   bulkMoveDialog = state;

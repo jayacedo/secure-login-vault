@@ -1044,6 +1044,11 @@ kbd {
 .bulk-selection-bar[hidden] { display: none; }
 .bulk-selection-bar .bulk-selection-search { flex: 1 1 260px; min-width: 180px; width: auto; }
 .bulk-selection-results { color: var(--muted); font-size: 12px; }
+.bulk-actions { position: relative; }
+.bulk-actions-menu { position: absolute; z-index: 5; top: calc(100% + 6px); left: 0; min-width: 220px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px #0004; }
+.bulk-actions-menu[hidden] { display: none; }
+.bulk-actions-menu button { display: block; width: 100%; padding: 10px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font: inherit; }
+.bulk-actions-menu button:hover, .bulk-actions-menu button:focus-visible { background: var(--panel-muted); color: var(--accent); }
 #bulk-show-selected[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
 .bulk-selection-search:disabled { cursor: default; opacity: .6; }
 .credential-row[hidden] { display: none; }

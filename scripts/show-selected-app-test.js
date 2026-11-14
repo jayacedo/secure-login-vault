@@ -11,7 +11,10 @@ async function main() {
   const win = BrowserWindow.getAllWindows()[0]; win.webContents.setBackgroundThrottling(false); win.show(); win.focus();
   if(win.webContents.isLoading()) await new Promise(resolve => win.webContents.once("did-finish-load",resolve));
   const run = code => win.webContents.executeJavaScript(code), api = code => run(`window.secureLoginVault.${code}`);
-  const click = selector => run(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const click = async selector => {
+    if (["#bulk-move-btn", "#bulk-category-btn"].includes(selector)) await run("if(document.querySelector('#bulk-actions-menu').hidden) document.querySelector('#bulk-actions-toggle').click()");
+    return run(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  };
   const find = value => run(`document.querySelector('#bulk-selection-search').value=${JSON.stringify(value)};document.querySelector('#bulk-selection-search').dispatchEvent(new Event('input'))`);
   const visible = () => run("[...document.querySelectorAll('.credential-row-item:not([hidden])')].map(row=>Number(row.dataset.id))");
   const password = "Synthetic selected view master password";

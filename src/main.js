@@ -344,6 +344,8 @@ function registerAuthHandlers() {
     ["vault:preview-credential-category", choice => vaultStore.previewCredentialCategory(choice)],
     ["vault:change-credential-category", choice => vaultStore.changeCredentialCategory(choice)],
     ["vault:undo-bulk-change", token => vaultStore.undoBulkChange(token)],
+    ["vault:preview-credential-favorites", choice => vaultStore.previewCredentialFavorites(choice)],
+    ["vault:change-credential-favorites", choice => vaultStore.changeCredentialFavorites(choice)],
     ["vault:credential-details", id => vaultStore.getCredentialDetails(id)],
     ["vault:activity-history", options => vaultStore.getActivityHistory(options)],
     ["vault:duplicates-resolve", choice => vaultStore.resolveDuplicateReview(choice)],

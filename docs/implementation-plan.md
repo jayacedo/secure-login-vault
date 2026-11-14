@@ -489,6 +489,18 @@ select-all, group/category review and reset paths, with unchanged synthetic
 entries. Existing bulk-action, sort and quick-filter tests and packaged Chromium
 and Firefox helper checks pass.
 
+Desktop 1.0.44 consolidates selection operations into an accessible Actions menu
+and adds Add/Remove Favorites with a metadata-only review. Strict ID/boolean
+validation, active-group scope and a keyed revision bind confirmation to the
+selected rows, chosen state and unlock session. Atomic writes skip unchanged
+entries and preserve login fields/history. The existing latest-only Undo receipt
+supports Favorites flags, including stale-entry and session-expiry guards.
+The 1.0.44 Setup installer is built. Synthetic service and source/packaged UI
+checks pass for mixed add/remove, no-ops, field/history preservation, atomic save
+failure, stale/session/scope guards, Undo, menu focus/dismissal and Favorites-view
+refresh. Existing bulk/Undo/Show selected tests, all 93 desktop request guard
+checks and packaged Chromium/Firefox helper checks pass.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
