@@ -23,7 +23,7 @@ async function main() {
   const password = "Synthetic bulk UI master password";
   assert.equal((await api(`auth.createVault(${JSON.stringify({masterPassword:password,confirmPassword:password})})`)).ok, true);
   await api('groups.add("Source")'); await api('groups.add("Destination")');
-  const data = {websiteName:"Synthetic <img src=x> Alpha",websiteUrl:"https://example.test/login",username:"dummy-alpha",password:"Synthetic-private-password",notes:"Synthetic-private-note",groupName:"Source"};
+  const data = {websiteName:"Synthetic <img src=x> Alpha",websiteUrl:"https://example.test/login",username:"dummy-alpha",password:"Synthetic-private-password",notes:"Synthetic-private-note",groupName:"Source",category:"Other"};
   const a = (await api(`credentials.add(${JSON.stringify(data)})`)).result.id;
   const b = (await api(`credentials.add(${JSON.stringify({...data,websiteName:"Synthetic Beta",username:"dummy-beta"})})`)).result.id;
   await api('groups.setActive("Source")'); await run("initAuth()");
@@ -47,6 +47,55 @@ async function main() {
   await click("#bulk-select-toggle"); await click("#bulk-select-all");
   assert.equal(await run("document.querySelector('#bulk-selection-count').textContent"), "1 selected", "select shown excludes filtered entries");
   await run("searchState.query='';runSearch()");
+  // Selection search retains hidden selections and Select shown only affects matches.
+  const find = value => run(`document.querySelector('#bulk-selection-search').value=${JSON.stringify(value)};document.querySelector('#bulk-selection-search').dispatchEvent(new Event('input'))`);
+  await click("#bulk-select-toggle"); await find("ALPHA"); await click("#bulk-select-all");
+  await find("beta");
+  assert.equal(await run("document.querySelector('#bulk-selection-count').textContent"),"1 selected (1 hidden)");
+  assert.equal(await run("document.querySelector('#bulk-select-all').checked"),false);
+  await click("#bulk-select-all");
+  assert.equal(await run("document.querySelector('#bulk-selection-count').textContent"),"2 selected (1 hidden)");
+  await click("#bulk-select-all");
+  assert.equal(await run("document.querySelector('#bulk-selection-count').textContent"),"1 selected (1 hidden)");
+  await click("#bulk-select-all"); await find("no matches here");
+  assert.equal(await run("document.querySelector('#bulk-select-all').disabled"),true);
+  assert.equal(await run("document.querySelector('#bulk-selection-results').textContent"),"0 matching logins");
+  for (const query of ["example.test","Source","dummy-"]) {
+    await find(query); assert.equal(await run("document.querySelector('#bulk-selection-results').textContent"),"2 matching logins");
+  }
+  await find("beta");
+  win.setSize(1100,780);
+  await run("document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-palette','coffee')"); await sleep(200);
+  fs.writeFileSync(path.join(root,"selection-search.png"),(await win.webContents.capturePage()).toPNG());
+  await api('categories.add("Synthetic category")');
+  const chooseCategory = async () => {
+    await click("#bulk-category-btn");
+    await until(() => run("document.querySelector('#bulk-move-target')?.disabled===false"));
+    assert.equal(await run("document.querySelector('#bulk-move-confirm').disabled"),true);
+    await run("document.querySelector('#bulk-move-target').value='Synthetic category';document.querySelector('#bulk-move-target').dispatchEvent(new Event('change'))");
+    await click("#bulk-move-confirm");
+    await until(() => run("document.querySelector('#bulk-move-confirm')?.textContent==='Confirm changes' && !document.querySelector('#bulk-move-confirm').disabled"));
+  };
+  await chooseCategory();
+  assert.equal(await run("document.querySelectorAll('#bulk-move-review li').length"),2,"review includes hidden selections");
+  assert.equal(await run("document.querySelectorAll('#bulk-move-review img').length"),0);
+  const categoryText = await run("document.querySelector('#bulk-move-review').textContent");
+  assert(categoryText.includes("Other")); assert(!categoryText.includes(data.password)); assert(!categoryText.includes(data.notes));
+  await sleep(200); fs.writeFileSync(path.join(root,"category-review.png"),(await win.webContents.capturePage()).toPNG());
+  await run("document.querySelector('#bulk-move-target').value='Other';document.querySelector('#bulk-move-target').dispatchEvent(new Event('change'))");
+  assert.equal(await run("document.querySelector('#bulk-move-review').hidden"),true);
+  assert.equal(await run("document.querySelector('#bulk-move-confirm').textContent"),"Review changes");
+  await click("#bulk-move-cancel");
+  assert.equal(await run("document.activeElement.id"),"bulk-category-btn");
+  assert.equal((await api(`credentials.getOne(${a})`)).result.category,"Other");
+  await run("searchState.category='Other';runSearch()");
+  await click("#bulk-select-toggle"); await find("beta"); await click("#bulk-select-all");
+  await chooseCategory(); await click("#bulk-move-confirm");
+  await until(() => run("!document.querySelector('#bulk-move-overlay') && document.querySelectorAll('[data-select-credential]').length===1"));
+  assert.equal((await api(`credentials.getOne(${b})`)).result.category,"Synthetic category");
+  assert.equal((await api(`credentials.getOne(${b})`)).result.groupName,"Source");
+  assert.equal((await api(`credentials.getOne(${a})`)).result.category,"Other");
+  await run("searchState.category=null;refreshCredentials()");
   const open = async id => {
     await click("#bulk-select-toggle"); await click(`[data-select-credential="${id}"]`); await click("#bulk-move-btn");
     await until(() => run("document.querySelector('#bulk-move-target')?.disabled===false"));
@@ -84,7 +133,7 @@ async function main() {
   await open(b); await run("handleLockVault()");
   assert.equal(await run("!!document.querySelector('#bulk-move-overlay')"), false);
   assert.equal((await api(`credentials.previewMove({ids:[${b}],targetGroup:'Destination'})`)).ok,false);
-  console.log(`PASS synthetic selection, refresh reset, review/cancel, escaped text, keyboard, stale review, selected-only move, active group refresh and lock\nScreenshots: ${root}`);
+  console.log(`PASS synthetic selection search/hidden selections, category review/cancel/filter refresh, selected-only category change, group move regression, escaped text, keyboard, stale review and lock\nScreenshots: ${root}`);
   app.exit(0);
 }
 setTimeout(()=>{console.error("Bulk move UI timeout");app.exit(1);},60000).unref();

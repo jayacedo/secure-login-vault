@@ -468,8 +468,11 @@ function renderDashboard(state) {
         <div id="bulk-selection-bar" class="bulk-selection-bar" hidden>
           <strong id="bulk-selection-count" role="status">0 selected</strong>
           <button class="primary-button" id="bulk-move-btn" type="button" disabled>Move to group</button>
+          <button class="secondary-button" id="bulk-category-btn" type="button" disabled>Change category</button>
           <button class="secondary-button" id="bulk-selection-cancel" type="button">Cancel</button>
-          <small>Selection applies to shown entries only (up to 500). Refreshing or changing filters clears it.</small>
+          <input id="bulk-selection-search" class="settings-input bulk-selection-search" type="search" aria-label="Find logins to select" placeholder="Find logins by name, URL, username or group" autocomplete="off">
+          <span id="bulk-selection-results" class="bulk-selection-results" role="status"></span>
+          <small>Select up to 500. Find logins keeps your selections; refreshing or changing dashboard filters clears them.</small>
         </div>
         <div class="credential-table" role="table" aria-label="Credential list">
           <div class="credential-row credential-row-head" role="row">

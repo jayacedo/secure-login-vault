@@ -1014,6 +1014,9 @@ kbd {
 .credential-row.is-bulk-selected { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
 .bulk-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel-muted); }
 .bulk-selection-bar[hidden] { display: none; }
+.bulk-selection-bar .bulk-selection-search { flex: 1 1 260px; min-width: 180px; width: auto; }
+.bulk-selection-results { color: var(--muted); font-size: 12px; }
+.credential-row[hidden] { display: none; }
 .bulk-selection-bar small { flex-basis: 100%; color: var(--muted); }
 .bulk-move-container { max-width: 620px; }
 .bulk-move-container select { width: 100%; }

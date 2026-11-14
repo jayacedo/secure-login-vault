@@ -372,22 +372,26 @@ async function updateCredential(filePath, key, id, data) {
   });
 }
 
-function credentialMoveSnapshot(db, key, choice, sessionId) {
+function credentialMoveSnapshot(db, key, choice, sessionId, kind = "group") {
+  const category = kind === "category";
+  const destination = category ? choice?.targetCategory : choice?.targetGroup;
   const ids = choice?.ids;
   if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => !Number.isSafeInteger(id) || id <= 0)
-    || new Set(ids).size !== ids.length || typeof choice.targetGroup !== "string" || choice.targetGroup.length > 200) {
-    throw createPublicError("Select between 1 and 500 credentials and choose a destination group.");
+    || new Set(ids).size !== ids.length || typeof destination !== "string" || destination.length > 200 || (category && !destination.trim())) {
+    throw createPublicError(`Select between 1 and 500 credentials and choose a destination ${kind}.`);
   }
-  const targetName = choice.targetGroup.trim();
-  const target = targetName ? queryOne(db, "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [targetName]) : { id: null, name: "" };
-  if (targetName && !target.id) throw createPublicError("The destination group no longer exists. Review the move again.");
+  const targetName = destination.trim();
+  const target = targetName ? queryOne(db, category
+    ? "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE"
+    : "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [targetName]) : { id: null, name: "" };
+  if (targetName && !target.id) throw createPublicError(`The destination ${kind} no longer exists. Review again.`);
   const activeGroup = getActiveGroupFilterValue(db);
   const rows = queryAll(db, `SELECT * FROM credentials WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
   if (rows.length !== ids.length || rows.some(row => activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) {
     throw createPublicError("Some selected credentials are unavailable in the active group. Refresh the list and select again.");
   }
   // Bind the review to the selected records, destination, scope and unlock session.
-  const revision = crypto.createHmac("sha256", key).update(JSON.stringify([sessionId, activeGroup, target, rows])).digest("hex");
+  const revision = crypto.createHmac("sha256", key).update(JSON.stringify([kind, sessionId, activeGroup, target, rows])).digest("hex");
   return { rows, target, activeGroup, revision };
 }
 
@@ -416,6 +420,34 @@ async function moveCredentialsToGroup(filePath, key, choice, sessionId) {
       moved++;
     }
     return { moved, unchanged: snapshot.rows.length - moved, targetGroup: snapshot.target.name };
+  });
+}
+
+async function previewCredentialCategory(filePath, key, choice, sessionId) {
+  return withDecryptedDatabase(filePath, key, db => {
+    const snapshot = credentialMoveSnapshot(db, key, choice, sessionId, "category");
+    return { revision: snapshot.revision, activeGroup: snapshot.activeGroup, targetCategory: snapshot.target.name,
+      entries: snapshot.rows.map(row => ({ id: row.id, websiteName: row.website_name,
+        username: row.username || row.email || "", category: row.category || "" })),
+      unchanged: snapshot.rows.filter(row => (row.category || "").toLowerCase() === snapshot.target.name.toLowerCase()).length };
+  });
+}
+
+async function changeCredentialCategory(filePath, key, choice, sessionId) {
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
+      throw createPublicError("Review and confirm the selected credentials before changing their category.");
+    }
+    const snapshot = credentialMoveSnapshot(db, key, choice, sessionId, "category");
+    if (snapshot.revision !== choice.revision) throw createPublicError("The selected credentials, category or vault session changed. Review again.");
+    const now = new Date().toISOString();
+    let changed = 0;
+    for (const row of snapshot.rows) {
+      if ((row.category || "").toLowerCase() === snapshot.target.name.toLowerCase()) continue;
+      db.run("UPDATE credentials SET category = ?, updated_at = ? WHERE id = ?", [snapshot.target.name, now, row.id]);
+      changed++;
+    }
+    return { changed, unchanged: snapshot.rows.length - changed, targetCategory: snapshot.target.name };
   });
 }
 
@@ -1593,6 +1625,8 @@ function createPublicError(message) {
 module.exports = {
   previewCredentialMove,
   moveCredentialsToGroup,
+  previewCredentialCategory,
+  changeCredentialCategory,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,

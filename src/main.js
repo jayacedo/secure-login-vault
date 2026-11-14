@@ -341,6 +341,8 @@ function registerAuthHandlers() {
     ["vault:duplicates-list", () => vaultStore.getDuplicateReview()],
     ["vault:preview-credential-move", choice => vaultStore.previewCredentialMove(choice)],
     ["vault:move-credentials-to-group", choice => vaultStore.moveCredentialsToGroup(choice)],
+    ["vault:preview-credential-category", choice => vaultStore.previewCredentialCategory(choice)],
+    ["vault:change-credential-category", choice => vaultStore.changeCredentialCategory(choice)],
     ["vault:activity-history", options => vaultStore.getActivityHistory(options)],
     ["vault:duplicates-resolve", choice => vaultStore.resolveDuplicateReview(choice)],
     ["vault:trash-list", () => vaultStore.getDeletedCredentials()],

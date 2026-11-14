@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.37**, extension **0.6.1**. Desktop 1.0.37 adds credential selection and reviewed bulk moves between groups. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.38**, extension **0.6.1**. Desktop 1.0.38 adds reviewed bulk category changes and a Find logins field in the selection bar that keeps selections across searches. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -42,6 +42,7 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 - Store website addresses, usernames, emails, passwords, notes and tags.
 - Organize entries with categories, favorites and groups; search across credential fields.
 - Select multiple credentials and move them to an existing group or Ungrouped after reviewing the list.
+- Change the category of selected credentials after review, preserving groups and login details.
 - Generate passwords with configurable length and character options.
 - Copy credentials with configurable password clipboard clearing.
 - Use auto-lock, change the master password and configure a recovery key.
@@ -66,12 +67,34 @@ Choose **Move to group**, select an existing destination or **Ungrouped**, then
 - Entries already in the destination are skipped. Moves are saved together;
   changed entries, a changed active group or a new unlock session invalidate an
   earlier review. Review again before applying.
-- Selection applies only to the shown list. Refreshing, searching, changing filters
-  or locking clears it. Entries moved out of the active group disappear from that
+- **Find logins** in the selection bar searches names, URLs, usernames, email and
+  groups within the current dashboard results. Select entries, search again and
+  keep selecting; earlier selections remain. The count shows how many selected
+  entries are hidden. The header checkbox affects only matching rows. Clear this
+  search to see all current results again; review includes every selected entry.
+- Refreshing, changing the main dashboard search/filters or locking clears
+  selection. Entries moved out of the active group disappear from that
   filtered view; use Show all or select the destination group to see them.
 
 Validation uses new synthetic vaults only: `npm run test:bulk-move` and
 `npm run test:bulk-move-app`.
+
+### Change category for selected credentials
+
+Use the same selection bar and choose **Change category**. Choose an existing
+category, then **Review changes** and **Confirm changes**. The review shows each
+selected login and its current category, including entries hidden by Find logins.
+Create new categories in Settings > Organization first.
+
+Only category and update time change. Groups, login details, QR images and
+password history stay intact; already assigned entries are skipped. Changes
+are saved as one batch and recorded as Updated activity events. A changed entry,
+destination, active group or unlock session requires another review. Entries
+outside the current category filter disappear from that filtered view after
+applying; choose All categories to see them again.
+
+Validation: `npm run test:bulk-category` and `npm run test:bulk-move-app`, using
+synthetic vaults only.
 
 ### Authenticator codes from a setup QR
 

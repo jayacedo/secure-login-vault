@@ -415,6 +415,19 @@ The Setup installer is built. Packaged bulk-move UI, Chromium/Firefox helper,
 existing app integration and all 87 request-boundary checks pass. No production
 vault or account data is used. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.38 extends selection with reviewed bulk category changes and Find
+logins in the selection bar. Find filters the current dashboard results locally
+and retains selected IDs across terms, reporting hidden selections. Select shown
+affects only matching rows; both reviews include hidden selected entries.
+Category changes preserve groups and other credential fields, skip no-ops,
+record Updated activity and save atomically. Review signatures bind the action
+type, selected records, destination, active group and unlock session. Synthetic
+tests cover category changes and failed writes, retained search selections,
+review/cancel, category filtering, existing group moves and lock behavior.
+The 1.0.38 Setup installer is built; packaged UI, Chromium/Firefox helper,
+existing app integration and all 89 desktop request-boundary checks pass.
+Production accounts are never used for development or tests.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

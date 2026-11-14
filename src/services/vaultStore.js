@@ -8,6 +8,8 @@ const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, be
 const {
   previewCredentialMove,
   moveCredentialsToGroup,
+  previewCredentialCategory,
+  changeCredentialCategory,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,
@@ -915,6 +917,8 @@ function createVaultStore(basePath) {
     editCredential,
     previewCredentialMove: choice => previewCredentialMove(databaseFilePath, currentKey(), choice, session.id),
     moveCredentialsToGroup: choice => moveCredentialsToGroup(databaseFilePath, currentKey(), choice, session.id),
+    previewCredentialCategory: choice => previewCredentialCategory(databaseFilePath, currentKey(), choice, session.id),
+    changeCredentialCategory: choice => changeCredentialCategory(databaseFilePath, currentKey(), choice, session.id),
     getPasswordHistory,
     checkVaultHealth,
     getDuplicateReview: () => reviewDuplicates(),
