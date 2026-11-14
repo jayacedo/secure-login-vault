@@ -62,7 +62,7 @@ function updateBulkSelectionControls() {
   for (const check of checks) {
     check.checked = bulkSelectedIds.has(Number(check.dataset.selectCredential));
     const row = check.closest(".credential-row");
-    row.hidden = Boolean(query && !check.dataset.bulkSearch.includes(query));
+    row.hidden = !matchesCredentialQuickFilter(row) || Boolean(query && !check.dataset.bulkSearch.includes(query));
     row.classList.toggle("is-bulk-selected", check.checked);
   }
   const visible = checks.filter(check => !check.closest(".credential-row").hidden);
@@ -73,6 +73,7 @@ function updateBulkSelectionControls() {
   all.disabled = visible.length === 0;
   all.checked = visible.length > 0 && visible.every(check => check.checked);
   all.indeterminate = visible.some(check => check.checked) && !all.checked;
+  updateCredentialFilterSummary();
 }
 
 function resetBulkSelection() {

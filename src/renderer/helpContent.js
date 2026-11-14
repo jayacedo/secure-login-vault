@@ -1,5 +1,9 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Quick Filters", items: [
+    { q: "How do I narrow the credential list?", a: "Use the menu beside sorting: Has 2FA shows entries with a saved QR image, No login URL shows blank addresses, and Uncategorized includes Other or no category. A saved QR does not confirm that 2FA is enabled on the site or that its QR is supported. These choices combine with search, Favorites, category and active group. The count shows matches within those results." },
+    { q: "What does Clear filter reset?", a: "Clear filter returns this menu to All logins while keeping search, Favorites, category, group and sorting. Changing a quick filter clears bulk selection. Find logins preserves selections within the chosen filter, and Select all shown only selects matching rows. Refresh keeps the quick filter; locking or restarting resets it. Filters never change saved credentials." }
+  ] },
   { title: "Credential Details", items: [
     { q: "Can I inspect a login without editing it?", a: "Click its website name to open the details panel on the right. It shows Login URL, username, email, Group, Category, notes, tags and dates, with copy controls for login fields. Use Edit to make changes. Close or Escape returns to the list. Viewing details does not change the entry." },
     { q: "How do Reveal, history and 2FA work in details?", a: "The password stays masked until Reveal, and hides again after 30 seconds or when SLV loses focus. Copy works without revealing and uses your sensitive clipboard-clearing setting. Password history starts collapsed, loads on demand and offers Show and Copy. Generate code opens the existing authenticator when a QR image is saved. Close, lock, app hiding or a list refresh clears the panel." }

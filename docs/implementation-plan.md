@@ -466,6 +466,17 @@ The 1.0.41 Setup installer is built. Packaged details and Chromium/Firefox helpe
 checks pass, along with existing sorting, bulk actions, password history, app
 integration and 91 desktop request guard checks, all using synthetic vaults.
 
+Desktop 1.0.42 adds a compact quick-filter menu beside sorting for saved 2FA QR
+images, missing login URLs and uncategorized entries (Other or blank). Filters
+intersect with current search, Favorites, category and active group, update the
+matching count and provide clear/empty states. They preserve sorting, clear bulk
+selection when changed, and reset at lock/restart. No database schema or browser
+extension change is needed; filtering does not write credential data.
+The 1.0.42 Setup installer is built. Source and packaged quick-filter checks pass,
+including combined filters, counts/empty states, bulk selection, sorting, details,
+refresh, lock reset and unchanged entries. Existing sort, details and bulk-action
+tests and packaged Chromium/Firefox helper checks pass with synthetic vaults.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

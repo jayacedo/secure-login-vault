@@ -196,6 +196,7 @@ async function initAuth() {
 }
 
 function renderFromState(state) {
+  if (!state.isUnlocked) credentialQuickFilter = "all";
   if (!state.isUnlocked) closeCredentialDetails(false);
   if (!state.isUnlocked) clearBulkUndo(true);
   updateStatus(state);
@@ -460,6 +461,7 @@ function renderDashboard(state) {
           <div class="health-dashboard-actions">
             <span id="credential-count-label">${dashboardData.credentials.length} items</span>
             ${renderCredentialSortControl()}
+            ${renderCredentialQuickFilters()}
             <div class="credential-tool-buttons" role="group" aria-label="Credential tools">
               <button class="icon-text-button dashboard-icon-button" type="button" id="bulk-select-toggle" aria-label="Select credentials" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="dashboard-action-tooltip" aria-hidden="true">Select credentials</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="check-vault-health-btn" aria-label="Check vault health">${renderShieldIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Check vault health</span></button>
@@ -510,6 +512,7 @@ function renderDashboard(state) {
   setupDashboardInteractions();
   setupBulkSelection();
   setupCredentialSorting();
+  setupCredentialQuickFilters();
   loadDashboardData();
 }
 
@@ -564,7 +567,7 @@ function renderCredentialRow(credential, query = "") {
 
   return `
     <div class="credential-row credential-row-item ${credential.favorite ? "is-favorite" : ""}"
-         role="row" data-id="${credential.id}" ${renderCredentialSortData(credential)}>
+         role="row" data-id="${credential.id}" ${renderCredentialSortData(credential)} ${renderCredentialFilterData(credential)}>
       ${renderBulkSelectionCell(credential)}
 
       <span role="cell" class="cell-website">
@@ -748,6 +751,7 @@ function bindCredentialActions() {
   const fresh = listBody.cloneNode(true);
   listBody.parentNode.replaceChild(fresh, listBody);
   applyCredentialSort();
+  updateBulkSelectionControls();
 
   fresh.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-action]");
@@ -1151,6 +1155,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  credentialQuickFilter = "all";
   closeCredentialDetails(false);
   clearBulkUndo(true);
   resetBulkSelection();
@@ -2925,6 +2930,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  credentialQuickFilter = "all";
   closeCredentialDetails(false);
   clearBulkUndo(true);
   resetBulkSelection();

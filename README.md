@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.41**, extension **0.6.1**. Desktop 1.0.41 adds a read-only details panel opened from the website name, with copy/reveal controls, organization details, notes, tags, 2FA and password history. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.42**, extension **0.6.1**. Desktop 1.0.42 adds quick filters beside sorting: Has 2FA, No login URL and Uncategorized, with matching counts and a clear control. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -75,6 +75,25 @@ Use **Edit** when you want to change the saved entry.
 
 Validation: `npm run test:details-app`, with synthetic entries, a dummy QR and a
 mocked clipboard. No real account or clipboard contents are read by this test.
+
+### Quick filters
+
+Use the menu beside sorting to show **Has 2FA**, **No login URL**, or
+**Uncategorized**. Has 2FA means a QR image is saved; it does not verify that
+the site has 2FA enabled or that the QR is a supported authenticator setup.
+Uncategorized includes the default **Other** category and blank categories.
+No login URL matches empty addresses, not invalid or unreachable sites.
+
+Quick filters narrow your current search, Favorites, category and active group.
+The count shows matching entries out of those current results. **Clear filter**
+returns to All logins while keeping those other choices. Sorting and the details
+panel work with the filtered list. Changing a quick filter clears bulk selection;
+Find logins still preserves selections within the chosen filter. Refresh retains
+the quick filter during the unlock session; locking or restarting resets it.
+Filtering does not change entries or record activity. Tests use synthetic vaults.
+
+Validation: `npm run test:filters-app` checks filter combinations, counts, empty
+states, selection, sorting, details, refresh, lock reset and unchanged entries.
 
 ### Sort credentials
 
