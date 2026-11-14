@@ -20,6 +20,17 @@
   const saveBox = document.getElementById("save");
   const saveButton = document.getElementById("save-button");
   const saveNote = document.getElementById("save-note");
+  const usernameForm = document.getElementById("save-username-form");
+  const usernameInput = document.getElementById("save-username");
+  const usernameConfirm = document.getElementById("save-username-confirm");
+  const usernameCancel = document.getElementById("save-username-cancel");
+  let saveToken = "";
+  function clearUsername() {
+    if (saveToken) extensionApi.runtime.sendMessage({ type: "save-login-cancel", token: saveToken }, () => { void extensionApi.runtime.lastError; });
+    saveToken = "";
+    usernameInput.value = "";
+    usernameForm.hidden = true;
+  }
 
   let pageOrigin = ""; // only the origin of the tab, never its full address
 
@@ -35,6 +46,9 @@
     forgetButton.disabled = busy;
     codeInput.disabled = busy;
     saveButton.disabled = busy;
+    usernameInput.disabled = busy;
+    usernameConfirm.disabled = busy;
+    usernameCancel.disabled = busy;
     for (const button of loginList.querySelectorAll("button")) button.disabled = busy;
   }
 
@@ -150,6 +164,7 @@
   }
 
   function check() {
+    clearUsername();
     currentOrigin((origin) => {
       pageOrigin = origin;
       ask(origin ? { type: "get-status", url: origin } : { type: "get-status" }, "Checking...");
@@ -174,13 +189,14 @@
     });
   }
 
-  // Nothing is sent but the request itself: the background worker reads the page, asks the app,
-  // and the person confirms in the app. The popup never sees the username or password.
-  function save() {
+  // The popup can supply a missing username with a one-shot context token.
+  // Passwords are read in the worker and never returned here.
+  function save(message = { type: "save-login" }) {
+    if (message.type === "save-login") clearUsername();
     setBusy(true);
     saveNote.dataset.ok = "";
     saveNote.textContent = "Saving... confirm in Secure Login Vault.";
-    extensionApi.runtime.sendMessage({ type: "save-login" }, (result) => {
+    extensionApi.runtime.sendMessage(message, (result) => {
       if (extensionApi.runtime.lastError || !result || typeof result !== "object") {
         setBusy(false);
         saveNote.dataset.ok = "false";
@@ -188,6 +204,17 @@
         return;
       }
       const ok = result.ok === true;
+      if (result.needsUsername === true && typeof result.token === "string") {
+        saveToken = result.token;
+        usernameInput.value = typeof result.username === "string" ? result.username : "";
+        usernameForm.hidden = false;
+        setBusy(false);
+        usernameInput.focus();
+      } else {
+        saveToken = "";
+        usernameInput.value = "";
+        usernameForm.hidden = true;
+      }
       const message = String(result.message || "Could not save. Check the connection and try again.");
       if (!ok) setBusy(false);
       saveNote.dataset.ok = ok ? "true" : "false";
@@ -206,7 +233,13 @@
     ask(pageOrigin ? { type: "pair", code: code, url: pageOrigin } : { type: "pair", code: code }, "Pairing...");
   }
 
-  saveButton.addEventListener("click", save);
+  saveButton.addEventListener("click", () => save());
+  usernameForm.addEventListener("submit", event => {
+    event.preventDefault();
+    if (!saveToken || !usernameInput.value.trim()) return;
+    save({ type: "save-login-username", token: saveToken, username: usernameInput.value.trim() });
+  });
+  usernameCancel.addEventListener("click", () => { clearUsername(); saveNote.textContent = "Save cancelled."; });
   recheck.addEventListener("click", check);
   pairButton.addEventListener("click", pair);
   codeInput.addEventListener("keydown", (event) => {

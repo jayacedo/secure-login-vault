@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.46**, extension **0.6.1**. Desktop 1.0.46 fixes Help keyboard focus and Back to top after workspace changes, updates Help for the Actions menu, and adds a combined synthetic stability check. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.47**, extension **0.6.2**. This release supports saving from separate username/password steps: a selected Google account can be recognized, and the extension asks for a missing username instead of blocking Save. Reload Chrome/Edge's unpacked extension. Firefox needs the new Mozilla-signed 0.6.2 XPI; updating the desktop alone does not update an installed Firefox add-on.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.

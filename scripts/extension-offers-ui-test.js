@@ -15,6 +15,9 @@ let server;
 async function main() {
   await app.whenReady();
   server = http.createServer((_req, res) => {
+    if (_req.url === "/icons/icon-32.png") { res.setHeader("Content-Type", "image/png"); res.end(fs.readFileSync(path.join(__dirname, "../extension/icons/icon-32.png"))); return; }
+    if (_req.url === "/popup.css") { res.setHeader("Content-Type", "text/css"); res.end(read("popup.css")); return; }
+    if (_req.url === "/popup") { res.setHeader("Content-Type", "text/html"); res.end(read("popup.html").replace(/<script[^>]*><\/script>/g, "")); return; }
     res.setHeader("Content-Type", "text/html");
     res.end('<!doctype html><title>SLV dummy login fixture</title><style>body{background:#edf1f5;font:18px system-ui;padding:60px}form{display:grid;gap:16px;width:300px;margin-top:50px}input,button{padding:12px;font:inherit}</style><h1>SLV save-offer check</h1><p>Local dummy credentials. Nothing is submitted.</p><form><label>Username<input autocomplete="username" value="slv-dummy"></label><label>Password<input type="password" value="dummy-only-password"></label><button type="submit">Sign in</button></form><script>document.querySelector("form").addEventListener("submit",e=>e.preventDefault())</script>');
   });
@@ -76,6 +79,27 @@ async function main() {
   await click(".never", true);
   await until('fixture.calls.some(x=>x.type === "offer-never")');
   assert.equal(await run('fixture.shadow.host.isConnected'), false);
+  // Separate username and password submits use trusted events, not typing observers.
+  await run('document.querySelector("form").innerHTML = \'<input type="email" autocomplete="username" value="step@example.test"><button>Next</button>\'');
+  await click("form button");
+  await until('fixture.calls.some(x=>x.type === "offer-username")');
+  assert.equal(await run('fixture.calls.find(x=>x.type === "offer-username").username'), "step@example.test");
+  await run('document.querySelector("form").innerHTML = \'<input type="password" value="step-synthetic-password"><button>Sign in</button>\'');
+  await click("form button");
+  await until('fixture.calls.some(x=>x.type === "offer-capture" && x.password === "step-synthetic-password")');
+  assert.equal(await run('fixture.shadow.textContent.includes("step-synthetic-password")'), false);
+  await win.loadURL(url + "/popup");
+  win.setSize(360, 800);
+  await run(`globalThis.chrome = { tabs: { query(q, cb) { cb([{id:1,url:location.origin}]); } }, runtime: {
+    sendMessage(message, cb) { cb(message.type === "get-status" ? {connected:true,title:"Connected",detail:"Synthetic preview",site:{state:"ok",logins:[]}} : {ok:false,needsUsername:true,token:"synthetic-preview",username:"",message:"Confirm your username or email below, then save."}); }
+  } }; void 0;`);
+  await run(read("popup.js"));
+  await click("#save-button");
+  await until('!document.querySelector("#save-username-form").hidden');
+  assert.equal(await run('document.activeElement.id'), "save-username");
+  assert.equal(await run('document.documentElement.scrollWidth <= innerWidth'), true);
+  await sleep(250);
+  fs.writeFileSync(path.join(root, "username-prompt.png"), (await win.webContents.capturePage()).toPNG());
   console.log("Chromium save-offer fixture passed: trusted submit, isolated reading, Save and Never. Screenshot: " + screenshot);
 }
 main().then(() => { win?.destroy(); server?.close(); app.exit(0); }, error => { console.error(error); win?.destroy(); server?.close(); app.exit(1); });

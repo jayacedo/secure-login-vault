@@ -144,10 +144,13 @@ function makeChrome({ connectNativeFor, store }) {
     scripting: {
       async executeScript(injection) {
         chrome.injections.push(injection);
-        chrome.page = new JSDOM(`<!doctype html><title>t</title>${chrome.pageHtml}`, { url: chrome.pageUrl || chrome.activeTabUrl, runScripts: "outside-only" });
+        if (!injection.args[2]?.verifyToken || !chrome.page) {
+          chrome.page?.window.close();
+          chrome.page = new JSDOM(`<!doctype html><title>t</title>${chrome.pageHtml}`, { url: chrome.pageUrl || chrome.activeTabUrl, runScripts: "outside-only" });
         // jsdom has no layout engine: give elements the non-zero size a real browser would report
         for (const property of ["offsetWidth", "offsetHeight"]) {
           Object.defineProperty(chrome.page.window.HTMLElement.prototype, property, { get: () => 100 });
+        }
         }
         const run = chrome.page.window.eval(`(${injection.func.toString()})`);
         return [{ frameId: 0, result: run(...injection.args) }];
@@ -524,7 +527,7 @@ async function main() {
     const problems = [
       ['<form><input type="text" name="q" value="x"></form>', "No login form was found on this page. Type your login on the page first."],
       [form("erin", ""), "Type your password on the page first, then press Save."],
-      [form("", "some-pw"), "Type your username or email on the page first, then press Save."],
+      [form("", "some-pw"), "Confirm your username or email below, then save. The password stays on the page until you continue."],
       ['<form><input type="text" value="frank"><input type="password" value="old-pw"><input type="password" value="new-pw"></form>', "This page has several different passwords typed in (a change-password form?). Nothing was saved."]
     ];
     prompts.length = 0;
@@ -535,6 +538,14 @@ async function main() {
       assert.equal(view.saveNote(), message);
     }
     assert.equal(prompts.length, 0, "nobody was asked about an incomplete form");
+
+    ownChrome.pageHtml = '<form><input type="password" value="two-step-synthetic-password"></form>';
+    const missing = await new Promise(resolve => ownChrome.runtime.sendMessage({ type: "save-login" }, resolve));
+    assert.equal(missing.needsUsername, true);
+    const completed = await new Promise(resolve => ownChrome.runtime.sendMessage({ type: "save-login-username", token: missing.token, username: "two-step-dummy" }, resolve));
+    assert.equal(completed.ok, true);
+    assert.equal((await credentials()).find(c => c.username === "two-step-dummy").password, "two-step-synthetic-password");
+    assert.equal(JSON.stringify(ownChrome.responses).includes("two-step-synthetic-password"), false);
 
     // the page moved to another site after the tab was read: the page itself refuses
     ownChrome.pageHtml = form("gina", "gina-PW");

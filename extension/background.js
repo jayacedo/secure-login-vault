@@ -100,7 +100,17 @@ async function fillActiveTab(loginId) {
 // ── Saving a login ───────────────────────────────────────────────────────────
 // Manual save starts when the person presses "Save this login" in the popup. The page is read once,
 // now, in its main frame, and what was read goes to the app only, which always asks the person.
-// The popup supplies nothing: not the page, not the username, not the password.
+// A missing username may be entered in the trusted popup. Passwords are always
+// freshly read from the same document; they are never returned to the popup.
+const saveRetries = new Map();
+function dropSaveRetry(id) {
+  clearTimeout(saveRetries.get(id)?.timer);
+  saveRetries.delete(id);
+}
+extensionApi.tabs.onRemoved.addListener(dropSaveRetry);
+extensionApi.tabs.onUpdated.addListener((id, change) => {
+  if (change.url || change.status === "loading") dropSaveRetry(id);
+});
 function describeSave(result) {
   if (result.ok) {
     return { ok: true, message: result.mode === "update" ? "Password updated in Secure Login Vault." : "Saved to Secure Login Vault." };
@@ -127,7 +137,8 @@ function canSaveFrom(address) {
   }
 }
 
-async function saveActiveTab() {
+async function saveActiveTab(message = {}) {
+  await offers.initialized;
   const tab = await activeTab();
   const origin = tab && typeof tab.url === "string" ? originOf(tab.url) : "";
   if (!tab || !Number.isSafeInteger(tab.id) || !origin) {
@@ -136,6 +147,15 @@ async function saveActiveTab() {
   if (!canSaveFrom(origin)) {
     return { ok: false, message: "Logins are only saved from secure (https) pages." };
   }
+  const retry = saveRetries.get(tab.id);
+  const supplied = message.type === "save-login-username";
+  if (supplied && (!retry || retry.token !== message.token || retry.url !== tab.url || retry.expires <= Date.now() ||
+      typeof message.username !== "string" || !message.username.trim() || message.username.trim().length > 256)) {
+    dropSaveRetry(tab.id);
+    return { ok: false, message: "The page changed or the request expired. Press Save this login again." };
+  }
+  dropSaveRetry(tab.id);
+  const token = crypto.randomUUID();
 
   let read;
   try {
@@ -143,17 +163,29 @@ async function saveActiveTab() {
       target: { tabId: tab.id, frameIds: [0] }, // the main page only, never an embedded frame
       world: "ISOLATED",
       func: slvReadFormInPage,
-      args: [origin]
+      args: [origin, null, supplied ? { username: message.username, verifyToken: retry.token } : { contextToken: token, readUsernameStep: true }]
     });
     read = Array.isArray(results) && results[0] ? results[0].result : null;
   } catch (error) {
     return { ok: false, message: "Could not read this page. Open it again and retry." };
   }
   if (!read || typeof read !== "object") return { ok: false, message: "Could not read this page. Open it again and retry." };
+  // Recheck after injection: do not save a result from a tab that navigated.
+  const currentTab = await activeTab();
+  if (currentTab?.id !== tab.id || currentTab?.url !== tab.url) return { ok: false, message: READ_PROBLEMS.blocked };
+  if (read.status === "username-only") {
+    offers.rememberUsername(tab.id, origin, read.username);
+    return { ok: false, message: "Username remembered for two minutes in this tab. Continue to the password step, then press Save this login." };
+  }
+  if (read.status === "no-username") {
+    saveRetries.set(tab.id, { token, url: tab.url, expires: Date.now() + 120000, timer: setTimeout(() => dropSaveRetry(tab.id), 120000) });
+    return { ok: false, needsUsername: true, token, username: offers.getUsername(tab.id, origin), message: "Confirm your username or email below, then save. The password stays on the page until you continue." };
+  }
   if (read.status !== "read") return { ok: false, message: READ_PROBLEMS[read.status] || "Could not read this page." };
 
   let request = { url: origin, username: read.username, password: read.password };
   read.password = "";
+  offers.forgetUsername(tab.id);
   try {
     return describeSave(await link.saveLogin(request));
   } finally {
@@ -217,7 +249,7 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
       inline.page(message, sender).then(sendResponse, () => sendResponse({ ok: false, message: "Could not reach SLV. Open the extension to check pairing." }));
       return true;
     }
-    if (!["offer-ready", "offer-capture", "offer-save", "offer-dismiss", "offer-never"].includes(message.type)) return false;
+    if (!["offer-ready", "offer-username", "offer-capture", "offer-save", "offer-dismiss", "offer-never"].includes(message.type)) return false;
     offers.page(message, sender).then(sendResponse, () => sendResponse({ enabled: false }));
     return true;
   }
@@ -245,15 +277,18 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === "pair" && typeof message.code === "string") {
     runOperation(() => link.pair(message.code, { url })).then(sendResponse);
   } else if (message.type === "forget") {
+    for (const id of saveRetries.keys()) dropSaveRetry(id);
     offers.clear();
     inline.clear();
     runOperation(() => link.forget()).then(sendResponse);
   } else if (message.type === "fill" && Number.isSafeInteger(message.loginId)) {
     // Only the login's id is taken from the popup; the page and its address are read here.
     runOperation(() => fillActiveTab(message.loginId)).then(sendResponse);
-  } else if (message.type === "save-login") {
-    // No data is taken from the message: the page is read here, after the person asked.
-    runOperation(() => saveActiveTab()).then(sendResponse);
+  } else if (message.type === "save-login" || message.type === "save-login-username") {
+    runOperation(() => saveActiveTab(message)).then(sendResponse);
+  } else if (message.type === "save-login-cancel") {
+    for (const [id, entry] of saveRetries) if (entry.token === message.token) { dropSaveRetry(id); offers.forgetUsername(id); }
+    sendResponse({ ok: true });
   } else {
     return false;
   }

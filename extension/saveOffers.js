@@ -9,6 +9,7 @@
 
   function createSaveOffers({ chrome, link, ready, run, now = Date.now, randomId = () => crypto.randomUUID() }) {
     const pending = new Map();
+    const usernames = new Map();
     let prefs = { enabled: false, blocked: [] };
     let settingsQueue = Promise.resolve();
 
@@ -23,7 +24,23 @@
       const entry = pending.get(tabId);
       if (entry) { clearTimeout(entry.timer); entry.password = ""; pending.delete(tabId); }
     }
-    function clear() { for (const id of pending.keys()) drop(id); }
+    function forgetUsername(tabId) {
+      clearTimeout(usernames.get(tabId)?.timer);
+      usernames.delete(tabId);
+    }
+    function rememberUsername(tabId, origin, username) {
+      forgetUsername(tabId);
+      if (!originOf(origin) || typeof username !== "string" || !username.trim() || username.trim().length > 256) return;
+      if (usernames.size >= 20) forgetUsername(usernames.keys().next().value);
+      usernames.set(tabId, { origin, username: username.trim(), expires: now() + TTL, timer: setTimeout(() => forgetUsername(tabId), TTL) });
+    }
+    function getUsername(tabId, origin) {
+      const entry = usernames.get(tabId);
+      if (entry && entry.origin === origin && entry.expires > now()) return entry.username;
+      forgetUsername(tabId);
+      return "";
+    }
+    function clear() { for (const id of pending.keys()) drop(id); for (const id of usernames.keys()) forgetUsername(id); }
     function notify(tabId, message) {
       return chrome.tabs.sendMessage(tabId, message, { frameId: 0 }).catch(() => {});
     }
@@ -78,8 +95,13 @@
       const src = await source(sender);
       if (!src) return { enabled: false };
       if (message.type === "offer-ready") return { enabled: true, offer: view(current(src)) };
+      if (message.type === "offer-username") {
+        drop(src.tabId);
+        rememberUsername(src.tabId, src.origin, message.username);
+        return { enabled: true };
+      }
       if (message.type === "offer-capture") {
-        const username = typeof message.username === "string" ? message.username.trim() : "";
+        const username = typeof message.username === "string" && message.username.trim() ? message.username.trim() : getUsername(src.tabId, src.origin);
         if (!username || username.length > 256 || typeof message.password !== "string" || !message.password || message.password.length > 1024) return {};
         const previous = current(src);
         if (previous && now() - previous.created < 1500) return {}; // one candidate per tab, no submit floods
@@ -89,6 +111,7 @@
         message.password = "";
         entry.timer = setTimeout(() => { if (pending.get(src.tabId) === entry) drop(src.tabId); }, TTL);
         pending.set(src.tabId, entry);
+        forgetUsername(src.tabId);
         const result = await run(() => {
           if (current(src) !== entry || !permitted(src.origin)) return { ok: false };
           return link.inspectLogin({ url: entry.origin, username: entry.username, password: entry.password });
@@ -107,6 +130,7 @@
           await settings(() => {
             if (!prefs.blocked.includes(src.origin)) prefs.blocked = [...prefs.blocked, src.origin].slice(-500);
             for (const [id, item] of pending) if (item.origin === src.origin) drop(id);
+            for (const [id, item] of usernames) if (item.origin === src.origin) forgetUsername(id);
           });
         }
         return { ok: true };
@@ -148,12 +172,13 @@
       }
       return { enabled: prefs.enabled, blocked: Boolean(origin && prefs.blocked.includes(origin)), host: origin ? new URL(origin).host : "" };
     }
-    chrome.tabs.onRemoved.addListener(drop);
+    chrome.tabs.onRemoved.addListener(id => { drop(id); forgetUsername(id); });
     chrome.tabs.onUpdated.addListener((id, change) => {
       if (change.url && pending.has(id) && originOf(change.url) !== pending.get(id).origin) drop(id);
+      if (change.url && usernames.has(id) && originOf(change.url) !== usernames.get(id).origin) forgetUsername(id);
     });
     chrome.permissions.onRemoved.addListener(() => { settings(() => {}).catch(() => {}); });
-    return { page, popup, clear, initialized };
+    return { page, popup, clear, initialized, rememberUsername, getUsername, forgetUsername };
   }
   root.SLVSaveOffers = { createSaveOffers, HOSTS };
   if (typeof module !== "undefined" && module.exports) module.exports = root.SLVSaveOffers;

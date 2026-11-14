@@ -29,6 +29,12 @@
         <h2>Save a login</h2>
         <p class="note">Type your username and password on the page, then press Save. You confirm in Secure Login Vault.</p>
         <button id="save-button" type="button">Save this login</button>
+        <form id="save-username-form" class="pairing" hidden>
+          <label for="save-username">Username or email</label>
+          <input id="save-username" type="text" autocomplete="off" spellcheck="false" maxlength="256" required />
+          <button id="save-username-confirm" type="submit">Continue saving</button>
+          <button id="save-username-cancel" type="button">Cancel</button>
+        </form>
         <p id="save-note" class="note" role="status" aria-live="polite"></p>
       </section>
 

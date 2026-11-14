@@ -525,6 +525,18 @@ along with layout, tray, browser-link/pairing, all 93 desktop request guards,
 syntax checks and packaged Chromium/Firefox helper tests. All vault and browser
 transport checks use isolated synthetic data; no real account data is accessed.
 
+Desktop 1.0.47 bundles extension 0.6.2 for two-step login saving. An exact-origin
+Google selected-account adapter and trusted-popup missing-username flow preserve
+desktop confirmation. One-use, two-minute retry tokens bind fresh password reads
+to the original tab/document/URL; passwords never enter the popup. Recognizable
+username-only submits can carry a short-lived username to the next same-origin
+step with automatic offers enabled. Manual-only capture remains explicit.
+Synthetic reader, worker/popup, trusted-submit and real native transport checks
+pass; Firefox package and reviewer-source rebuild checks pass. Installed vaults,
+real accounts and existing browser profiles were not accessed.
+The 1.0.47 Setup installer is built; packaged Chromium and Firefox helper checks
+pass. Extension 0.6.2 and its reproducible source ZIP are ready for Mozilla signing.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

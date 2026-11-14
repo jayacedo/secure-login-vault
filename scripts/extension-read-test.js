@@ -9,7 +9,7 @@ const file = path.join(__dirname, "..", "extension", "readFormInPage.js");
 const source = fs.readFileSync(file, "utf8");
 const { slvReadFormInPage } = require(file);
 
-function read(html, { url = "https://example.com/login", expected = "https://example.com", hide = [] } = {}) {
+function read(html, { url = "https://example.com/login", expected = "https://example.com", hide = [], options = {} } = {}) {
   const dom = new JSDOM(`<!doctype html><title>t</title>${html}`, { url, runScripts: "outside-only" });
   const { window } = dom;
   // jsdom has no layout: report a size for everything except what the test marks as hidden
@@ -19,7 +19,9 @@ function read(html, { url = "https://example.com/login", expected = "https://exa
     });
   }
   const fn = window.eval(`(${slvReadFormInPage.toString()})`);
-  return fn(expected);
+  const result = fn(expected, null, options);
+  dom.window.close();
+  return result;
 }
 
 const results = [];
@@ -96,6 +98,27 @@ check("a page that is not at the origin the worker looked at reads nothing", () 
 
 check("it only reads: the page is left exactly as it was, and no network or eval is used", () => {
   assert.equal(/\b(fetch|XMLHttpRequest|sendBeacon|WebSocket|eval|Function\(|innerHTML|\.submit\(|\.click\(|dispatchEvent|\.value\s*=[^=])/.test(source), false);
+});
+
+check("selected Google account is narrow, visible and unambiguous", () => {
+  const options = { url: "https://accounts.google.com/v3/signin/challenge/pwd", expected: "https://accounts.google.com" };
+  const password = '<form><input type="password" value="dummy-password"></form>';
+  assert.equal(read('<div id="profileIdentifier">dummy@example.test</div>' + password, options).username, "dummy@example.test");
+  assert.equal(read('<div data-profile-identifier="dummy@example.test">Account</div>' + password, options).username, "dummy@example.test");
+  assert.equal(read('<div id="profileIdentifier" data-hidden>dummy@example.test</div>' + password, options).status, "no-username");
+  assert.equal(read('<div id="profileIdentifier">dummy@example.test</div><div data-profile-identifier="other@example.test"></div>' + password, options).status, "no-username");
+  assert.equal(read('<div id="profileIdentifier">dummy@example.test</div>' + password).status, "no-username", "no adapter on other origins");
+  assert.equal(read('<p>dummy@example.test</p>' + password, options).status, "no-username", "no arbitrary text scraping");
+});
+check("username-only steps and explicit fallback remain bounded", () => {
+  assert.equal(read('<form><input type="email" value="dummy@example.test"></form>', { options: { readUsernameStep: true } }).status, "username-only");
+  assert.equal(read('<input value="search">', { options: { readUsernameStep: true } }).status, "no-form");
+  assert.equal(read('<input type="email" value="one@example.test"><input type="email" value="two@example.test">', { options: { readUsernameStep: true } }).status, "no-form");
+  const form = '<input type="password" value="dummy">';
+  assert.deepEqual(read(form), { status: "no-username" }, "no password returned on ordinary missing-username result");
+  assert.equal(read(form, { options: { username: "confirmed" } }).username, "confirmed");
+  assert.equal(read(form, { options: { username: "x".repeat(257) } }).status, "too-long");
+  assert.equal(read(form, { options: { verifyToken: "unknown", username: "confirmed" } }).status, "blocked");
 });
 
 console.log(results.join("\n"));

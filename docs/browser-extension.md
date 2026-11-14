@@ -26,7 +26,7 @@ collapsed until needed. Extension 0.5.0 is unchanged.
 
 ## Setup from the Windows installer (1.0.1 and later)
 
-1. Install **Secure Login Vault Setup 1.0.13.exe**, then open and unlock SLV.
+1. Install the latest **Secure Login Vault Setup** installer, then open and unlock SLV.
 2. Open **Settings > Browsers > Installation & troubleshooting** and click **Set Up Browser Extension**.
    This registers the helper for Chrome, Edge and Firefox for your Windows account, turns on
    SLV's browser connection, and opens the bundled extension folder.
@@ -65,7 +65,7 @@ can stay paired together and share the existing vault. Settings supports individ
 
 ## Development setup
 
-Use desktop 1.0.13 with extension 0.6.0: update both, then reload the extension. Existing
+Use desktop 1.0.47 with extension 0.6.2: update both, then reload the extension. Existing
 remembered pairing remains usable. The extension's **Pairing security** section offers
 memory-only pairing for the current browser session. See [Browser security](browser-security.md)
 for the encrypted protocol, threat limits, storage tradeoff and tests.
@@ -114,6 +114,33 @@ through the verified native connection; they are not included in popup responses
 confirmation text. Save always needs desktop confirmation. Closing, declining, timing
 out, or losing the connection cancels a pending confirmation. A locked vault refuses
 saves. A conflicting password change during confirmation requires retrying.
+
+## Separate username and password steps (extension 0.6.2)
+
+Manual Save recognizes a single visible selected-account marker on the exact
+`https://accounts.google.com` origin. It does not search arbitrary page text for
+email addresses. If the username is missing, the extension popup asks you to enter
+or confirm it, then **Continue saving**. Desktop confirmation is still required.
+The popup never receives the password. Continue reads it fresh from the same
+document and URL with a one-use token valid for two minutes; navigation, reload,
+tab changes or expiry require starting Save again.
+
+With automatic offers enabled, a trusted submit of a recognizable username-only
+form remembers that username for at most two minutes in worker memory, scoped to
+the exact origin and tab. A subsequent password submit can use it. It is cleared
+on capture/save, cancellation, tab closure, cross-origin navigation, disabling
+offers, permission removal or forgetting pairing. Nothing is written to browser
+storage. Worker shutdown can discard it earlier. For manual-only use, pressing
+Save on a username-only step remembers it; the next password-step Save asks you
+to confirm it. A fresh username detected on the password page takes precedence.
+
+Custom JavaScript navigation without a trusted form submit may not trigger an
+automatic offer. Use manual Save and its username prompt. The extension cannot
+recover passwords from already signed-in sessions.
+
+Verified using synthetic documents, mocked Chromium/Firefox APIs, trusted local
+Chromium submits and the native helper connected to a fresh synthetic vault.
+No real account or installed browser profile is used by these checks.
 
 ## Inline fill suggestions (extension 0.6.0+, logo button in 0.6.1, optional)
 

@@ -102,8 +102,12 @@
       if (new URL(action || location.href, document.baseURI).origin !== location.origin) return;
     } catch { return; }
     gestureForm = null;
-    let read = slvReadFormInPage(location.origin, form);
-    if (read.status !== "read") return;
+    let read = slvReadFormInPage(location.origin, form, { readUsernameStep: true, allowMissingUsername: true });
+    if (read.status === "username-only") {
+      send({ type: "offer-username", username: read.username });
+      return;
+    }
+    if (read.status !== "read" && read.status !== "no-username") return;
     send({ type: "offer-capture", username: read.username, password: read.password }).then(result => {
       if (result?.offer) show(result.offer);
     });
