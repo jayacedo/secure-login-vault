@@ -402,6 +402,19 @@ hint and desktop tray/unlock checks pass. The 1.0.31 Windows Setup installer is
 built; extracted-source and packaged Chromium/Firefox checks pass. Extension 0.6.1
 is unchanged.
 
+Desktop 1.0.37 adds credential selection and reviewed bulk group moves. The
+toolbar reveals row checkboxes and Select all shown (maximum 500); selection
+clears on refresh, filter changes and lock. The destination must be an existing
+group or Ungrouped. Preview and confirmation are bound to the selected records,
+destination, active group and unlock session. Only group assignment and updated
+time change, preserving other fields and password history; normal Updated
+activity events record changes. One encrypted save publishes the batch.
+Synthetic unit and Electron tests cover scope, stale reviews, failed persistence,
+field/QR/history preservation, select-shown, cancel, keyboard and lock behavior.
+The Setup installer is built. Packaged bulk-move UI, Chromium/Firefox helper,
+existing app integration and all 87 request-boundary checks pass. No production
+vault or account data is used. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

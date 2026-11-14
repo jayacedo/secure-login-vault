@@ -1007,6 +1007,20 @@ kbd {
   align-items: center;
 }
 
+.bulk-select-cell { display: none; }
+.credential-table.is-selecting .bulk-select-cell { display: flex; align-items: center; justify-content: center; }
+.credential-table.is-selecting .credential-row { grid-template-columns: 36px minmax(180px, 1.7fr) minmax(120px, 1fr) 120px 112px 112px; min-width: 726px; }
+.bulk-select-cell input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.credential-row.is-bulk-selected { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.bulk-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel-muted); }
+.bulk-selection-bar[hidden] { display: none; }
+.bulk-selection-bar small { flex-basis: 100%; color: var(--muted); }
+.bulk-move-container { max-width: 620px; }
+.bulk-move-container select { width: 100%; }
+#bulk-move-review[hidden] { display: none; }
+#bulk-move-review ul { max-height: 230px; overflow-y: auto; padding-left: 24px; }
+#bulk-move-review li { padding: 6px 0; overflow-wrap: anywhere; }
+
 .credential-row-head {
   padding: 0 18px;
   color: var(--muted);

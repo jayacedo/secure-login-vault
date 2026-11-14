@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   credentials: {
+    previewMove: choice => ipcRenderer.invoke("vault:preview-credential-move", choice),
+    moveToGroup: choice => ipcRenderer.invoke("vault:move-credentials-to-group", choice),
     getActivityHistory: options => ipcRenderer.invoke("vault:activity-history", options),
     getDuplicates: () => ipcRenderer.invoke("vault:duplicates-list"),
     resolveDuplicates: choice => ipcRenderer.invoke("vault:duplicates-resolve", choice),

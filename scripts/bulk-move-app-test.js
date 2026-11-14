@@ -1,0 +1,92 @@
+﻿const assert = require("assert/strict");
+const fs = require("fs");
+const path = require("path");
+const { app, BrowserWindow } = require("electron");
+const { testTempRoot } = require("./testTemp");
+const root = fs.mkdtempSync(path.join(testTempRoot(), "bulk-move-app-"));
+app.setPath("userData", root);
+process.env.SLV_PIPE_USER = `bulk-move-app-${process.pid}`;
+require(path.join(process.env.SLV_TEST_CODE_ROOT || path.join(__dirname, ".."), "src/main"));
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(fn) {
+  for (let i = 0; i < 150; i++) { if (await fn()) return; await sleep(50); }
+  throw Error("Bulk move UI timed out");
+}
+async function main() {
+  await app.whenReady(); await until(() => BrowserWindow.getAllWindows().length);
+  const win = BrowserWindow.getAllWindows()[0]; win.webContents.setBackgroundThrottling(false);
+  win.show(); win.focus();
+  if (win.webContents.isLoading()) await new Promise(resolve => win.webContents.once("did-finish-load", resolve));
+  const run = code => win.webContents.executeJavaScript(code);
+  const api = code => run(`window.secureLoginVault.${code}`);
+  const click = selector => run(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const password = "Synthetic bulk UI master password";
+  assert.equal((await api(`auth.createVault(${JSON.stringify({masterPassword:password,confirmPassword:password})})`)).ok, true);
+  await api('groups.add("Source")'); await api('groups.add("Destination")');
+  const data = {websiteName:"Synthetic <img src=x> Alpha",websiteUrl:"https://example.test/login",username:"dummy-alpha",password:"Synthetic-private-password",notes:"Synthetic-private-note",groupName:"Source"};
+  const a = (await api(`credentials.add(${JSON.stringify(data)})`)).result.id;
+  const b = (await api(`credentials.add(${JSON.stringify({...data,websiteName:"Synthetic Beta",username:"dummy-beta"})})`)).result.id;
+  await api('groups.setActive("Source")'); await run("initAuth()");
+  await until(() => run("document.querySelectorAll('[data-select-credential]').length===2"));
+  await run("refreshCredentials()");
+  await click("#bulk-select-toggle");
+  assert.equal(await run("document.querySelector('#bulk-move-btn').disabled"), true);
+  await click(`[data-select-credential="${a}"]`);
+  assert.equal(await run("document.querySelector('#bulk-select-all').indeterminate"), true);
+  await click("#bulk-select-all");
+  assert.equal(await run("document.querySelector('#bulk-selection-count').textContent"), "2 selected");
+  await click("#bulk-selection-cancel");
+  assert.equal(await run("document.querySelector('#bulk-selection-bar').hidden"), true);
+  await click("#bulk-select-toggle"); await click(`[data-select-credential="${a}"]`);
+  await run("refreshCredentials()");
+  assert.equal(await run("document.querySelector('#bulk-selection-bar').hidden"), true, "refresh clears selection");
+  await click("#bulk-select-toggle"); await click("#bulk-select-all");
+  await run("searchState.query='Alpha';runSearch()");
+  assert.equal(await run("document.querySelector('#bulk-selection-bar').hidden"), true, "search clears selection");
+  assert.equal(await run("document.querySelectorAll('[data-select-credential]').length"), 1);
+  await click("#bulk-select-toggle"); await click("#bulk-select-all");
+  assert.equal(await run("document.querySelector('#bulk-selection-count').textContent"), "1 selected", "select shown excludes filtered entries");
+  await run("searchState.query='';runSearch()");
+  const open = async id => {
+    await click("#bulk-select-toggle"); await click(`[data-select-credential="${id}"]`); await click("#bulk-move-btn");
+    await until(() => run("document.querySelector('#bulk-move-target')?.disabled===false"));
+    await run("document.querySelector('#bulk-move-target').value='Destination';document.querySelector('#bulk-move-target').dispatchEvent(new Event('change'))");
+  };
+  const review = async () => {
+    await click("#bulk-move-confirm");
+    await until(() => run("document.querySelector('#bulk-move-confirm')?.textContent==='Confirm move' && !document.querySelector('#bulk-move-confirm').disabled"));
+  };
+  await open(a); await review();
+  const text = await run("document.querySelector('#bulk-move-overlay').textContent");
+  assert(text.includes(data.websiteName)); assert(!text.includes(data.password)); assert(!text.includes(data.notes));
+  assert.equal(await run("document.querySelectorAll('#bulk-move-review img').length"), 0);
+  await run("document.querySelector('#bulk-move-confirm').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true}))");
+  assert.equal(await run("document.activeElement.className"), "modal-close-btn");
+  await run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  assert.equal(await run("!!document.querySelector('#bulk-move-overlay')"), false);
+  assert.equal((await api(`credentials.getOne(${a})`)).result.groupName,"Source");
+  await click("#bulk-move-btn"); await until(() => run("document.querySelector('#bulk-move-target')?.disabled===false"));
+  await run("document.querySelector('#bulk-move-target').value='Destination'"); await review();
+  win.setSize(1100,780);
+  await run("document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-palette','coffee')"); await sleep(250);
+  fs.writeFileSync(path.join(root,"bulk-move-review.png"),(await win.webContents.capturePage()).toPNG());
+  await api(`credentials.update(${a},${JSON.stringify({...data,notes:"Synthetic edited after review"})})`);
+  await click("#bulk-move-confirm");
+  await until(() => run("document.querySelector('#bulk-move-status')?.textContent.includes('changed')"));
+  assert.equal((await api(`credentials.getOne(${a})`)).result.groupName,"Source");
+  await review(); await click("#bulk-move-confirm");
+  await until(() => run("!document.querySelector('#bulk-move-overlay') && document.querySelectorAll('[data-select-credential]').length===1"));
+  await api('groups.setActive("")');
+  assert.equal((await api(`credentials.getOne(${a})`)).result.groupName,"Destination");
+  assert.equal((await api(`credentials.getOne(${b})`)).result.groupName,"Source");
+  await api('groups.setActive("Source")'); await run("refreshCredentials()");
+  assert.equal(await run("document.querySelector('#bulk-selection-bar').hidden"), true);
+  await open(b); await run("handleLockVault()");
+  assert.equal(await run("!!document.querySelector('#bulk-move-overlay')"), false);
+  assert.equal((await api(`credentials.previewMove({ids:[${b}],targetGroup:'Destination'})`)).ok,false);
+  console.log(`PASS synthetic selection, refresh reset, review/cancel, escaped text, keyboard, stale review, selected-only move, active group refresh and lock\nScreenshots: ${root}`);
+  app.exit(0);
+}
+setTimeout(()=>{console.error("Bulk move UI timeout");app.exit(1);},60000).unref();
+main().catch(error=>{console.error(error);app.exit(1);});
+

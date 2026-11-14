@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.36**, extension **0.6.1**. Desktop 1.0.36 matches dashboard toolbar icons to the gentler Settings and About hover effects using shared animation rules. Tooltips, keyboard focus and reduced-motion support remain available, and Add retains its filled accent style. Backup verification and saved check summaries remain available in Backup & Data. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.37**, extension **0.6.1**. Desktop 1.0.37 adds credential selection and reviewed bulk moves between groups. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -41,6 +41,7 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
 
 - Store website addresses, usernames, emails, passwords, notes and tags.
 - Organize entries with categories, favorites and groups; search across credential fields.
+- Select multiple credentials and move them to an existing group or Ungrouped after reviewing the list.
 - Generate passwords with configurable length and character options.
 - Copy credentials with configurable password clipboard clearing.
 - Use auto-lock, change the master password and configure a recovery key.
@@ -51,6 +52,26 @@ Run `npm run test:hardening` and `npm run test:hardening-app` for deterministic 
   the mapping, blank-field defaults, invalid rows and possible duplicates before
   confirmation. Possible duplicates are skipped by default; existing entries are
   unchanged. Add/Edit Credential and CSV exports now call the address "Login URL".
+
+### Move selected credentials to a group
+
+Choose the **Select credentials** checkbox icon in the Credentials toolbar. Select
+individual rows or use the header checkbox to select all shown entries (up to 500).
+Choose **Move to group**, select an existing destination or **Ungrouped**, then
+**Review move** and **Confirm move**. Create new groups in Settings > Organization.
+
+- Only the group assignment and update timestamp change. Passwords, notes, tags,
+  categories, favorites, QR images and password history stay intact. Entries are
+  not merged or deleted. Each changed entry records an Updated activity event.
+- Entries already in the destination are skipped. Moves are saved together;
+  changed entries, a changed active group or a new unlock session invalidate an
+  earlier review. Review again before applying.
+- Selection applies only to the shown list. Refreshing, searching, changing filters
+  or locking clears it. Entries moved out of the active group disappear from that
+  filtered view; use Show all or select the destination group to see them.
+
+Validation uses new synthetic vaults only: `npm run test:bulk-move` and
+`npm run test:bulk-move-app`.
 
 ### Authenticator codes from a setup QR
 

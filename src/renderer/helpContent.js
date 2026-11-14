@@ -1,5 +1,10 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Move Multiple Credentials", items: [
+    { q: "How do I move several logins to a group?", a: "Choose the Select credentials checkbox icon in the Credentials toolbar. Select rows or use the header checkbox for all shown entries (up to 500). Choose Move to group, select an existing group or Ungrouped, then Review move and Confirm move. Create new groups in Settings > Organization." },
+    { q: "Does a bulk move change my login details?", a: "Only the group assignment and update timestamp change. Passwords, notes, tags, categories, favorites, QR images and password history stay intact. No entries are merged or deleted. Entries already in the destination are skipped. Each changed entry records an Updated activity event." },
+    { q: "Why did my selection or moved entries disappear?", a: "Selection is cleared when the list refreshes, filters change or the vault locks. A changed entry, active group or unlock session requires a fresh review. Entries moved out of the active group leave its filtered view; use Show all or choose the destination group to see them." }
+  ] },
   { title: "Windows Startup & System Tray", items: [
     { q: "Can SLV start with Windows?", a: "In Settings > General, enable Start with Windows and Apply. Enable Start in system tray as well to start quietly at Windows sign-in. The vault always starts locked. Startup registration is available in the installed Windows app, not development or portable builds. These options default to off." },
     { q: "How do I unlock from the tray?", a: "Click the SLV tray icon or choose Open SLV. A locked vault opens a small unlock window. Enter your master password to open the dashboard. Cancel, Escape or the close button returns to the tray still locked. Opening SLV from its shortcut shows its window even when quiet startup is enabled." },

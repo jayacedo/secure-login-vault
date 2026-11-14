@@ -372,6 +372,53 @@ async function updateCredential(filePath, key, id, data) {
   });
 }
 
+function credentialMoveSnapshot(db, key, choice, sessionId) {
+  const ids = choice?.ids;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => !Number.isSafeInteger(id) || id <= 0)
+    || new Set(ids).size !== ids.length || typeof choice.targetGroup !== "string" || choice.targetGroup.length > 200) {
+    throw createPublicError("Select between 1 and 500 credentials and choose a destination group.");
+  }
+  const targetName = choice.targetGroup.trim();
+  const target = targetName ? queryOne(db, "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [targetName]) : { id: null, name: "" };
+  if (targetName && !target.id) throw createPublicError("The destination group no longer exists. Review the move again.");
+  const activeGroup = getActiveGroupFilterValue(db);
+  const rows = queryAll(db, `SELECT * FROM credentials WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
+  if (rows.length !== ids.length || rows.some(row => activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) {
+    throw createPublicError("Some selected credentials are unavailable in the active group. Refresh the list and select again.");
+  }
+  // Bind the review to the selected records, destination, scope and unlock session.
+  const revision = crypto.createHmac("sha256", key).update(JSON.stringify([sessionId, activeGroup, target, rows])).digest("hex");
+  return { rows, target, activeGroup, revision };
+}
+
+async function previewCredentialMove(filePath, key, choice, sessionId) {
+  return withDecryptedDatabase(filePath, key, db => {
+    const snapshot = credentialMoveSnapshot(db, key, choice, sessionId);
+    return { revision: snapshot.revision, activeGroup: snapshot.activeGroup, targetGroup: snapshot.target.name,
+      entries: snapshot.rows.map(row => ({ id: row.id, websiteName: row.website_name,
+        username: row.username || row.email || "", groupName: row.group_name || "" })),
+      unchanged: snapshot.rows.filter(row => (row.group_name || "").toLowerCase() === snapshot.target.name.toLowerCase()).length };
+  });
+}
+
+async function moveCredentialsToGroup(filePath, key, choice, sessionId) {
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
+      throw createPublicError("Review and confirm the selected credentials before moving them.");
+    }
+    const snapshot = credentialMoveSnapshot(db, key, choice, sessionId);
+    if (snapshot.revision !== choice.revision) throw createPublicError("The selected credentials, group or vault session changed. Review the move again.");
+    const now = new Date().toISOString();
+    let moved = 0;
+    for (const row of snapshot.rows) {
+      if ((row.group_name || "").toLowerCase() === snapshot.target.name.toLowerCase()) continue;
+      db.run("UPDATE credentials SET group_name = ?, updated_at = ? WHERE id = ?", [snapshot.target.name || null, now, row.id]);
+      moved++;
+    }
+    return { moved, unchanged: snapshot.rows.length - moved, targetGroup: snapshot.target.name };
+  });
+}
+
 async function deleteCredential(filePath, key, id) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
     const existing = queryOne(db, "SELECT * FROM credentials WHERE id = ?", [id]);
@@ -1544,6 +1591,8 @@ function createPublicError(message) {
 }
 
 module.exports = {
+  previewCredentialMove,
+  moveCredentialsToGroup,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,

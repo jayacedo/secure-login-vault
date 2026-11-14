@@ -6,6 +6,8 @@ const { promisify } = require("util");
 const { writeJsonAtomic, fileExists } = require("./fsUtils");
 const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, beforeVaultCommit, trackVaultBuffer } = require("./vaultOperationContext");
 const {
+  previewCredentialMove,
+  moveCredentialsToGroup,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,
@@ -911,6 +913,8 @@ function createVaultStore(basePath) {
     getActivityHistory: options => { ensureUnlocked(); return getActivityHistory(databaseFilePath, currentKey(), options); },
     purgeActivityHistory: () => { ensureUnlocked(); return purgeActivityHistory(databaseFilePath, currentKey()); },
     editCredential,
+    previewCredentialMove: choice => previewCredentialMove(databaseFilePath, currentKey(), choice, session.id),
+    moveCredentialsToGroup: choice => moveCredentialsToGroup(databaseFilePath, currentKey(), choice, session.id),
     getPasswordHistory,
     checkVaultHealth,
     getDuplicateReview: () => reviewDuplicates(),

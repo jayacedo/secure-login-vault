@@ -353,6 +353,7 @@ function renderPasswordInput({ id, label, autocomplete }) {
 let _lastAuthState = null;
 
 function renderDashboard(state) {
+  resetBulkSelection();
   _lastAuthState = state;
   document.body.classList.add("is-dashboard");
   appShell.className = "dashboard-shell";
@@ -456,6 +457,7 @@ function renderDashboard(state) {
           <div class="health-dashboard-actions">
             <span id="credential-count-label">${dashboardData.credentials.length} items</span>
             <div class="credential-tool-buttons" role="group" aria-label="Credential tools">
+              <button class="icon-text-button dashboard-icon-button" type="button" id="bulk-select-toggle" aria-label="Select credentials" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="dashboard-action-tooltip" aria-hidden="true">Select credentials</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="check-vault-health-btn" aria-label="Check vault health">${renderShieldIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Check vault health</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="recently-deleted-btn" aria-label="Recently deleted">${renderTrashIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Recently deleted</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="review-duplicates-btn" aria-label="Review duplicates">${renderCopyIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Review duplicates</span></button>
@@ -463,8 +465,15 @@ function renderDashboard(state) {
             </div>
           </div>
         </div>
+        <div id="bulk-selection-bar" class="bulk-selection-bar" hidden>
+          <strong id="bulk-selection-count" role="status">0 selected</strong>
+          <button class="primary-button" id="bulk-move-btn" type="button" disabled>Move to group</button>
+          <button class="secondary-button" id="bulk-selection-cancel" type="button">Cancel</button>
+          <small>Selection applies to shown entries only (up to 500). Refreshing or changing filters clears it.</small>
+        </div>
         <div class="credential-table" role="table" aria-label="Credential list">
           <div class="credential-row credential-row-head" role="row">
+            <span role="columnheader" class="bulk-select-cell"><input type="checkbox" id="bulk-select-all" aria-label="Select all shown credentials" title="Select all shown credentials"></span>
             <span role="columnheader">Website</span>
             <span role="columnheader">Username</span>
             <span role="columnheader">Password</span>
@@ -492,6 +501,7 @@ function renderDashboard(state) {
     await refreshCredentials();
   });
   setupDashboardInteractions();
+  setupBulkSelection();
   loadDashboardData();
 }
 
@@ -547,6 +557,7 @@ function renderCredentialRow(credential, query = "") {
   return `
     <div class="credential-row credential-row-item ${credential.favorite ? "is-favorite" : ""}"
          role="row" data-id="${credential.id}">
+      ${renderBulkSelectionCell(credential)}
 
       <span role="cell" class="cell-website">
         <span class="cell-main">
@@ -712,6 +723,7 @@ function setActiveGroupBanner(activeGroup, { forceShow = false } = {}) {
 }
 
 function updateCredentialList(credentials) {
+  resetBulkSelection();
   const listBody = document.querySelector("#credential-list-body");
   const countLabel = document.querySelector("#credential-count-label");
   if (listBody) listBody.innerHTML = renderCredentialRows(credentials);
@@ -1127,6 +1139,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  resetBulkSelection();
   closeAuthenticator(); closeQrLightbox();
   closeActivityHistory();
   closeDuplicateReview();
@@ -1275,15 +1288,19 @@ function setupDashboardInteractions() {
   startAutoLockWatcher();
 }
 
+let credentialSearchRequest = 0;
 async function runSearch() {
+  resetBulkSelection();
+  const request = ++credentialSearchRequest;
   const res = await window.secureLoginVault.credentials.search({
     query: searchState.query,
     onlyFavorites: searchState.onlyFavorites,
     category: searchState.category
   });
 
-  if (!res.ok) return;
+  if (!res.ok || request !== credentialSearchRequest) return;
 
+  resetBulkSelection();
   const credentials = res.result;
   const listBody = document.querySelector("#credential-list-body");
   const countLabel = document.querySelector("#credential-count-label");
@@ -2035,6 +2052,7 @@ const clientSearchState = {
 };
 
 async function renderClientVault(state) {
+  resetBulkSelection();
   _lastAuthState = state;
   document.body.classList.add("is-dashboard");
   appShell.className = "dashboard-shell";
@@ -2890,6 +2908,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  resetBulkSelection();
   closeAuthenticator(); closeQrLightbox();
   closeActivityHistory();
   closeDuplicateReview();
