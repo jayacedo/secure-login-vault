@@ -196,6 +196,7 @@ async function initAuth() {
 }
 
 function renderFromState(state) {
+  if (!state.isUnlocked) clearBulkUndo(true);
   updateStatus(state);
   document.body.classList.toggle("compact-unlock", Boolean(state.compactUnlock && !state.isUnlocked));
 
@@ -1142,6 +1143,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  clearBulkUndo(true);
   resetBulkSelection();
   closeAuthenticator(); closeQrLightbox();
   closeActivityHistory();
@@ -2911,6 +2913,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  clearBulkUndo(true);
   resetBulkSelection();
   closeAuthenticator(); closeQrLightbox();
   closeActivityHistory();

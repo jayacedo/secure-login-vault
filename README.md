@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.38**, extension **0.6.1**. Desktop 1.0.38 adds reviewed bulk category changes and a Find logins field in the selection bar that keeps selections across searches. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.39**, extension **0.6.1**. Desktop 1.0.39 adds Undo for the latest bulk group or category change, with checks against later edits. Selection search and reviewed bulk actions remain available. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -95,6 +95,29 @@ applying; choose All categories to see them again.
 
 Validation: `npm run test:bulk-category` and `npm run test:bulk-move-app`, using
 synthetic vaults only.
+
+### Undo a bulk group or category change
+
+After applying, choose **Undo** in the notification to restore the previous
+assignments. The notification stays until dismissed, replaced by another bulk
+action, or the vault locks. Undo supports only the latest successful bulk action
+in the current unlocked session; even an all-already-assigned batch clears the
+previous Undo. Closing SLV, locking or restarting ends its availability. There is
+no undo stack or redo, and this does not undo individual edits, imports or deletions.
+
+- Undo restores only assignments actually changed by that batch. It leaves login
+  details, QR images and password history intact and records Updated activity
+  events with a new update time. Changing a dashboard filter does not prevent Undo.
+- If any affected entry was edited or deleted, or an original group/category was
+  renamed or removed, the whole Undo is rejected without overwriting later work.
+  Edits to unrelated entries do not block it. A failed save changes nothing and
+  can be retried while Undo remains available.
+- The temporary record stays in desktop memory and contains only assignment
+  metadata and keyed fingerprints, not passwords, QR images or full credential
+  copies. It is not included in exports or backups.
+
+Validation: `npm run test:bulk-undo` and `npm run test:bulk-move-app`, using only
+new synthetic vaults.
 
 ### Authenticator codes from a setup QR
 

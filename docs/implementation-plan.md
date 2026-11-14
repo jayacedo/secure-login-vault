@@ -428,6 +428,20 @@ The 1.0.38 Setup installer is built; packaged UI, Chromium/Firefox helper,
 existing app integration and all 89 desktop request-boundary checks pass.
 Production accounts are never used for development or tests.
 
+Desktop 1.0.39 adds session-only Undo for the latest successful bulk group or
+category change. A persistent notification offers Undo and Dismiss. The desktop
+retains assignment metadata and keyed post-change fingerprints, never full
+credential copies. Undo verifies affected rows, their latest activity IDs and
+original group/category identities before one atomic save. Later edits, deleted
+records, changed original destinations and replayed/expired tokens are rejected.
+No-op rows are excluded; an all-no-op batch clears the previous Undo. Lock/new
+session clears the record, and the renderer clears the notification on lock.
+Synthetic tests cover group/category restores, field/history preservation,
+activity, failure/retry, stale/replay/deletion/catalog guards and UI filter refresh.
+The 1.0.39 Setup installer is built. Packaged Undo UI, Chromium/Firefox helper,
+existing app integration and all 90 desktop request-boundary checks pass using
+synthetic accounts only.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See

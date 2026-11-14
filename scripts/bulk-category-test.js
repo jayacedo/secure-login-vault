@@ -36,7 +36,9 @@ async function main() {
     try { await assert.rejects(store.changeCredentialCategory({...choice,revision:review.revision,confirmed:true}),/synthetic save failure/); }
     finally { fs.rename = rename; }
     assert.deepEqual(await fs.readFile(db),initial,"failed save publishes no part of the batch");
-    assert.deepEqual(await store.changeCredentialCategory({...choice,revision:review.revision,confirmed:true}),{changed:2,unchanged:0,targetCategory:"Synthetic destination"});
+    const applied = await store.changeCredentialCategory({...choice,revision:review.revision,confirmed:true});
+    assert.equal(typeof applied.undoToken,"string");
+    assert.deepEqual({...applied,undoToken:undefined},{changed:2,unchanged:0,targetCategory:"Synthetic destination",undoToken:undefined});
     const after = await store.getCredential(a);
     const {category:oldCategory,updatedAt:oldDate,...oldFields} = before;
     const {category:newCategory,updatedAt:newDate,...newFields} = after;

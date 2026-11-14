@@ -405,7 +405,7 @@ async function previewCredentialMove(filePath, key, choice, sessionId) {
   });
 }
 
-async function moveCredentialsToGroup(filePath, key, choice, sessionId) {
+async function moveCredentialsToGroup(filePath, key, choice, sessionId, captureUndo = () => {}) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
       throw createPublicError("Review and confirm the selected credentials before moving them.");
@@ -419,6 +419,7 @@ async function moveCredentialsToGroup(filePath, key, choice, sessionId) {
       db.run("UPDATE credentials SET group_name = ?, updated_at = ? WHERE id = ?", [snapshot.target.name || null, now, row.id]);
       moved++;
     }
+    captureUndo(createBulkUndo(db, key, "group", snapshot.rows, snapshot.target.name));
     return { moved, unchanged: snapshot.rows.length - moved, targetGroup: snapshot.target.name };
   });
 }
@@ -433,7 +434,7 @@ async function previewCredentialCategory(filePath, key, choice, sessionId) {
   });
 }
 
-async function changeCredentialCategory(filePath, key, choice, sessionId) {
+async function changeCredentialCategory(filePath, key, choice, sessionId, captureUndo = () => {}) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
       throw createPublicError("Review and confirm the selected credentials before changing their category.");
@@ -447,7 +448,49 @@ async function changeCredentialCategory(filePath, key, choice, sessionId) {
       db.run("UPDATE credentials SET category = ?, updated_at = ? WHERE id = ?", [snapshot.target.name, now, row.id]);
       changed++;
     }
+    captureUndo(createBulkUndo(db, key, "category", snapshot.rows, snapshot.target.name));
     return { changed, unchanged: snapshot.rows.length - changed, targetCategory: snapshot.target.name };
+  });
+}
+
+function bulkUndoFingerprint(db, key, ids) {
+  const rows = queryAll(db, `SELECT c.*, (SELECT MAX(a.id) FROM credential_activity a WHERE a.credential_id = c.id) AS last_activity
+    FROM credentials c WHERE c.id IN (${ids.map(() => "?").join(",")}) ORDER BY c.id`, ids);
+  return crypto.createHmac("sha256", key).update(JSON.stringify(rows)).digest("hex");
+}
+
+function bulkUndoReference(db, kind, name) {
+  if (!name) return null;
+  const row = queryOne(db, kind === "group" ? "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE"
+    : "SELECT id, name FROM categories WHERE name = ? COLLATE NOCASE", [name]);
+  return row.id === undefined ? null : row;
+}
+
+function createBulkUndo(db, key, kind, before, destination) {
+  const field = kind === "group" ? "group_name" : "category";
+  const entries = before.filter(row => (row[field] || "").toLowerCase() !== destination.toLowerCase())
+    .map(row => ({ id: row.id, value: row[field], reference: bulkUndoReference(db, kind, row[field]) }));
+  if (!entries.length) return null;
+  // Keep only assignment metadata and a keyed fingerprint, never credential secrets.
+  return { kind, entries, fingerprint: bulkUndoFingerprint(db, key, entries.map(entry => entry.id)) };
+}
+
+async function undoBulkCredentialChange(filePath, key, receipt) {
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    const ids = receipt.entries.map(entry => entry.id);
+    if (bulkUndoFingerprint(db, key, ids) !== receipt.fingerprint) {
+      throw createPublicError("Cannot undo: one or more affected credentials changed or were deleted after this action. Nothing was changed.");
+    }
+    for (const entry of receipt.entries) {
+      if (JSON.stringify(bulkUndoReference(db, receipt.kind, entry.value)) !== JSON.stringify(entry.reference)) {
+        throw createPublicError("Cannot undo: an original group or category changed. Nothing was changed.");
+      }
+    }
+    const sql = receipt.kind === "group" ? "UPDATE credentials SET group_name = ?, updated_at = ? WHERE id = ?"
+      : "UPDATE credentials SET category = ?, updated_at = ? WHERE id = ?";
+    const now = new Date().toISOString();
+    for (const entry of receipt.entries) db.run(sql, [entry.value, now, entry.id]);
+    return { restored: ids.length, kind: receipt.kind };
   });
 }
 
@@ -1627,6 +1670,7 @@ module.exports = {
   moveCredentialsToGroup,
   previewCredentialCategory,
   changeCredentialCategory,
+  undoBulkCredentialChange,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,

@@ -10,6 +10,7 @@ const {
   moveCredentialsToGroup,
   previewCredentialCategory,
   changeCredentialCategory,
+  undoBulkCredentialChange,
   createEncryptedVaultFile,
   readDashboardData,
   verifyEncryptedVaultFile,
@@ -73,6 +74,7 @@ function createVaultStore(basePath) {
   const preRestoreSuffix = ".pre-restore.bak";
   let sessionKey = null;
   let session = null;
+  let bulkUndo = null;
   let operationEpoch = 0;
   let operationQueue = Promise.resolve();
   const owner = {};
@@ -247,6 +249,7 @@ function createVaultStore(basePath) {
   }
 
   function lockVault() {
+    bulkUndo = null;
     operationEpoch++;
     if (sessionKey) {
       sessionKey.fill(0);
@@ -874,6 +877,7 @@ function createVaultStore(basePath) {
   }
 
   function startSession(key, now) {
+    bulkUndo = null;
     assertVaultOperationActive();
     replaceSessionKey(key);
     operationEpoch++;
@@ -900,6 +904,24 @@ function createVaultStore(basePath) {
     };
   }
 
+  async function applyBulkChange(operation, choice) {
+    let receipt;
+    const result = await operation(databaseFilePath, currentKey(), choice, session.id, value => { receipt = value; });
+    assertVaultOperationActive();
+    bulkUndo = receipt ? { ...receipt, token: crypto.randomUUID(), sessionId: session.id } : null;
+    return { ...result, undoToken: bulkUndo?.token || null };
+  }
+
+  async function undoBulkChange(token) {
+    if (typeof token !== "string" || !bulkUndo || bulkUndo.token !== token || bulkUndo.sessionId !== session.id) {
+      throw createPublicError("Undo is no longer available. Only the latest bulk change in this unlocked session can be undone.");
+    }
+    const result = await undoBulkCredentialChange(databaseFilePath, currentKey(), bulkUndo);
+    assertVaultOperationActive();
+    bulkUndo = null;
+    return result;
+  }
+
   const operations = {
     createVault,
     getDashboardData,
@@ -916,9 +938,10 @@ function createVaultStore(basePath) {
     purgeActivityHistory: () => { ensureUnlocked(); return purgeActivityHistory(databaseFilePath, currentKey()); },
     editCredential,
     previewCredentialMove: choice => previewCredentialMove(databaseFilePath, currentKey(), choice, session.id),
-    moveCredentialsToGroup: choice => moveCredentialsToGroup(databaseFilePath, currentKey(), choice, session.id),
+    moveCredentialsToGroup: choice => applyBulkChange(moveCredentialsToGroup, choice),
     previewCredentialCategory: choice => previewCredentialCategory(databaseFilePath, currentKey(), choice, session.id),
-    changeCredentialCategory: choice => changeCredentialCategory(databaseFilePath, currentKey(), choice, session.id),
+    changeCredentialCategory: choice => applyBulkChange(changeCredentialCategory, choice),
+    undoBulkChange,
     getPasswordHistory,
     checkVaultHealth,
     getDuplicateReview: () => reviewDuplicates(),

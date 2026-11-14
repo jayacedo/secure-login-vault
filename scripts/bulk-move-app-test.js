@@ -95,6 +95,11 @@ async function main() {
   assert.equal((await api(`credentials.getOne(${b})`)).result.category,"Synthetic category");
   assert.equal((await api(`credentials.getOne(${b})`)).result.groupName,"Source");
   assert.equal((await api(`credentials.getOne(${a})`)).result.category,"Other");
+  await until(() => run("!!document.querySelector('#bulk-undo-btn')"));
+  await sleep(250); fs.writeFileSync(path.join(root,"bulk-undo.png"),(await win.webContents.capturePage()).toPNG());
+  await click("#bulk-undo-btn");
+  await until(() => run("!document.querySelector('#bulk-undo-toast') && document.querySelectorAll('[data-select-credential]').length===2"));
+  assert.equal((await api(`credentials.getOne(${b})`)).result.category,"Other");
   await run("searchState.category=null;refreshCredentials()");
   const open = async id => {
     await click("#bulk-select-toggle"); await click(`[data-select-credential="${id}"]`); await click("#bulk-move-btn");
@@ -130,10 +135,23 @@ async function main() {
   assert.equal((await api(`credentials.getOne(${b})`)).result.groupName,"Source");
   await api('groups.setActive("Source")'); await run("refreshCredentials()");
   assert.equal(await run("document.querySelector('#bulk-selection-bar').hidden"), true);
-  await open(b); await run("handleLockVault()");
+  await until(() => run("!!document.querySelector('#bulk-undo-btn')"));
+  await click("#bulk-undo-btn");
+  await until(() => run("!document.querySelector('#bulk-undo-toast') && document.querySelectorAll('[data-select-credential]').length===2"));
+  assert.equal((await api(`credentials.getOne(${a})`)).result.groupName,"Source");
+  await open(b); await review(); await click("#bulk-move-confirm");
+  await until(() => run("!!document.querySelector('#bulk-undo-btn')"));
+  await api('groups.setActive("")');
+  const later = (await api(`credentials.getOne(${b})`)).result;
+  await api(`credentials.update(${b},${JSON.stringify({...later,notes:"Synthetic later edit"})})`);
+  await click("#bulk-undo-btn");
+  await until(() => run("[...document.querySelectorAll('.toast--error')].some(toast=>toast.textContent.includes('Cannot undo'))"));
+  assert.equal((await api(`credentials.getOne(${b})`)).result.groupName,"Destination");
+  await run("refreshCredentials()"); await open(a); await run("handleLockVault()");
+  assert.equal(await run("!!document.querySelector('#bulk-undo-toast')"),false);
   assert.equal(await run("!!document.querySelector('#bulk-move-overlay')"), false);
   assert.equal((await api(`credentials.previewMove({ids:[${b}],targetGroup:'Destination'})`)).ok,false);
-  console.log(`PASS synthetic selection search/hidden selections, category review/cancel/filter refresh, selected-only category change, group move regression, escaped text, keyboard, stale review and lock\nScreenshots: ${root}`);
+  console.log(`PASS synthetic selection/search, category and group changes, Undo for both actions, stale Undo rejection, filter refresh, review/cancel, keyboard and lock cleanup\nScreenshots: ${root}`);
   app.exit(0);
 }
 setTimeout(()=>{console.error("Bulk move UI timeout");app.exit(1);},60000).unref();

@@ -2249,6 +2249,9 @@ mark.search-highlight {
   transform: translateY(0) scale(1);
 }
 
+#bulk-undo-toast { max-width: min(520px, calc(100vw - 48px)); }
+#bulk-undo-btn { flex-shrink: 0; }
+
 .toast.is-hiding {
   opacity: 0;
   transform: translateY(6px) scale(0.97);

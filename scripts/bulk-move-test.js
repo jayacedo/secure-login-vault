@@ -43,7 +43,8 @@ async function main() {
     } finally { fs.rename = originalRename; }
     assert.deepEqual(await fs.readFile(dbPath), beforeFailure, "failed final save publishes neither move nor activity events");
     const result = await store.moveCredentialsToGroup({ ...choice, revision: review.revision, confirmed: true });
-    assert.deepEqual(result, { moved: 2, unchanged: 0, targetGroup: "Destination" });
+    assert.equal(typeof result.undoToken, "string");
+    assert.deepEqual({...result,undoToken:undefined}, { moved: 2, unchanged: 0, targetGroup: "Destination",undoToken:undefined });
     assert.equal((await store.getAllCredentials()).length, 0, "moved logins leave the active group view");
     await store.setCurrentActiveGroup("");
     for (const [id, before] of [[a, beforeA], [b, beforeB]]) {

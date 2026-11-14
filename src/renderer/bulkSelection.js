@@ -2,6 +2,46 @@
 let bulkSelectionEnabled = false;
 const bulkSelectedIds = new Set();
 let bulkMoveDialog = null;
+let bulkUndoToast = null;
+let bulkSessionVersion = 0;
+
+function clearBulkUndo(expireSession = false) {
+  if (expireSession === true) bulkSessionVersion++;
+  bulkUndoToast?.remove();
+  bulkUndoToast = null;
+}
+
+function showBulkUndo(result, message) {
+  clearBulkUndo();
+  if (!result.undoToken) { showToast(message, "info"); return; }
+  const toast = document.createElement("div");
+  toast.id = "bulk-undo-toast";
+  toast.className = "toast toast--info";
+  toast.setAttribute("role", "status");
+  toast.innerHTML = '<span class="toast-message"></span><button type="button" class="secondary-button" id="bulk-undo-btn">Undo</button><button type="button" class="toast-close" aria-label="Dismiss undo">&times;</button>';
+  toast.querySelector(".toast-message").textContent = `${message} Undo is available until your next bulk change or lock.`;
+  const button = toast.querySelector("#bulk-undo-btn");
+  toast.querySelector(".toast-close").addEventListener("click", clearBulkUndo);
+  button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    const version = bulkSessionVersion;
+    try {
+      const response = await window.secureLoginVault.credentials.undoBulkChange(result.undoToken);
+      if (bulkUndoToast !== toast) return;
+      if (!response.ok) { showToast(response.message || "Could not undo. Try again.", "error", 6000); return; }
+      clearBulkUndo();
+      if (document.querySelector("#credential-list-body")) await refreshCredentials();
+      if (version !== bulkSessionVersion) return;
+      document.querySelector("#bulk-select-toggle")?.focus();
+      showToast(`Restored previous ${response.result.kind === "group" ? "groups" : "categories"} for ${response.result.restored} credentials.`, "info");
+    } catch { if (bulkUndoToast === toast) showToast("Could not undo. Try again.", "error"); }
+    finally { if (bulkUndoToast === toast) button.disabled = false; }
+  });
+  bulkUndoToast = toast;
+  getToastContainer().append(toast);
+  requestAnimationFrame(() => toast.classList.add("is-visible"));
+}
 
 function renderBulkSelectionCell(entry) {
   const search = [entry.websiteName, entry.websiteUrl, entry.username, entry.email, entry.groupName].filter(Boolean).join(" ").toLowerCase();
@@ -140,13 +180,15 @@ async function openBulkMove(kind = "group") {
         review.replaceChildren(title, list); review.hidden = false;
         confirm.textContent = confirmLabel; message.textContent = "Review these entries, then confirm.";
       } else {
+        const version = bulkSessionVersion;
         const confirmedChoice = { ...choice, revision: state.review.revision, confirmed: true };
         const response = await (category ? credentials.changeCategory(confirmedChoice) : credentials.moveToGroup(confirmedChoice));
         if (response.ok) {
           resetBulkSelection();
           if (document.querySelector("#credential-list-body")) {
             await refreshCredentials();
-            showToast(`${category ? `Changed category for ${response.result.changed}` : `Moved ${response.result.moved}`} to ${response.result[resultField] || "Ungrouped"}.${response.result.unchanged ? ` ${response.result.unchanged} already assigned.` : ""}`, "info");
+            if (version !== bulkSessionVersion || !document.querySelector("#credential-list-body")) return;
+            showBulkUndo(response.result, `${category ? `Changed category for ${response.result.changed}` : `Moved ${response.result.moved}`} to ${response.result[resultField] || "Ungrouped"}.${response.result.unchanged ? ` ${response.result.unchanged} already assigned.` : ""}`);
           }
           return;
         }
