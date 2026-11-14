@@ -3503,6 +3503,15 @@ small.group-badge {
   justify-items: start;
 }
 
+.unlock-help {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+}
+
+.unlock-help .hint-reveal { width: 100%; justify-items: center; }
+.unlock-help .link-button { min-height: 34px; }
+
 .hint-text {
   margin: 0;
   padding: 10px 12px;

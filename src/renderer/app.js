@@ -293,13 +293,14 @@ function renderUnlockForm(state) {
         autocomplete: "current-password"
       })}
 
-      ${state && state.hasRecoveryKey ? `
-        <button class="link-button" type="button" id="forgot-password-btn">Forgot password?</button>` : ""}
-
-      ${hint ? `
-        <div class="hint-reveal">
-          <button class="link-button" type="button" id="show-hint-btn" aria-expanded="false">Show password hint</button>
-          <p class="hint-text" id="hint-text" hidden></p>
+      ${state.hasRecoveryKey || hint ? `
+        <div class="unlock-help">
+          ${state.hasRecoveryKey ? '<button class="link-button" type="button" id="forgot-password-btn">Forgot password?</button>' : ""}
+          ${hint ? `
+            <div class="hint-reveal">
+              <button class="link-button" type="button" id="show-hint-btn" aria-expanded="false" aria-controls="hint-text">Show password hint</button>
+              <p class="hint-text" id="hint-text" hidden></p>
+            </div>` : ""}
         </div>` : ""}
 
       <button class="primary-button" type="submit">Unlock Vault</button>

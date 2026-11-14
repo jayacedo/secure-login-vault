@@ -393,6 +393,15 @@ save/reset and System theme changes were checked with isolated dummy data.
 Existing app integration checks pass. The 1.0.30 Windows Setup installer is built;
 extracted-source and packaged Chromium/Firefox checks pass. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.31 groups the unlock help links in a centered stack: Forgot password,
+then Show password hint, with compact spacing. The group also handles vaults with
+only one of these options. Hint text stays hidden until requested, and the toggle
+identifies its controlled hint element. Compact Coffee and large-text layouts,
+hint reveal/hide and recovery navigation were checked with dummy data. Existing
+hint and desktop tray/unlock checks pass. The 1.0.31 Windows Setup installer is
+built; extracted-source and packaged Chromium/Firefox checks pass. Extension 0.6.1
+is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
