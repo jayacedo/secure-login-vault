@@ -998,9 +998,9 @@ kbd {
   overflow: auto;
 }
 
-.credential-sort { width: 170px; }
+.credential-sort { width: 190px; }
 .credential-quick-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.credential-quick-filters select { width: 155px; }
+.credential-quick-filters select { width: 175px; }
 .credential-quick-filters button { min-height: 38px; padding: 6px 10px; }
 .credential-quick-filters [hidden], .credential-filter-empty[hidden], #credential-list-body .empty-state[hidden] { display: none; }
 .credential-filter-empty { padding: 20px; color: var(--muted); }
@@ -3879,7 +3879,7 @@ body.has-credential-list #credential-list-body { min-width: 690px; }
 body.has-credential-list .is-selecting #credential-list-body { min-width: 726px; }
 body.has-credential-list .health-dashboard-actions { flex: 1 1 600px; min-width: 0; gap: 8px; }
 body.has-credential-list #credential-count-label { overflow-wrap: anywhere; margin-right: auto; }
-body.has-credential-list .credential-sort { flex: 0 1 170px; }
+body.has-credential-list .credential-sort { flex: 0 0 190px; }
 body.has-credential-list .credential-tool-buttons { gap: 8px; flex-shrink: 0; }
 body.has-credential-list .dashboard-toolbar { flex-wrap: wrap; gap: 10px; }
 body.has-credential-list .search-box { flex: 1 1 300px; min-width: 0; }

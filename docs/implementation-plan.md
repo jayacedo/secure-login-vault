@@ -552,6 +552,16 @@ synthetic UI checks pass; no real account data is accessed.
 The 1.0.49 Setup and unsigned Firefox 0.6.4 ZIP/source archives are built; bundled
 Chrome/Firefox styling matches source and the reviewer source rebuild passes.
 
+Desktop 1.0.50 adds shared single-choice dropdown styling across both renderer
+windows. Text and arrow have a 16 px edge inset, with reserved text space and
+theme-aware arrows. Forced-colors mode retains the native arrow. The dashboard
+sort/filter widths accommodate longer labels and large text. Existing synthetic
+layout and browser-save dialog checks pass, with additional visual inspection of
+Settings, Add Credential and Activity History. No real accounts were accessed.
+Extension 0.6.4 is unchanged.
+The 1.0.50 Setup installer is built; its shared dropdown stylesheet and both
+renderer HTML files match the verified source.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
