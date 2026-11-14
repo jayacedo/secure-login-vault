@@ -9,5 +9,25 @@ Thumbs.db
 /futureFeature.png
 /slv.zip
 
+# Private local material: never stage these for source distribution.
+/firefox-qr.png
+/github-2fa.png
+/work/
+backup-codes.txt
+extension-pairing.bin
+vault-auth.json
+*.slv
+*.slvbackup
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+/database/*
+!/database/.gitkeep
+.env
+.env.*
+
 # test data (scripts/testTemp.js)
 /.tmp/

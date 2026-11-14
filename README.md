@@ -456,6 +456,7 @@ npm.cmd run extension:sync-secure
 - [Browser transport security and limitations](docs/browser-security.md)
 - [Firefox setup, testing and signing](docs/firefox.md)
 - [Package privacy gates and installer verification](docs/package-privacy.md)
+- [Tracked source and history secret review](docs/source-security-review-2026-11-15.md)
 - [Implementation plan and development phase history](docs/implementation-plan.md)
 
 ## License
