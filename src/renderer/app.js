@@ -21,8 +21,34 @@ applyTextSize(getTextSize());
 
 // ── White-label: apply saved name/logo/accent immediately, same as theme ─────
 applyBranding();
+initBackToTop();
 
 initAuth();
+
+function initBackToTop() {
+  const button = document.createElement("button");
+  button.id = "back-to-top";
+  button.className = "icon-text-button dashboard-icon-button back-to-top";
+  button.type = "button";
+  button.hidden = true;
+  button.setAttribute("aria-label", "Back to top");
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg><span class="dashboard-action-tooltip" aria-hidden="true">Back to top</span>';
+  document.body.append(button);
+  let scheduled = false;
+  const update = () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => { button.hidden = window.scrollY < 320; scheduled = false; });
+  };
+  window.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update, { passive: true });
+  button.addEventListener("click", () => {
+    const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth";
+    window.scrollTo({ top: 0, behavior });
+    document.querySelector("#credential-search, #client-search")?.focus({ preventScroll: true });
+  });
+  update();
+}
 
 // ─── Phase 11: Global Keyboard Shortcuts ─────────────────────────────────────
 //

@@ -767,6 +767,28 @@ button.dashboard-icon-button:active:not(:disabled) {
   opacity: 1;
 }
 
+button.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 5;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+
+.back-to-top .dashboard-action-tooltip {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+button.back-to-top[hidden],
+body:not(.is-dashboard) .back-to-top,
+body:has(.modal-overlay.is-open) .back-to-top {
+  display: none;
+}
+
 @media (min-width: 1181px) {
   .sidebar-lock .dashboard-action-tooltip {
     top: auto;

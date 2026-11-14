@@ -373,6 +373,15 @@ separate. Activity History and CSV import app checks pass, including pagination.
 The 1.0.28 Windows Setup installer is built; extracted-source and packaged
 Chromium/Firefox checks pass. Extension 0.6.1 is unchanged.
 
+Desktop 1.0.29 adds a floating Back to top arrow to the vault workspace after
+scrolling 320 pixels. It uses the dashboard icon hover effect and a tooltip above
+the button, returns focus to the search field, and respects reduced-motion
+preferences. It is hidden near the top, during open modals and on locked screens.
+Light/dark previews and scroll, focus, modal, lock and reduced-motion behavior
+were checked in an isolated dummy vault. Existing app integration checks pass.
+The 1.0.29 Windows Setup installer is built; extracted-source and packaged
+Chromium/Firefox checks pass. Extension 0.6.1 is unchanged.
+
 The browser companion uses an independent phase sequence. Connection, pairing,
 website matching, and filling are phases 1-4. Phase 5 adds manually requested saving
 and password updates with confirmation in the desktop app. See
