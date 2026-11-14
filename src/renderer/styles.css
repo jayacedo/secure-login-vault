@@ -715,31 +715,16 @@ button.dashboard-icon-button {
   padding: 0;
   overflow: visible;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
 
 button.dashboard-icon-button:is(:hover, :focus-visible):not(:disabled) {
   z-index: 5;
-  transform: perspective(380px) translateY(-3px) rotateX(7deg) rotateY(-7deg);
   border-color: var(--accent);
-  box-shadow: 0 4px 0 var(--line),
-    0 9px 14px color-mix(in srgb, var(--text) 16%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
 }
 
-button.dashboard-icon-button:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 2px 3px color-mix(in srgb, var(--text) 16%, transparent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  button.dashboard-icon-button {
-    transition: none;
-  }
-
-  button.dashboard-icon-button:is(:hover, :focus-visible, :active):not(:disabled) {
-    transform: none;
-  }
+button.dashboard-icon-button.primary-button {
+  --hover-control-text: var(--accent-strong-text, #ffffff);
+  --hover-control-bg: var(--accent-strong);
 }
 
 .dashboard-icon-button .dashboard-action-tooltip {
@@ -3607,39 +3592,49 @@ small.group-badge {
 .settings-nav-button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: .85rem; text-align: left; }
 .settings-nav-button svg { width: 18px; height: 18px; flex-shrink: 0; }
 .settings-nav-button[aria-selected="true"] { --settings-tab-marker: var(--accent); color: var(--accent); background: var(--panel); font-weight: 700; box-shadow: inset 3px 0 var(--accent); }
+/* Shared motion keeps dashboard actions, Settings and About consistent. */
+button.dashboard-icon-button,
 .settings-nav-button,
 #settings-panel-about .settings-action-btn,
 #about-modal-overlay button {
-  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, color 160ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
+button.dashboard-icon-button svg,
 .settings-nav-button svg,
 #settings-panel-about .settings-action-btn svg,
 #about-modal-overlay button svg { transition: transform 160ms ease; }
+button.dashboard-icon-button:is(:hover, :focus-visible):not(:disabled),
 .settings-nav-button:is(:hover, :focus-visible):not(:disabled),
 #settings-panel-about .settings-action-btn:is(:hover, :focus-visible):not(:disabled),
 #about-modal-overlay button:is(:hover, :focus-visible):not(:disabled) {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  color: var(--hover-control-text, var(--accent));
+  background: var(--hover-control-bg, color-mix(in srgb, var(--accent) 6%, var(--panel)));
   transform: perspective(500px) translateY(-2px) rotateX(4deg);
   box-shadow: inset 3px 0 var(--settings-tab-marker, transparent),
     0 3px 0 var(--line), 0 7px 12px color-mix(in srgb, var(--text) 12%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
 }
+button.dashboard-icon-button:is(:hover, :focus-visible):not(:disabled) svg,
 .settings-nav-button:is(:hover, :focus-visible):not(:disabled) svg,
 #settings-panel-about .settings-action-btn:is(:hover, :focus-visible):not(:disabled) svg,
 #about-modal-overlay button:is(:hover, :focus-visible):not(:disabled) svg { transform: rotate(-6deg) scale(1.08); }
+button.dashboard-icon-button:active:not(:disabled),
 .settings-nav-button:active:not(:disabled),
 #settings-panel-about .settings-action-btn:active:not(:disabled),
 #about-modal-overlay button:active:not(:disabled) {
   transform: translateY(1px);
   box-shadow: inset 3px 0 var(--settings-tab-marker, transparent), inset 0 2px 3px color-mix(in srgb, var(--text) 12%, transparent);
 }
+button.dashboard-icon-button:focus-visible,
 #settings-panel-about .settings-action-btn:focus-visible,
 #about-modal-overlay button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
+  button.dashboard-icon-button, button.dashboard-icon-button svg,
   .settings-nav-button, .settings-nav-button svg,
   #settings-panel-about .settings-action-btn, #settings-panel-about .settings-action-btn svg,
   #about-modal-overlay button, #about-modal-overlay button svg { transition: none; }
+  button.dashboard-icon-button:is(:hover, :focus-visible, :active):not(:disabled),
+  button.dashboard-icon-button:is(:hover, :focus-visible, :active):not(:disabled) svg,
   .settings-nav-button:is(:hover, :focus-visible, :active):not(:disabled),
   .settings-nav-button:is(:hover, :focus-visible, :active):not(:disabled) svg,
   #settings-panel-about .settings-action-btn:is(:hover, :focus-visible, :active):not(:disabled),

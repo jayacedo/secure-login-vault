@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.35**, extension **0.6.1**. Desktop 1.0.35 adds subtle lift, accent and icon hover effects to Settings navigation and About controls, with keyboard focus feedback and reduced-motion support. The About dialog now displays the installed app version. Backup verification and saved check summaries remain available in Backup & Data. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
+**Current source versions:** desktop **1.0.36**, extension **0.6.1**. Desktop 1.0.36 matches dashboard toolbar icons to the gentler Settings and About hover effects using shared animation rules. Tooltips, keyboard focus and reduced-motion support remain available, and Add retains its filled accent style. Backup verification and saved check summaries remain available in Backup & Data. Your installed Chrome/Edge and signed Firefox 0.6.1 extensions need no update.
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -164,8 +164,8 @@ Use a build produced from this source, or build it using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.35.exe` | Installed desktop app, with browser-extension setup support |
-| `Secure Login Vault 1.0.35.exe` | Optional portable build; browser-helper setup is unavailable |
+| `Secure Login Vault Setup 1.0.36.exe` | Installed desktop app, with browser-extension setup support |
+| `Secure Login Vault 1.0.36.exe` | Optional portable build; browser-helper setup is unavailable |
 
 1. Run the **Setup** installer and open SLV.
 2. On first launch, create your vault and master password. On later launches, unlock the existing vault.
@@ -186,7 +186,7 @@ The Setup installer bundles Chrome/Edge and Firefox extensions plus the native h
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
-After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.35 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
+After an extension update, reload it on the browser's extensions page and refresh open login pages. Desktop 1.0.36 bundles extension 0.6.1 for the inline logo button; the encrypted transport is unchanged and existing 0.6.0 remains compatible. Incompatible protocol versions do not fall back to plaintext communication.
 
 ### Fill, save and update
 
