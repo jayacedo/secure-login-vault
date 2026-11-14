@@ -1,6 +1,6 @@
 # Browser extension
 
-The extension connects Chrome, Edge or Firefox to the running Windows desktop app. The desktop
+The extension connects Chrome, Edge, Brave or Firefox to the running Windows desktop app. The desktop
 vault remains the source of saved credentials. Browser phases are separate from the
 original desktop implementation plan.
 
@@ -30,13 +30,13 @@ collapsed until needed. Extension 0.5.0 is unchanged.
 2. Open **Settings > Browsers > Installation & troubleshooting** and click **Set Up Browser Extension**.
    This registers the helper for Chrome, Edge and Firefox for your Windows account, turns on
    SLV's browser connection, and opens the bundled extension folder.
-3. In `chrome://extensions` or `edge://extensions`, enable Developer mode, click
+3. In `chrome://extensions`, `edge://extensions` or `brave://extensions`, enable Developer mode, click
    **Load unpacked**, and select that folder. Its path is also shown in Settings.
 4. Click **Add browser** in SLV and paste the code into the extension popup.
 
 The Setup installer includes the extension and native helper under its `resources`
 folder. The helper uses SLV's own executable as its runtime. Users do not need Node.js,
-npm, the source repository, or a separate extension download. Chrome/Edge loading and
+npm, the source repository, or a separate extension download. Chrome/Edge/Brave loading and
 pairing remain explicit user steps; the installer does not silently install an extension.
 
 After an update, reload the extension from the browser's extensions page. If SLV moves
@@ -55,6 +55,34 @@ installation or ordinary startup. The helper's launcher and manifest are stored 
 Edge and Firefox. The app checks the bundled extension identity and probes the packaged runtime
 before registering it. Repeating setup repairs registration without changing vault data
 or the existing pairing secret.
+
+## Brave
+
+Brave uses the same Chromium extension folder as Chrome and Edge; it does not need
+a separate package. Open `brave://extensions`, enable **Developer mode**, choose
+**Load unpacked**, and select the bundled extension folder opened by SLV setup.
+For development, select the repository's `extension` folder (for example,
+`C:\Projects\SecureLoginVault\extension`), not its individual `manifest.json` file.
+Pair Brave separately using **Settings > Browsers > Add browser**.
+
+### Manual Brave check (2026-11-15)
+
+With desktop **1.0.50** and extension **0.6.4**, the user reported working Save/Fill
+and provided screenshots showing **Connected** with a verified desktop connection,
+including after closing and restarting Brave. No Brave-specific helper registration
+or extension code change was needed on that Windows installation. These are
+user-reported checks, not an automated Brave test or clean-install certification;
+the Brave version was not recorded.
+
+The current browser-name detection falls back to **Google Chrome** for Brave, so
+that label may appear in SLV's paired-browser list. The helper registration code
+still explicitly registers Chrome, Edge and Firefox only. A fresh Brave-only
+Windows installation remains to be checked.
+
+Pairing is remembered unless **Pairing security > Keep pairing only for this browser
+session** is enabled. Browser-internal pages such as `brave://extensions` cannot
+offer saved logins; check Save/Fill on a normal login form. Verification work should
+use synthetic credentials only, without inspecting or modifying real accounts.
 
 ## Firefox
 
@@ -75,7 +103,7 @@ for the encrypted protocol, threat limits, storage tradeoff and tests.
 2. Run `npm.cmd start` and unlock the desktop vault.
 3. Turn on **Settings > Browsers > Allow Browser Access**.
 4. Run `npm.cmd run extension:register` to register the helper for the current Windows user.
-5. In `chrome://extensions` or `edge://extensions`, enable Developer mode and load the
+5. In `chrome://extensions`, `edge://extensions` or `brave://extensions`, enable Developer mode and load the
    repository's `extension` folder using **Load unpacked**.
 6. Use **Settings > Browsers > Add browser** in SLV to generate a code. Paste it into the extension
    popup and pair. The popup should show **Connected** with a verified connection.

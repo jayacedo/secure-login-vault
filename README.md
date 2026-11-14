@@ -1,6 +1,6 @@
 # Secure Login Vault
 
-A Windows desktop vault for managing passwords and web development client details locally, with an optional Chrome, Edge and Firefox companion extension.
+A Windows desktop vault for managing passwords and web development client details locally, with an optional Chrome, Edge, Brave and Firefox companion extension.
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
@@ -337,12 +337,14 @@ For updates, close SLV before running the newer Setup installer, then reload the
 
 ## Browser extension
 
-The Setup installer bundles Chrome/Edge and Firefox extensions plus the native helper. Loading an extension and pairing it are manual steps; installing SLV alone does not install the browser extension.
+The Setup installer bundles a shared Chrome/Edge/Brave extension and a separate Firefox extension plus the native helper. Loading an extension and pairing it are manual steps; installing SLV alone does not install the browser extension.
 
 1. Open and unlock SLV, then use **Settings > Browsers > Installation & troubleshooting**. Setup registers the local helper and opens the bundled extension folder.
-2. Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, select **Load unpacked**, and choose that folder.
+2. Open `chrome://extensions`, `edge://extensions` or `brave://extensions`, enable **Developer mode**, select **Load unpacked**, and choose that folder.
 3. In SLV, choose **Add browser**. Paste the code into the extension popup and pair.
 4. Keep SLV running and unlocked when filling or saving logins.
+
+**Brave:** uses the same unpacked extension as Chrome; no separate package is needed. For a repository checkout, select the `extension` folder. The user confirmed Save/Fill and a verified connection after restarting Brave with desktop **1.0.50** and extension **0.6.4** on **2026-11-15**. This verifies that Windows setup, not every Brave version or a fresh installation. Brave may currently appear as **Google Chrome** in SLV's paired-browser list. See the [Brave setup notes](docs/browser-extension.md#brave).
 
 **Firefox:** use **Open Firefox Folder** in SLV Settings, then `about:debugging#/runtime/this-firefox` > **Load Temporary Add-on** > select `manifest.json`. Temporary installation lasts until Firefox restarts. A permanent add-on needs Mozilla signing; see the [Firefox setup and publishing guide](docs/firefox.md). Chrome, Edge and Firefox can stay paired together. Each browser uses its own secret; Settings lists paired browsers with individual **Unpair** controls.
 
