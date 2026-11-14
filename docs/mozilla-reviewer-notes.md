@@ -1,7 +1,7 @@
 # Secure Login Vault - reviewer notes
 
 Submission target: Firefox extension 0.6.4; Windows desktop companion 1.0.50.
-Status: prepared notes; installer URL and interactive clean-install check pending.
+Status: public installer download verified on 2026-11-15; interactive clean-install check pending.
 
 ## Prerequisites
 
@@ -9,14 +9,18 @@ Status: prepared notes; installer URL and interactive clean-install check pendin
   by the current desktop companion.
 - Add-on ID: `secure-login-vault@jayacedo`.
 - Native messaging host: `com.securelogin.vault`.
-- Desktop installer URL: **INSERT VERIFIED DOWNLOAD URL BEFORE SUBMISSION**.
-- Local `Secure Login Vault Setup 1.0.50.exe` SHA-256:
+- Release page: https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50
+- Desktop installer: https://github.com/jayacedo/secure-login-vault/releases/download/v1.0.50/Secure.Login.Vault.Setup.1.0.50.exe
+- Published installer SHA-256:
   `31c1e6a89301470742a4fe374a9a5c79049237572adfba4eaf4ec425111cea38`.
-  Verify the published download has this hash; update it if the installer changes.
+  Verified by downloading the public asset without authentication and hashing it
+  on 2026-11-15. The installer was not executed during this check.
 - Source: https://github.com/jayacedo/secure-login-vault
 - Desktop and extension license:
   https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md
   Free personal/internal business use; includes permission for reviewer builds and tests.
+- Downloadable release license: https://github.com/jayacedo/secure-login-vault/releases/download/v1.0.50/LICENSE.md
+  Verified to match the repository license text on 2026-11-15.
 
 No service account, subscription or real website credentials are needed. Use a
 fresh Windows test account or VM and a fresh Firefox profile. Create a new test

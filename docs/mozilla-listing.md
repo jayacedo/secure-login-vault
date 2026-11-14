@@ -41,6 +41,9 @@ Once a password is filled, the destination website can read its own form fields.
 Install and setup instructions:
 https://github.com/jayacedo/secure-login-vault/blob/main/docs/firefox.md
 
+Windows desktop download:
+https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50
+
 Support:
 https://github.com/jayacedo/secure-login-vault/issues
 
@@ -71,13 +74,13 @@ Use AMO's custom license option and paste the full text from `LICENSE.md`. Do no
 select MIT, GPL or another open-source license. Public license URL:
 https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md
 
-For the draft GitHub release, add:
+The published GitHub release includes:
 
 > Free for personal and internal business use under the
 > [SLV Free-Use License](https://github.com/jayacedo/secure-login-vault/blob/main/LICENSE.md).
 > Third-party components retain their own licenses.
 
-Attach `LICENSE.md` alongside the existing installer so the terms can be downloaded
+`LICENSE.md` is attached alongside the installer so the terms can be downloaded
 with it. The existing installer and Firefox archives have not been rebuilt for this
 documentation/license update; their embedded metadata may still say `UNLICENSED`.
 The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4.
@@ -95,12 +98,10 @@ The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4
 1. Confirm the existing add-on's distribution channel in Developer Hub. Use that
    existing add-on and keep `secure-login-vault@jayacedo`; do not create a new ID.
    Earlier approval alone does not establish that it is publicly listed.
-2. Publish or otherwise provide an accessible Windows installer download, and
-   insert its exact URL and SHA-256 in the reviewer notes. The local Setup file is
-   not accessible to Mozilla. The unauthenticated GitHub API confirmed that the
-   repository is public and Issues are enabled, but returned no public releases
-   on 2026-11-15. A public installer download is still needed.
-3. Include the finalized free-use terms in the release and AMO license field.
+2. Use the verified public [v1.0.50 download](https://github.com/jayacedo/secure-login-vault/releases/tag/v1.0.50)
+   in the submission. Exact asset URL and SHA-256 are recorded in the reviewer
+   notes. The public download and attached license were verified on 2026-11-15.
+3. Include the finalized free-use terms in the AMO license field.
    Check that the setup guide, privacy page and license links are publicly accessible.
 4. Check the Firefox consent declaration against all data flows. The manifest
    already requires `authenticationInfo` and `browsingActivity`. Login emails are
@@ -117,6 +118,9 @@ The external license explicitly grants use of desktop 1.0.50 and extension 0.6.4
 
 ## Preparation checks (2026-11-15)
 
+- GitHub v1.0.50 is published, not a draft or pre-release. Its installer was
+  downloaded without authentication; SHA-256 matches the release notes and local
+  build. Its attached license text matches `LICENSE.md`. No installer was run.
 - `node scripts/firefox-test.js`: passed package/ZIP contents, identity, native
   caller allowlist and simulated per-user registration checks. No real registry
   registration or production vault access was used by this test.

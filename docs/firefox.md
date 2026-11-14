@@ -6,7 +6,7 @@ No credentials need to be imported again. Matching still uses the exact website 
 
 ## Load for testing
 
-1. Install the latest SLV Setup build, open it and unlock your vault.
+1. Install the SLV Setup build from the [Windows download page](https://github.com/jayacedo/secure-login-vault/releases/latest), open it and unlock your vault.
 2. In **Settings > Browsers > Installation & troubleshooting**, click **Set Up Browser Extension**. This registers the Windows
    helper for Chrome, Edge and Firefox. Then click **Open Firefox Folder**.
 3. In Firefox, open `about:debugging#/runtime/this-firefox` and click
