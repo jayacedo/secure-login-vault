@@ -1,6 +1,7 @@
 # Password-key compatibility and upgrade
 
-Status: 1.0.52 source and automated synthetic checks only; not packaged into an installer.
+Status: 1.0.52 packaged for local testing, with automated synthetic checks.
+See the [local package verification record](package-privacy.md#local-1052-installer).
 No existing installed vault, personal backup or browser profile was accessed.
 
 ## New records

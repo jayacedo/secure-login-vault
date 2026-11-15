@@ -54,9 +54,30 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.52 installer
+
+Built on 2026-11-15 with `npm run dist -- --publish never` for local testing.
+No installer was installed or published. Existing installed vaults, backups and
+personal browser profiles were not accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.52.exe` (116,713,375 bytes).
+- SHA-256: `f0e2ebcdfcccdf10c8e753a10510622a3103676c2d9aae7671a84e198aceaebb`.
+- Source/resource allowlist, unpacked app inventory and final Setup extraction
+  gates passed: 129 outer payload files and 124 files inside `app.asar`.
+- Packaged Chromium and Firefox helper checks passed for pairing, authentication,
+  save, fill, password update, lock and encrypted persistence. Tests extracted
+  Setup into fresh `.tmp` directories, generated dummy vaults, used isolated pipes
+  and simulated registry writes. They did not run the installer wizard.
+- Portable: `release/Secure Login Vault 1.0.52.exe` (116,478,800 bytes).
+  It shares the approved packaged app; the final EXE extraction gate applies to
+  Setup only, as described above.
+
+The extension remains 0.6.4. See [password-key compatibility](password-key-upgrade.md):
+after a vault upgrades to auth format v2, 1.0.51 and earlier cannot open it.
+
 ## Verified 1.0.50 installer
 
-For the current local-only 1.0.51 build, see the
+For the previous local-only 1.0.51 build, see the
 [Electron 45 upgrade record](electron-45-upgrade.md#local-installer).
 
 The local installer matching the previously published download passed the inventory
