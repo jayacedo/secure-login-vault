@@ -116,7 +116,8 @@ function makeBrowser({ pipeName, origin = OWN_ORIGIN }) {
 
 // The real app side: pairing core + handlers + bridge on a pipe. Every request the app
 // receives is recorded.
-async function startApp(pipeName, { pairing = createPairing({ storage: memoryStorage() }), extraHandlers = {}, vault, handlerOptions = {} } = {}) {
+async function startApp(pipeName, { pairing, extraHandlers = {}, vault, handlerOptions = {} } = {}) {
+  pairing = pairing || await createPairing({ storage: memoryStorage() });
   const received = [];
   const real = createExtensionHandlers({ getAppVersion: () => "9.9.9", pairing, vault, ...handlerOptions });
   const handlers = {};
@@ -412,7 +413,7 @@ async function main() {
   await check("fetching one login: an unverified or unpaired app is never asked for a password", async () => {
     // an app that holds a different secret
     await app.stop();
-    const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
+    const other = (await createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) }));
     app = await startApp(pipeName, { pairing: other, vault: { getCredentials: async () => [{ id: 1, websiteName: "x", websiteUrl: "example.com", username: "u", password: "pw-LEAK" }] } });
     const result = await link.fetchLogin({ loginId: 1, url: "https://example.com" });
     assert.equal(result.ok, false);
@@ -515,7 +516,7 @@ async function main() {
   await check("saving a login: an unverified app never receives a password; bad requests never connect; odd answers are not trusted", async () => {
     // an app that holds a different secret
     await app.stop();
-    const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
+    const other = (await createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) }));
     app = await startApp(pipeName, { pairing: other, vault: { getCredentials: async () => [] } });
     const result = await link.saveLogin({ url: "https://example.com", username: "u", password: "pw-LEAK" });
     assert.equal(result.ok, false);
@@ -589,7 +590,7 @@ async function main() {
     let t = 1_000_000;
     const clock = { now: () => t };
     await app.stop();
-    app = await startApp(pipeName, { pairing: createPairing({ storage: memoryStorage(), now: clock.now }) });
+    app = await startApp(pipeName, { pairing: (await createPairing({ storage: memoryStorage(), now: clock.now })) });
     const { code } = app.pairing.startPairing();
     t += 3 * 60 * 1000;
     assert.equal((await link.pair(code)).title, "No code is active");
@@ -610,7 +611,7 @@ async function main() {
 
   await check("an app holding a DIFFERENT secret is flagged, and gets no proof from us", async () => {
     await app.stop();
-    const other = createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) });
+    const other = (await createPairing({ storage: memoryStorage({ secret: crypto.randomBytes(32).toString("hex") }) }));
     app = await startApp(pipeName, { pairing: other });
     const status = await link.check({ url: "https://example.com" });
     assert.equal(status.state, "pairing-lost");

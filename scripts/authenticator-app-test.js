@@ -8,7 +8,7 @@ const root = fs.mkdtempSync(path.join(testTempRoot(), "authenticator-app-"));
 app.setPath("userData", root); process.env.SLV_PIPE_USER = `authenticator-app-${process.pid}`;
 // Keep test copying entirely in memory; never touch the user's clipboard.
 let copied = "";
-clipboard.writeText = value => { copied = value; }; clipboard.readText = () => copied; clipboard.clear = () => { copied = ""; };
+clipboard.writeText = async value => { copied = value; }; clipboard.readText = async () => copied; clipboard.clear = async () => { copied = ""; };
 const appRoot = process.env.SLV_TEST_PACKAGED_APP || path.join(__dirname, "..");
 require(path.join(appRoot, "src/main.js"));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -32,7 +32,7 @@ async function main() {
   const withoutQr = (await api(`credentials.add(${JSON.stringify({ ...data, websiteName: 'No QR dummy', qrCode: '' })})`)).result.id;
   await run("refreshCredentials()");
   await until(() => run("document.querySelectorAll('.credential-row-item').length===2"));
-  assert.deepEqual(await run("[...document.querySelectorAll('.credential-row-head [role=columnheader]')].map(el=>el.textContent)"), ['Website','Username','Password','2FA','Manage']);
+  assert.deepEqual(await run("[...document.querySelectorAll('.credential-row-head [role=columnheader]')].map(el=>el.textContent)"), ['','Website ↕','Username ↕','Password','2FA','Manage']);
   assert.equal(await run(`document.querySelector('.credential-row-item[data-id="${id}"] .cell-website .group-badge').textContent`), 'Demo client');
   await run("searchState.category='WordPress';runSearch()");
   assert.equal(await run("document.querySelectorAll('.credential-row-item').length"),2);
@@ -169,7 +169,15 @@ async function main() {
   const encrypted = fs.readFileSync(path.join(root, 'vault/vault-data.slv'));
   assert.equal(encrypted.includes(Buffer.from(image)), false);
   console.log(`PASS ${process.env.SLV_TEST_PACKAGED_APP ? 'PACKAGED ASAR' : 'source'} worker, dashboard 2FA/search/favorites/updates, metadata-only rows, group/lock guards, saved QR reopen, credential/client UI, safe labels, copy, cancel, focus and layouts\nScreenshots: ${root}`);
-  app.exit(0);
+  await api(`auth.unlockVault({masterPassword:${JSON.stringify(masterPassword)}})`);
+  const quitCode = (await api(`authenticator.startCredential(${id})`)).result;
+  assert.equal((await api(`authenticator.copy(${JSON.stringify(quitCode.token)})`)).ok, true);
+  clipboard.clear = async () => { await sleep(150); copied = ""; };
+  app.once('will-quit', () => {
+    try { assert.equal(copied, "", 'normal quit awaits delayed synthetic clipboard cleanup'); console.log('PASS normal quit awaits asynchronous clipboard cleanup'); }
+    catch (error) { console.error(error); app.exit(1); }
+  });
+  app.quit();
 }
 setTimeout(() => { console.error("Authenticator UI timeout"); app.exit(1); }, 60000).unref();
 main().catch(error => { console.error(error); app.exit(1); });

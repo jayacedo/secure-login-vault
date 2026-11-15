@@ -6,22 +6,22 @@ const path = require("path");
 // Windows). Another Windows account, or another computer, cannot read it; the app
 // then simply counts as "not paired".
 //
-// The interface is the one extensionPairing.js expects: synchronous load / save /
-// clear. load() returns null when there is nothing usable; save() throws when the
+// load / save use Electron's asynchronous encryption API. load() returns null
+// when there is nothing usable; save() throws when the
 // secret could NOT be stored safely (it never falls back to plain text).
 
 function createPairingStorage({ filePath, safeStorage, fileSystem = fs }) {
-  const encryptionAvailable = () => {
+  const encryptionAvailable = async () => {
     try {
-      return safeStorage.isEncryptionAvailable() === true;
+      return await safeStorage.isAsyncEncryptionAvailable() === true;
     } catch {
       return false;
     }
   };
 
   return {
-    load() {
-      if (!encryptionAvailable()) return null;
+    async load() {
+      if (!await encryptionAvailable()) return null;
       let bytes;
       try {
         bytes = fileSystem.readFileSync(filePath);
@@ -29,18 +29,22 @@ function createPairingStorage({ filePath, safeStorage, fileSystem = fs }) {
         return null; // no file yet
       }
       try {
-        const parsed = JSON.parse(safeStorage.decryptString(bytes));
+        const decrypted = await safeStorage.decryptStringAsync(bytes);
+        if (decrypted.isTemporarilyUnavailable || typeof decrypted.result !== "string") return null;
+        const parsed = JSON.parse(decrypted.result);
         return parsed && typeof parsed === "object" ? parsed : null;
       } catch {
         return null; // wrong user, damaged or tampered file
       }
     },
 
-    save(value) {
-      if (!encryptionAvailable()) {
+    async save(value, isCurrent = () => true) {
+      if (!await encryptionAvailable()) {
         throw new Error("Encryption is not available on this account.");
       }
-      const encrypted = safeStorage.encryptString(JSON.stringify(value));
+      const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(value));
+      // A cancelled/expired request must not commit after encryption completes.
+      if (!isCurrent()) throw new Error("Pairing request expired.");
       const temporary = `${filePath}.${process.pid}.tmp`;
       try {
         fileSystem.mkdirSync(path.dirname(filePath), { recursive: true });

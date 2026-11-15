@@ -28,9 +28,15 @@ function decodeInWorker(image, signal) {
 }
 function createAuthenticator({ vault, clipboard, now = Date.now, decode = decodeInWorker }) {
   let session, pending, expiryTimer, clipboardTimer, copied = null, generation = 0;
-  function clearCopied() {
+  let clipboardWork = Promise.resolve();
+  function queueClipboard(operation) {
+    const result = clipboardWork.then(operation);
+    clipboardWork = result.catch(() => {});
+    return result;
+  }
+  async function clearCopied() {
     clearTimeout(clipboardTimer);
-    if (copied !== null && clipboard.readText() === copied) clipboard.clear();
+    if (copied !== null && await clipboard.readText() === copied) await clipboard.clear();
     copied = null;
   }
   function stop(token) {
@@ -39,7 +45,11 @@ function createAuthenticator({ vault, clipboard, now = Date.now, decode = decode
     session?.config.secret.fill(0); session = null;
     return { stopped: true };
   }
-  function clear() { stop(); clearCopied(); }
+  function clear() {
+    stop();
+    // Blur/lock callers do not await cleanup. Handle OS clipboard failures here.
+    return queueClipboard(clearCopied).catch(() => {});
+  }
   function requireUnlocked() { if (!vault.isUnlocked()) { clear(); fail("Unlock SLV before generating an authenticator code."); } }
   function read(token) {
     requireUnlocked();
@@ -66,11 +76,22 @@ function createAuthenticator({ vault, clipboard, now = Date.now, decode = decode
       return { token, ...read(token) };
     } finally { config?.secret.fill(0); if (pending === controller) pending = null; }
   }
-  function copy(token) {
-    const result = read(token); clearCopied();
-    clipboard.writeText(result.code); copied = result.code;
-    clipboardTimer = setTimeout(clearCopied, Math.max(1, Math.min(30000, result.validUntil - now()))); clipboardTimer.unref();
-    return result;
+  async function copy(token) {
+    read(token);
+    const request = generation;
+    return queueClipboard(async () => {
+      await clearCopied();
+      if (request !== generation) fail("Authenticator request cancelled.");
+      const result = read(token);
+      await clipboard.writeText(result.code); copied = result.code;
+      // A lock, close or rollover during the write must not leave a stale code.
+      if (request !== generation || !vault.isUnlocked() || session?.epoch !== vault.getOperationEpoch() || now() >= result.validUntil) {
+        await clearCopied();
+        fail("Authenticator request expired. Generate a new code.");
+      }
+      clipboardTimer = setTimeout(() => { queueClipboard(clearCopied).catch(() => {}); }, Math.max(1, Math.min(30000, result.validUntil - now()))); clipboardTimer.unref();
+      return result;
+    });
   }
   return { start, read, copy, stop, clear };
 }

@@ -80,6 +80,23 @@ async function main() {
 
   assert.equal((await api("settings.setExtensionBridge({ enabled: true })")).ok, true, "switch the connection on");
 
+  await check("locking during the asynchronous encryption check cannot start a pairing", async () => {
+    const original = safeStorage.isAsyncEncryptionAvailable;
+    let release, entered;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    safeStorage.isAsyncEncryptionAvailable = async () => { entered(); await gate; return true; };
+    try {
+      const starting = api("settings.startExtensionPairing()");
+      await waiting;
+      await api("auth.lockVault()");
+      release();
+      assert.equal((await starting).ok, false);
+    } finally { release(); safeStorage.isAsyncEncryptionAvailable = original; }
+    assert.equal((await status()).codeActive, false);
+    assert.equal((await api(`auth.unlockVault(${JSON.stringify({ masterPassword: MASTER })})`)).ok, true);
+  });
+
   await check("a code is created; the status never carries it", async () => {
     const res = await api("settings.startExtensionPairing()");
     assert.equal(res.ok, true, JSON.stringify(res));
@@ -117,7 +134,7 @@ async function main() {
   });
 
   await check("the pairing survives a restart (a fresh load of the same file)", async () => {
-    const again = createPairing({ storage: createPairingStorage({ filePath: pairingFile, safeStorage }) });
+    const again = (await createPairing({ storage: createPairingStorage({ filePath: pairingFile, safeStorage }) }));
     assert.equal(again.isPaired(), true);
     const conn = await connect(pipeName);
     const run = await authenticate(conn, secret);
@@ -130,7 +147,7 @@ async function main() {
     const original = fs.readFileSync(pairingFile);
     for (const damaged of [Buffer.from("garbage"), Buffer.alloc(0), Buffer.concat([original.subarray(0, original.length - 5), Buffer.from("xxxxx")])]) {
       fs.writeFileSync(`${pairingFile}.copy`, damaged);
-      const copy = createPairing({ storage: createPairingStorage({ filePath: `${pairingFile}.copy`, safeStorage }) });
+      const copy = (await createPairing({ storage: createPairingStorage({ filePath: `${pairingFile}.copy`, safeStorage }) }));
       assert.equal(copy.isPaired(), false);
     }
     fs.rmSync(`${pairingFile}.copy`, { force: true });
@@ -380,7 +397,7 @@ async function main() {
     assert.equal((await authenticate(second, firefox.secret)).finish.ok, true);
     const first = await connect(pipeName);
     assert.equal((await authenticate(first, secret)).finish.ok, true);
-    const saved = createPairing({ storage: createPairingStorage({ filePath: pairingFile, safeStorage }) });
+    const saved = (await createPairing({ storage: createPairingStorage({ filePath: pairingFile, safeStorage }) }));
     assert.ok(saved.list().length >= 2, "all pairings persist through DPAPI");
     await ui("await openSettingsModal(); document.querySelector('#settings-tab-browsers').click(); return true;");
     await waitFor(() => ui('return document.querySelectorAll("#extension-paired-list li").length >= 2;'), 5000, "paired list");

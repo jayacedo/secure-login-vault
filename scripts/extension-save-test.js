@@ -56,7 +56,7 @@ async function main() {
   };
   reset();
 
-  const pairing = createPairing({ storage: memoryStorage() });
+  const pairing = (await createPairing({ storage: memoryStorage() }));
   const makeHandlers = (extra = {}) =>
     createExtensionHandlers({
       getAppVersion: () => "1.0.0",

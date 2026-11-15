@@ -56,6 +56,9 @@ scan Git history, validate licensing or prove the application is free of bugs.
 
 ## Verified 1.0.50 installer
 
+For the current local-only 1.0.51 build, see the
+[Electron 45 upgrade record](electron-45-upgrade.md#local-installer).
+
 The local installer matching the previously published download passed the inventory
 check on 2026-11-15: 131 outer payload files and 122 files inside `app.asar`.
 Its SHA-256 is

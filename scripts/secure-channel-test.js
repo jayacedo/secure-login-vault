@@ -58,7 +58,7 @@ async function cryptoTests() {
 async function wireTests() {
   let writes = 0, prompts = 0;
   let stored = { secret: secret.toString("hex") };
-  const pairing = createPairing({ storage: { load: () => stored, save: v => { stored = v; }, clear: () => { stored = null; } } });
+  const pairing = (await createPairing({ storage: { load: () => stored, save: v => { stored = v; }, clear: () => { stored = null; } } }));
   const handlers = createExtensionHandlers({ getAppVersion: () => "test", pairing,
     vault: { getCredentials: async () => [], addCredential: async () => { writes++; } },
     approveSave: async () => { prompts++; return true; }
@@ -106,7 +106,7 @@ async function wireTests() {
     await close(conn);
 
     ({ conn, channel } = await session());
-    pairing.unpair();
+    (await pairing.unpair());
     assert.equal(await conn.rawRequest(await channel.seal({ type: "channel-check" }, "revoked")), null, "revocation invalidates existing keys even before socket cleanup");
     await close(conn);
   } finally { conns.forEach(c => c.close()); await bridge.stop(); }

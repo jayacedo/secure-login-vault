@@ -109,7 +109,7 @@ const protocol = {
   extProof: (key, label, nonceE, nonceA) => hmacHex(key, `${label}-ext|${nonceE}|${nonceA}`)
 };
 
-function createPairing({ storage, now = Date.now, randomBytes = crypto.randomBytes, limits = {} }) {
+async function createPairing({ storage, now = Date.now, randomBytes = crypto.randomBytes, limits = {} }) {
   if (!storage || typeof storage.load !== "function" || typeof storage.save !== "function" || typeof storage.clear !== "function") {
     throw new Error("A storage with load, save and clear is required.");
   }
@@ -118,7 +118,7 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
   let records = new Map();
   const browserName = value => ["Google Chrome", "Microsoft Edge", "Firefox"].includes(value) ? value : "Browser";
   try {
-    const saved = storage.load();
+    const saved = await storage.load();
     const entries = saved?.version === 2 && Array.isArray(saved.pairings) ? saved.pairings
       : saved?.secret ? [{ secret: saved.secret, name: "Existing browser", legacy: true, createdAt: 0 }] : [];
     if (entries.length > config.maxPairings) throw new Error("Invalid pairing data");
@@ -135,9 +135,17 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
     records = new Map(); // unreadable storage fails closed
   }
 
-  function persist(next) {
-    if (!next.size) storage.clear();
-    else storage.save({ version: 2, pairings: [...next.values()].map(record => ({ ...record, secret: record.secret.toString("hex") })) });
+  // Serialize persistence so two browsers cannot overwrite each other's changes.
+  let writes = Promise.resolve();
+  function serialize(operation) {
+    const result = writes.then(operation);
+    writes = result.catch(() => {});
+    return result;
+  }
+  async function persist(next, isCurrent = () => true) {
+    if (!isCurrent()) throw new Error("Pairing request expired.");
+    if (!next.size) await storage.clear();
+    else await storage.save({ version: 2, pairings: [...next.values()].map(record => ({ ...record, secret: record.secret.toString("hex") })) }, isCurrent);
     records = next; // do not change live access if atomic persistence fails
   }
 
@@ -215,14 +223,16 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
 
     // Forgets the secret. Returns true if there was one.
     unpair(id) {
-      if (id !== undefined && (typeof id !== "string" || !PROOF_HEX.test(id))) throw new Error("Invalid pairing ID");
-      const was = id === undefined ? records.size > 0 : records.has(id);
-      const next = id === undefined ? new Map() : new Map(records);
-      if (id !== undefined) next.delete(id);
-      persist(next);
-      if (id === undefined) { pending.clear(); active = null; }
-      else for (const [key, entry] of pending) if (entry.record?.id === id) pending.delete(key);
-      return was;
+      return serialize(async () => {
+        if (id !== undefined && (typeof id !== "string" || !PROOF_HEX.test(id))) throw new Error("Invalid pairing ID");
+        const was = id === undefined ? records.size > 0 : records.has(id);
+        const next = id === undefined ? new Map() : new Map(records);
+        if (id !== undefined) next.delete(id);
+        await persist(next);
+        if (id === undefined) { pending.clear(); active = null; }
+        else for (const [key, entry] of pending) if (entry.record?.id === id) pending.delete(key);
+        return was;
+      });
     },
 
     // ── Messages from the extension ───────────────────────────────────────────
@@ -236,41 +246,45 @@ function createPairing({ storage, now = Date.now, randomBytes = crypto.randomByt
     },
 
     pairFinish({ nonceE, nonceA, extProof, replaceId, replaceProof }, context) {
-      if (!validNonce(nonceE) || !validNonce(nonceA) || !validProof(extProof)) return { error: "bad-message" };
-      if (!codeIsLive()) return { error: "no-pairing" };
-      const entry = takePending("pair", nonceE, nonceA, context);
-      if (!entry) return { error: "bad-proof" };
+      const requestedCode = active;
+      return serialize(async () => {
+        if (!requestedCode || active !== requestedCode || context.signal?.aborted) return { error: "no-pairing" };
+        if (!validNonce(nonceE) || !validNonce(nonceA) || !validProof(extProof)) return { error: "bad-message" };
+        if (!codeIsLive()) return { error: "no-pairing" };
+        const entry = takePending("pair", nonceE, nonceA, context);
+        if (!entry) return { error: "bad-proof" };
 
-      const expected = protocol.extProof(active.authKey, "pair", nonceE, nonceA);
-      if (!equalHex(expected, extProof)) {
-        failCode();
-        return { error: "bad-proof" };
-      }
+        const expected = protocol.extProof(active.authKey, "pair", nonceE, nonceA);
+        if (!equalHex(expected, extProof)) {
+          failCode();
+          return { error: "bad-proof" };
+        }
 
-      const newSecret = protocol.pairingSecret(active.codeBytes, nonceE, nonceA);
-      const next = new Map(records);
-      // A browser may rotate only its own key, after proving both the new code
-      // and its existing secret. A claimed public ID alone cannot evict anyone.
-      if (replaceId !== undefined || replaceProof !== undefined) {
-        if (!validProof(replaceId) || !validProof(replaceProof)) return { error: "bad-message" };
-        const prior = records.get(replaceId);
-        if (prior && !equalHex(protocol.replaceProof(prior.secret, nonceE, nonceA, extProof), replaceProof)) return { error: "bad-proof" };
-        if (prior) next.delete(replaceId);
-      }
-      // Preserve the old client's fallback slot. An unauthenticated caller's
-      // version/name claim must never evict an existing pairing.
-      if (next.size >= config.maxPairings) return { error: "pairing-limit" };
-      const id = protocol.pairingId(newSecret);
-      next.set(id, { id, secret: newSecret, name: entry.name, createdAt: now(),
-        legacy: entry.legacy && ![...next.values()].some(record => record.legacy) });
-      try {
-        persist(next);
-      } catch {
-        return { error: "storage-failed" };
-      }
-      active = null; // one use only
-      for (const [key, value] of pending) if (value.kind === "pair") pending.delete(key);
-      return { paired: true };
+        const newSecret = protocol.pairingSecret(active.codeBytes, nonceE, nonceA);
+        const next = new Map(records);
+        // A browser may rotate only its own key, after proving both the new code
+        // and its existing secret. A claimed public ID alone cannot evict anyone.
+        if (replaceId !== undefined || replaceProof !== undefined) {
+          if (!validProof(replaceId) || !validProof(replaceProof)) return { error: "bad-message" };
+          const prior = records.get(replaceId);
+          if (prior && !equalHex(protocol.replaceProof(prior.secret, nonceE, nonceA, extProof), replaceProof)) return { error: "bad-proof" };
+          if (prior) next.delete(replaceId);
+        }
+        // Preserve the old client's fallback slot. An unauthenticated caller's
+        // version/name claim must never evict an existing pairing.
+        if (next.size >= config.maxPairings) return { error: "pairing-limit" };
+        const id = protocol.pairingId(newSecret);
+        next.set(id, { id, secret: newSecret, name: entry.name, createdAt: now(),
+          legacy: entry.legacy && ![...next.values()].some(record => record.legacy) });
+        try {
+          await persist(next, () => active === requestedCode && codeIsLive() && !context.signal?.aborted);
+        } catch {
+          return { error: "storage-failed" };
+        }
+        active = null; // one use only
+        for (const [key, value] of pending) if (value.kind === "pair") pending.delete(key);
+        return { paired: true };
+      });
     },
 
     authBegin({ nonceE, pairingId }, context) {

@@ -51,12 +51,12 @@ async function main() {
   const manager = createAuthenticator({ vault, clipboard, now: () => time, decode: async () => { const result = parseSetupUri(uri); lastSecret = result.secret; return result; } });
   const first = await manager.start(image); assert.match(first.token, /^[0-9a-f]{48}$/); assert.equal(first.code, "287082");
   assert.equal("secret" in first, false); assert.equal("uri" in first, false);
-  time = 60000; assert.equal(manager.copy(first.token).code, generateCode(parseSetupUri(uri), time).code); assert.notEqual(clipboardText, first.code);
-  manager.stop(first.token); assert.ok(lastSecret.every(byte => byte === 0)); assert.notEqual(clipboardText, ""); manager.clear(); assert.equal(clipboardText, "");
-  const second = await manager.start(image); manager.copy(second.token); clipboardText = "user copied something else"; manager.clear(); assert.equal(clipboardText, "user copied something else");
+  time = 60000; assert.equal((await manager.copy(first.token)).code, generateCode(parseSetupUri(uri), time).code); assert.notEqual(clipboardText, first.code);
+  manager.stop(first.token); assert.ok(lastSecret.every(byte => byte === 0)); assert.notEqual(clipboardText, ""); (await manager.clear()); assert.equal(clipboardText, "");
+  const second = await manager.start(image); (await manager.copy(second.token)); clipboardText = "user copied something else"; (await manager.clear()); assert.equal(clipboardText, "user copied something else");
   const third = await manager.start(image); time += SESSION_MS; assert.throws(() => manager.read(third.token), /expired/); assert.ok(lastSecret.every(byte => byte === 0));
   const fourth = await manager.start(image); epoch++; assert.throws(() => manager.read(fourth.token), /expired/);
-  const fifth = await manager.start(image); unlocked = false; assert.throws(() => manager.copy(fifth.token), /Unlock/); assert.ok(lastSecret.every(byte => byte === 0));
+  const fifth = await manager.start(image); unlocked = false; await assert.rejects(async () => (await manager.copy(fifth.token)), /Unlock/); assert.ok(lastSecret.every(byte => byte === 0));
   await assert.rejects(manager.start(image), /Unlock/); unlocked = true;
   let finish; const pendingManager = createAuthenticator({ vault, clipboard, decode: () => new Promise(resolve => { finish = resolve; }) });
   const pending = pendingManager.start(image); pendingManager.clear(); const late = parseSetupUri(uri); finish(late);
@@ -70,7 +70,7 @@ async function main() {
   unlocked = false; epoch++; finishRead(image);
   await assert.rejects(lockedRead, /session changed/); assert.equal(decodeCalls, 0); unlocked = true;
   const saved = await savedManager.start(async () => image); assert.match(saved.code, /^\d{6}$/); savedManager.clear();
-  time = 59995; const expiring = await manager.start(image); manager.copy(expiring.token); await sleep(30); assert.equal(clipboardText, ""); manager.clear();
+  time = 59995; const expiring = await manager.start(image); (await manager.copy(expiring.token)); await sleep(30); assert.equal(clipboardText, ""); (await manager.clear());
   console.log("PASS 18 RFC vectors, URI/QR validation, single-image decoding, worker cancellation, rollover copy, session/lock guards, seed wiping and clipboard expiry/preservation");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

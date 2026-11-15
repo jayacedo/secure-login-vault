@@ -146,7 +146,7 @@ async function main() {
 
   // ── The request, over a real pipe ───────────────────────────────────────────
   const pipeName = getPipeName(`match-test-${process.pid}`);
-  const pairing = createPairing({ storage: memoryStorage() });
+  const pairing = (await createPairing({ storage: memoryStorage() }));
   const vault = { locked: false, boom: false, credentials: [cred(1, "example.com"), cred(2, "https://example.com/admin", { username: "admin" }), cred(3, "other.test")] };
   const handlers = createExtensionHandlers({
     getAppVersion: () => "1.0.0",

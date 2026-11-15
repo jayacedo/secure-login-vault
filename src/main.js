@@ -40,6 +40,9 @@ let compactUnlock = false;
 let dashboardBounds;
 let dashboardWasMaximized = false;
 let servicesDisposed = false;
+let clipboardCleanup = Promise.resolve();
+let quitCleanupStarted = false;
+let quitCleanupComplete = false;
 let pairingExpiresAt = 0;
 const pathGrants = createPathGrants();
 // One writer process per user-data profile. The native helper runs separately
@@ -606,14 +609,14 @@ function tellWindowCredentialsChanged() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("vault:credentials-changed");
 }
 
-function pairingStatus() {
+async function pairingStatus() {
   const codeActive = extensionPairing.isPairingActive();
   return {
     paired: extensionPairing.isPaired(),
     browsers: extensionPairing.list(),
     codeActive,
     expiresAt: codeActive ? pairingExpiresAt : 0,
-    encryptionAvailable: pairingStorage.isAvailable()
+    encryptionAvailable: await pairingStorage.isAvailable()
   };
 }
 
@@ -648,9 +651,10 @@ function registerExtensionHandlers() {
       if (!extensionBridge.isRunning()) {
         throw createPublicError("Turn Browser Extension On first.");
       }
-      if (!pairingStorage.isAvailable()) {
+      if (!await pairingStorage.isAvailable()) {
         throw createPublicError("Windows encryption is not available for this account, so the pairing cannot be stored safely.");
       }
+      assertVaultOperationActive();
       const started = extensionPairing.startPairing();
       pairingExpiresAt = started.expiresAt;
       return { code: started.code, expiresAt: started.expiresAt };
@@ -669,7 +673,7 @@ function registerExtensionHandlers() {
       if (!(await vaultStore.getState()).isUnlocked) throw createPublicError("Unlock the vault first.");
       if (pairingId !== undefined && (typeof pairingId !== "string" || !/^[0-9a-f]{64}$/.test(pairingId))) throw createPublicError("Choose a paired browser.");
       try {
-        extensionPairing.unpair(pairingId);
+        await extensionPairing.unpair(pairingId);
       } catch {
         throw createPublicError("The pairing could not be removed. Close other programs using the app data folder and try again.");
       }
@@ -1104,7 +1108,7 @@ app.whenReady().then(async () => {
     filePath: path.join(app.getPath("userData"), "extension-pairing.bin"),
     safeStorage
   });
-  extensionPairing = createPairing({ storage: pairingStorage });
+  extensionPairing = await createPairing({ storage: pairingStorage });
   extensionBridge = createExtensionBridge({
     // SLV_PIPE_USER only exists so tests can use their own pipe, never a real user's.
     pipeName: getPipeName(process.env.SLV_PIPE_USER || undefined),
@@ -1165,7 +1169,7 @@ function disposeDesktopServices() {
   desktopIntegration?.dispose();
   automaticBackups?.stop();
   clearInterval(trashMaintenance);
-  authenticator?.clear();
+  clipboardCleanup = authenticator?.clear() || Promise.resolve();
   if (extensionBridge) {
     extensionBridge.stop();
   }
@@ -1181,7 +1185,19 @@ function disposeDesktopServices() {
 
 }
 
-app.on("before-quit", () => { desktopIntegration?.beginQuit(); disposeDesktopServices(); });
+app.on("before-quit", event => {
+  desktopIntegration?.beginQuit(); disposeDesktopServices();
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  if (quitCleanupStarted) return;
+  quitCleanupStarted = true;
+  // Give asynchronous clipboard cleanup time to finish before Electron exits.
+  // A stalled OS clipboard must not leave the application impossible to quit.
+  let timeout;
+  Promise.race([clipboardCleanup, new Promise(resolve => { timeout = setTimeout(resolve, 2000); })])
+    .catch(() => {})
+    .finally(() => { clearTimeout(timeout); quitCleanupComplete = true; app.quit(); });
+});
 app.on("window-all-closed", () => {
   disposeDesktopServices();
   if (process.platform !== "darwin") app.quit();

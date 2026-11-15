@@ -87,7 +87,7 @@ async function main() {
   const master = "packaged test master password";
   await vault.createVault({ masterPassword: master, confirmPassword: master });
   let secret;
-  const pairing = createPairing({ storage: { load: () => secret, save: (value) => { secret = value; }, clear: () => { secret = null; } } });
+  const pairing = (await createPairing({ storage: { load: () => secret, save: (value) => { secret = value; }, clear: () => { secret = null; } } }));
   const bridge = createExtensionBridge({ pipeName, handlers: createExtensionHandlers({
     getAppVersion: () => packageInfo.version, pairing,
     vault: {
@@ -123,7 +123,7 @@ async function main() {
     assert.equal(peer.finish.ok, true);
     assert.equal(pairing.list().length, 2, "packaged app preserves both browser pairings");
     assert.equal((await authenticate(conn, paired.secret)).finish.ok, true);
-    pairing.unpair(pairing.list().find(browser => browser.name === (firefox ? "Google Chrome" : "Firefox")).id);
+    (await pairing.unpair(pairing.list().find(browser => browser.name === (firefox ? "Google Chrome" : "Firefox")).id));
     assert.equal((await conn.request({ type: "channel-check" })).ok, true, "packaged active browser survives removing its peer");
     const login = { type: "save-login", url: "https://example.test", username: "packaged-user", password: "dummy-first" };
     assert.equal((await conn.request({ ...login, type: "inspect-login" })).mode, "add");

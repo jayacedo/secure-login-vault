@@ -1,6 +1,6 @@
 {
   "name": "secure-login-vault",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "description": "Offline-first Windows desktop credential vault built with Electron.",
   "main": "src/main.js",
   "author": "Secure Login Vault",
@@ -95,7 +95,9 @@
     "test:stability-app": "node scripts/run-electron-test.js scripts/stability-app-test.js",
     "test:two-step-save": "node scripts/two-step-save-test.js",
     "test:package-privacy": "node scripts/package-privacy-test.js",
-    "verify:installer-privacy": "node scripts/package-privacy.js"
+    "verify:installer-privacy": "node scripts/package-privacy.js",
+    "test:electron-compat": "node scripts/electron-compat-test.js",
+    "test:electron-storage-app": "node scripts/run-electron-test.js scripts/electron-storage-app-test.js"
   },
   "build": {
     "appId": "com.secureloginvault.app",
@@ -171,7 +173,7 @@
     "copyright": "Copyright 00a9 2026 Secure Login Vault"
   },
   "devDependencies": {
-    "electron": "^42.5.0",
+    "electron": "45.3.2",
     "electron-builder": "^26.15.3",
     "jsdom": "^31.0.0",
     "qrcode": "1.5.4"

@@ -45,7 +45,7 @@ async function main() {
   const master = "Firefox dummy vault master password";
   await vault.createVault({ masterPassword: master, confirmPassword: master });
   let stored;
-  const pairing = createPairing({ storage: { load: () => stored, save: value => { stored = value; }, clear: () => { stored = null; } } });
+  const pairing = (await createPairing({ storage: { load: () => stored, save: value => { stored = value; }, clear: () => { stored = null; } } }));
   let approvals = 0;
   const pipeUser = `firefox-test-${process.pid}`;
   const bridge = createExtensionBridge({ pipeName: getPipeName(pipeUser), handlers: createExtensionHandlers({
@@ -97,7 +97,7 @@ async function main() {
       assert.equal(pairing.list().length, 2, "re-pairing Firefox creates no duplicate");
       assert.equal((await chromeClient.request({ type: "channel-check" })).ok, true, "Chrome session survives Firefox rotation");
       const chromeId = pairing.list().find(value => value.name === "Google Chrome").id;
-      pairing.unpair(chromeId); bridge.closeConnections(chromeId);
+      (await pairing.unpair(chromeId)); bridge.closeConnections(chromeId);
       await chromeClient.whenClosed();
       assert.equal((await popup({ type: "get-status" })).connected, true, "Firefox survives Chrome unpair");
     } finally { chromeClient.close(); }

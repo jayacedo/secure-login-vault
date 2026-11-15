@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.50**, extension **0.6.4**. Desktop dropdowns now use balanced text/arrow spacing throughout the dashboard, Settings, credential forms, bulk actions, Activity History and browser-save confirmation. Dashboard selectors have room for longer labels. This desktop-only update does not require an extension update.
+**Current source versions:** desktop **1.0.51**, extension **0.6.4**. The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -327,7 +327,7 @@ releases, or build from source using the instructions below.
 
 | File | Use |
 | --- | --- |
-| `Secure Login Vault Setup 1.0.50.exe` | Local build; installed desktop app with browser-extension setup support |
+| `Secure Login Vault Setup 1.0.51.exe` | Local build; installed desktop app with browser-extension setup support |
 | [LICENSE.md](LICENSE.md) | Free-use terms for the desktop app and extension |
 
 The previously published installer was verified on 2026-11-15 before withdrawal. SHA-256:
