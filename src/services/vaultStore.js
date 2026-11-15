@@ -61,13 +61,13 @@ const scryptAsync = promisify(crypto.scrypt);
 
 const AUTH_FILE_NAME = "vault-auth.json";
 const DATABASE_FILE_NAME = "vault-data.slv";
-const BCRYPT_ROUNDS = 12;
-const SCRYPT_OPTIONS = {
+const LEGACY_SCRYPT_OPTIONS = Object.freeze({
   N: 32768,
   r: 8,
   p: 1,
   maxmem: 64 * 1024 * 1024
-};
+});
+const SCRYPT_OPTIONS = Object.freeze({ N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 });
 
 function createVaultStore(basePath, { now = Date.now } = {}) {
   const vaultDirectory = path.join(basePath, "vault");
@@ -160,7 +160,6 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     }
 
     const now = new Date().toISOString();
-    const passwordHash = await bcrypt.hash(normalizedPassword, BCRYPT_ROUNDS);
     const salt = crypto.randomBytes(32);
     const key = await deriveVaultKey(normalizedPassword, salt);
     const encryptedCheck = encryptJson(
@@ -173,14 +172,9 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     );
 
     const authRecord = {
-      version: 1,
+      version: 2,
       createdAt: now,
       updatedAt: now,
-      passwordHash,
-      passwordHashing: {
-        algorithm: "bcrypt",
-        rounds: BCRYPT_ROUNDS
-      },
       keyDerivation: {
         algorithm: "scrypt",
         salt: salt.toString("base64"),
@@ -254,30 +248,20 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
 
     const authRecord = await readAuthRecord();
     const attempt = await reserveUnlockAttempt();
-    const passwordMatches = await bcrypt.compare(normalizedPassword, authRecord.passwordHash);
-
-    if (!passwordMatches) {
+    let key;
+    try { key = await verifyMasterPassword(authRecord, normalizedPassword, "Master password is incorrect."); }
+    catch (error) {
+      if (error.code !== "INCORRECT_MASTER_PASSWORD") throw error;
       const seconds = Math.ceil(Math.max(0, attempt.retryAt - now()) / 1000);
       throw createPublicError("Master password is incorrect." + (seconds ? ` Try again in ${seconds} second${seconds === 1 ? "" : "s"}.` : ""));
     }
 
-    const key = await deriveVaultKey(
-      normalizedPassword,
-      Buffer.from(authRecord.keyDerivation.salt, "base64")
-    );
-
-    const check = decryptJson(authRecord.encryption.vaultCheck, key);
-
-    if (check.type !== "secure-login-vault-auth-check") {
-      throw createPublicError("Vault verification failed.");
-    }
-
-    // Vaults with a recovery key encrypt the database with a random data key,
-    // stored wrapped by the password-derived key. Older vaults use the
-    // password-derived key directly.
+    // Recovery-enabled and upgraded vaults wrap their existing database key.
+    // Direct-key vaults use the password-derived key for the database itself.
     const databaseKey = authRecord.keyWrap ? unwrapBytes(authRecord.keyWrap.dek, key) : key;
 
     await ensureVaultDatabase(authRecord, databaseKey);
+    if (authRecord.version === 1) await upgradePasswordProtection(normalizedPassword, databaseKey);
     await saveUnlockProtection({ version: 1, failures: 0, retryAt: 0 });
     startSession(databaseKey, new Date().toISOString());
     if (databaseKey !== key) key.fill(0);
@@ -288,6 +272,24 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
       session: getPublicSession(),
       unlockedAt: session.unlockedAt
     };
+  }
+
+  async function upgradePasswordProtection(password, databaseKey) {
+    // ensureVaultDatabase may have completed an interrupted legacy operation.
+    const record = await readAuthRecord();
+    const salt = crypto.randomBytes(32);
+    const key = await deriveVaultKey(password, salt);
+    const updated = {
+      ...record, version: 2, updatedAt: new Date().toISOString(),
+      keyDerivation: { algorithm: "scrypt", salt: salt.toString("base64"), keyLength: 32, options: SCRYPT_OPTIONS },
+      encryption: { ...record.encryption, vaultCheck: encryptJson({ type: "secure-login-vault-auth-check", check: crypto.randomBytes(32).toString("base64") }, key) },
+      // Wrap the existing data key instead of rewriting the encrypted database.
+      // Preserve any recovery wrapper exactly as it was.
+      keyWrap: { ...record.keyWrap, dek: wrapBytes(databaseKey, key) }
+    };
+    delete updated.passwordHash; delete updated.passwordHashing;
+    await writeJsonAtomic(authFilePath, updated);
+    key.fill(0);
   }
 
   function lockVault() {
@@ -518,8 +520,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     if (!normalizedCurrent) throw createPublicError("Enter your current master password.");
 
     const authRecord = await readAuthRecord();
-    const passwordMatches = await bcrypt.compare(normalizedCurrent, authRecord.passwordHash);
-    if (!passwordMatches) throw createPublicError("Current master password is incorrect.");
+    (await verifyMasterPassword(authRecord, normalizedCurrent, "Current master password is incorrect.")).fill(0);
 
     validateNewPassword(normalizedNew, normalizedConfirm);
     // The old hint describes the old password, so it is replaced by the one
@@ -527,7 +528,6 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     const newHint = normalizePasswordHint(hint, normalizedNew);
 
     const now          = new Date().toISOString();
-    const passwordHash = await bcrypt.hash(normalizedNew, BCRYPT_ROUNDS);
     const salt         = crypto.randomBytes(32);
     const newKey       = await deriveVaultKey(normalizedNew, salt);
 
@@ -538,10 +538,10 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
 
     const updatedAuthRecord = {
       ...authRecord,
+      version: 2,
       updatedAt: now,
-      passwordHash,
       keyDerivation: {
-        ...authRecord.keyDerivation,
+        algorithm: "scrypt", keyLength: 32, options: SCRYPT_OPTIONS,
         salt: salt.toString("base64")
       },
       encryption: {
@@ -549,6 +549,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
         vaultCheck: encryptedCheck
       }
     };
+    delete updatedAuthRecord.passwordHash; delete updatedAuthRecord.passwordHashing;
     delete updatedAuthRecord.hint;
     if (newHint) updatedAuthRecord.hint = newHint;
 
@@ -565,7 +566,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
       return { changed: true };
     }
 
-    // Legacy vault: re-key the SQLite database with the new password key.
+    // Direct-key vault: re-key the SQLite database with the new password key.
     // Two files must change and they cannot be swapped atomically together.
     // Keep a copy of the old database first: if we fail (or crash) between the
     // two writes, the old auth record + old database copy are still a matching
@@ -597,8 +598,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     if (!normalizedCurrent) throw createPublicError("Enter your current master password.");
 
     const authRecord = await readAuthRecord();
-    const passwordMatches = await bcrypt.compare(normalizedCurrent, authRecord.passwordHash);
-    if (!passwordMatches) throw createPublicError("Current master password is incorrect.");
+    (await verifyMasterPassword(authRecord, normalizedCurrent, "Current master password is incorrect.")).fill(0);
 
     const newHint = normalizePasswordHint(hint, normalizedCurrent);
     const updated = { ...authRecord, updatedAt: new Date().toISOString() };
@@ -622,8 +622,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     if (!normalizedCurrent) throw createPublicError("Enter your current master password.");
 
     const authRecord = await readAuthRecord();
-    const passwordMatches = await bcrypt.compare(normalizedCurrent, authRecord.passwordHash);
-    if (!passwordMatches) throw createPublicError("Current master password is incorrect.");
+    (await verifyMasterPassword(authRecord, normalizedCurrent, "Current master password is incorrect.")).fill(0);
 
     const recovery = generateRecoveryKey();
     const recoverySalt = crypto.randomBytes(32);
@@ -704,15 +703,14 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     await verifyEncryptedVaultFile(databaseFilePath, dataKey);
 
     const now = new Date().toISOString();
-    const passwordHash = await bcrypt.hash(normalizedNew, BCRYPT_ROUNDS);
     const salt = crypto.randomBytes(32);
     const newKey = await deriveVaultKey(normalizedNew, salt);
 
     const updatedAuthRecord = {
       ...authRecord,
+      version: 2,
       updatedAt: now,
-      passwordHash,
-      keyDerivation: { ...authRecord.keyDerivation, salt: salt.toString("base64") },
+      keyDerivation: { algorithm: "scrypt", keyLength: 32, options: SCRYPT_OPTIONS, salt: salt.toString("base64") },
       encryption: {
         ...authRecord.encryption,
         vaultCheck: encryptJson(
@@ -722,6 +720,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
       },
       keyWrap: { ...authRecord.keyWrap, dek: wrapBytes(dataKey, newKey) }
     };
+    delete updatedAuthRecord.passwordHash; delete updatedAuthRecord.passwordHashing;
     delete updatedAuthRecord.hint;
     if (newHint) updatedAuthRecord.hint = newHint;
 
@@ -736,10 +735,10 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
   // ─── Phase 9: Encrypted Backup & Restore ───────────────────────────────────
 
   // The backup bundles the two files that already make up the vault on disk —
-  // the auth record (master password hash + key-derivation salt) and the
+  // the auth record (password verification + key-derivation metadata) and the
   // encrypted SQLite database — into a single portable JSON file. Nothing
   // written in plaintext: credential data remains encrypted. The auth record
-  // includes public metadata (salt, password hash and optional hint). Verify
+  // includes public metadata (salt, legacy password hash and optional hint). Verify
   // the encrypted snapshot in memory before writing it atomically. Restoring
   // requires the master password in use when this backup was created.
   async function createEncryptedBackup(destinationPath) {
@@ -794,19 +793,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
       throw createPublicError("Backup file is corrupted or incompatible.");
     }
 
-    const passwordMatches = await bcrypt.compare(normalizedPassword, bundle.auth.passwordHash);
-    if (!passwordMatches) {
-      throw createPublicError("Master password does not match this backup.");
-    }
-
-    const key = await deriveVaultKey(
-      normalizedPassword,
-      Buffer.from(bundle.auth.keyDerivation.salt, "base64")
-    );
-    const check = decryptJson(bundle.auth.encryption.vaultCheck, key);
-    if (check.type !== "secure-login-vault-auth-check") {
-      throw createPublicError("Backup file could not be verified.");
-    }
+    const key = await verifyMasterPassword(bundle.auth, normalizedPassword, "Master password does not match this backup.");
 
     const backupDataKey = bundle.auth.keyWrap ? unwrapBytes(bundle.auth.keyWrap.dek, key) : key;
     await verifyEncryptedVaultPayload(bundle.database, backupDataKey);
@@ -1159,8 +1146,39 @@ function normalizePasswordHint(value, masterPassword) {
   return hint;
 }
 
-async function deriveVaultKey(password, salt) {
-  return trackVaultBuffer(await scryptAsync(password, salt, 32, SCRYPT_OPTIONS));
+function storedScryptOptions(record) {
+  const kdf = record.keyDerivation;
+  if (!kdf || kdf.algorithm !== "scrypt" || (kdf.keyLength !== 32 && !(record.version === 1 && kdf.keyLength === undefined)) ||
+      typeof kdf.salt !== "string" || Buffer.from(kdf.salt, "base64").length !== 32 || Buffer.from(kdf.salt, "base64").toString("base64") !== kdf.salt) {
+    throw createPublicError("Vault key-derivation settings are invalid or unsupported.");
+  }
+  // Early v1 records can omit options. Never infer current defaults for old data.
+  if (record.version === 1 && kdf.options === undefined) return LEGACY_SCRYPT_OPTIONS;
+  const options = kdf.options;
+  if (!options || options.r !== 8 || options.p !== 1 ||
+      ![32768, 131072].includes(options.N) || (record.version === 2 && options.N !== 131072) ||
+      Object.keys(options).some(key => !["N", "r", "p", "maxmem"].includes(key)) ||
+      (options.maxmem !== undefined && (!Number.isSafeInteger(options.maxmem) || options.maxmem < 1 || options.maxmem > 256 * 1024 * 1024))) {
+    throw createPublicError("Vault key-derivation settings are invalid or unsupported.");
+  }
+  // Memory limits are local policy, not a memory-allocation instruction from a file.
+  return options.N === 32768 ? LEGACY_SCRYPT_OPTIONS : SCRYPT_OPTIONS;
+}
+
+async function deriveVaultKey(password, salt, options = SCRYPT_OPTIONS) {
+  return trackVaultBuffer(await scryptAsync(password, salt, 32, options));
+}
+
+async function verifyMasterPassword(record, password, message) {
+  const options = storedScryptOptions(record);
+  const incorrect = () => Object.assign(createPublicError(message), { code: "INCORRECT_MASTER_PASSWORD" });
+  if (record.version === 1 && !(await bcrypt.compare(password, record.passwordHash))) throw incorrect();
+  const key = await deriveVaultKey(password, Buffer.from(record.keyDerivation.salt, "base64"), options);
+  let check;
+  try { check = decryptJson(record.encryption.vaultCheck, key); }
+  catch { key.fill(0); throw incorrect(); }
+  if (check?.type !== "secure-login-vault-auth-check") { key.fill(0); throw createPublicError("Vault verification failed."); }
+  return key;
 }
 
 function encryptJson(value, key) {
@@ -1200,10 +1218,11 @@ function decryptJson(payload, key) {
 }
 
 function isValidAuthRecord(record) {
+  try { storedScryptOptions(record); } catch { return false; }
   return Boolean(
     record &&
-      record.version === 1 &&
-      typeof record.passwordHash === "string" &&
+      ((record.version === 1 && typeof record.passwordHash === "string" && /^\$2[aby]\$12\$[./A-Za-z0-9]{53}$/.test(record.passwordHash)) ||
+       (record.version === 2 && record.passwordHash === undefined && record.passwordHashing === undefined)) &&
       record.keyDerivation &&
       record.keyDerivation.algorithm === "scrypt" &&
       typeof record.keyDerivation.salt === "string" &&

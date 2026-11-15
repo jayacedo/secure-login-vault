@@ -3,7 +3,12 @@ const assert = require('assert/strict');
 const fs = require('fs/promises');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const originalScrypt = crypto.scrypt;
+let beforeScrypt = async () => {};
+crypto.scrypt = (...args) => {
+  Promise.resolve().then(() => beforeScrypt()).then(() => originalScrypt(...args), error => args.at(-1)(error));
+};
 const { createVaultStore } = require('../src/services/vaultStore');
 const { testTempRoot } = require('./testTemp');
 const { assertPrivateTree } = require('./slv-test-environment');
@@ -25,15 +30,11 @@ async function main() {
   const store = createVaultStore(root, { now: () => time });
   const protection = path.join(root, 'vault/unlock-attempts.json');
   const state = async () => JSON.parse(await fs.readFile(protection, 'utf8'));
-  const originalCompare = bcrypt.compare;
-  bcrypt.compare = async (...args) => {
-    comparisons++; assert.ok((await state()).failures > 0, 'attempt persisted before password verification');
-    return originalCompare(...args);
-  };
   try {
     await store.createVault({ masterPassword: password, confirmPassword: password });
     await store.createCredential({ websiteName: 'Synthetic only', username: 'dummy', password: 'dummy-entry-password' });
     store.lockVault();
+    beforeScrypt = async () => { comparisons++; assert.ok((await state()).failures > 0, 'attempt persisted before password verification'); };
     const authPath = path.join(root, 'vault/vault-auth.json');
     const dbPath = path.join(root, 'vault/vault-data.slv');
     const authBefore = await fs.readFile(authPath), dbBefore = await fs.readFile(dbPath);
@@ -85,14 +86,14 @@ async function main() {
     let reached, release;
     const started = new Promise(resolve => { reached = resolve; });
     const gate = new Promise(resolve => { release = resolve; });
-    bcrypt.compare = async (...args) => { reached(); await gate; return originalCompare(...args); };
+    beforeScrypt = async () => { reached(); await gate; };
     const pending = store.unlockVault({ masterPassword: password });
     await started; store.lockVault(); release();
     await assert.rejects(pending, /session changed|locked/i);
     assert.equal(store.isUnlocked(), false, 'canceled verification never unlocks');
     console.log('PASS cooldown growth/cap, real process restart, successful reset, queued requests, clock rollback, invalid/read-only state and unchanged synthetic vault files');
   } finally {
-    bcrypt.compare = originalCompare; store.lockVault();
+    crypto.scrypt = originalScrypt; store.lockVault();
     assertPrivateTree(root); assert.equal(path.dirname(root), path.resolve(testTempRoot()));
     await fs.rm(root, { recursive: true, force: true });
   }

@@ -12,7 +12,7 @@ const initSqlJs = require("sql.js");
 async function alterSyntheticDatabase(snapshot, password, sql) {
   const bundle = JSON.parse(snapshot);
   const key = crypto.scryptSync(password, Buffer.from(bundle.auth.keyDerivation.salt, "base64"), 32,
-    { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+    bundle.auth.keyDerivation.options);
   const encrypted = bundle.database.encryption;
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(encrypted.iv, "base64"));
   decipher.setAuthTag(Buffer.from(encrypted.tag, "base64"));

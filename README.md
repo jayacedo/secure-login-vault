@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.51**, extension **0.6.4**. The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
+**Current source versions:** desktop **1.0.52**, extension **0.6.4**. The 1.0.52 security changes are not packaged yet; see [password-key compatibility and upgrade](docs/password-key-upgrade.md) before installing or downgrading. The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -377,6 +377,14 @@ Electron permission policies. Copy buttons retain narrowly scoped clipboard-writ
 permission; renderer clipboard reads and device permissions are denied. See
 [local authentication hardening](docs/local-auth-hardening.md) for behavior,
 limitations and synthetic-only validation. These changes are not yet packaged.
+
+The source also adds [stronger password-key protection](docs/password-key-upgrade.md):
+new auth records use scrypt `N=131072, r=8, p=1` without a separate bcrypt verifier.
+Older vaults are verified with their saved settings before an atomic auth-metadata
+upgrade; encrypted credential files and existing recovery keys are preserved.
+After upgrade, use the new app version: older installers cannot open the new auth
+format. Older backups remain readable by the new code. No installer is published
+or rebuilt by this source change.
 
 - Vault data is encrypted at rest with AES-256-GCM; password-based key derivation uses scrypt.
 - The app and browser extension verify their pairing on each connection. Credential requests and replies use AES-256-GCM with separate directional session keys, message authentication and replay rejection.

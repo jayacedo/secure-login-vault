@@ -1,8 +1,9 @@
 # Local unlock and permission hardening
 
-This source change adds main-process unlock throttling and explicit Electron
-permission policies. It does not change scrypt parameters, the encryption format
-or Electron fuses. It has not been packaged into an installer yet.
+This change adds main-process unlock throttling and explicit Electron permission
+policies. The subsequent [password-key upgrade](password-key-upgrade.md) handles
+key derivation and auth-format compatibility separately. Neither change has been
+packaged into an installer yet; Electron fuses are unchanged.
 
 ## Unlock attempts
 
@@ -11,7 +12,7 @@ attempt, retry delays start at one second and double, capped at five minutes.
 The unlock response reports the remaining wait. Correct passwords must also wait
 for an active cooldown to end. Successful verification and vault opening reset it.
 
-The store serializes requests and checks the cooldown before running bcrypt. It
+The store serializes requests and checks the cooldown before password verification. It
 atomically reserves each attempt before password verification, so quitting during
 an attempt or restarting cannot reset the counter. Interrupted attempts count
 toward the limit. Empty input is rejected without consuming an attempt. A clock
@@ -21,13 +22,13 @@ The separate `vault/unlock-attempts.json` file contains only a format version,
 attempt count and retry timestamp. It is local protection metadata, not part of an
 exported backup. Existing vaults begin with no recorded attempts. Unreadable,
 invalid or unwritable protection state prevents verification instead of silently
-disabling the limit. Auth records and encrypted credentials retain their format.
+disabling the limit. The throttle itself does not rewrite auth records or credentials.
 
 This limits guesses through the app. It cannot stop offline password guessing or
 malware with the same user's ability to change the files, clock or application.
-The independent bcrypt verifier and current scrypt parameters still need a
-separate compatibility-conscious review. Recovery and backup-password validation
-are not changed by this unlock throttle.
+New and upgraded auth records use the stronger scrypt-only verification described
+in the password-key upgrade. Recovery and backup-password validation are not
+rate-limited by this unlock throttle.
 
 ## Electron permissions
 
