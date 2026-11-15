@@ -1,7 +1,7 @@
 # Electron runtime hardening (1.0.53)
 
-Status: local unpacked app built and verified; no 1.0.53 Setup installer created,
-installed or published. Installed 1.0.52 is unchanged. All tests use generated
+Status: 1.0.53 Setup built and verified for local testing only; not installed or
+published. See the [package verification record](package-privacy.md#local-1053-installer). All tests use generated
 fixtures under project `.tmp`; no real vault, backup or browser profile is read.
 
 ## Packaged settings
@@ -21,7 +21,7 @@ after extracting its approved payload. Historical installers without these fuses
 do not satisfy the new fuse check, even if their privacy inventory passed earlier.
 
 Cookie encryption and file-protocol privileges are unchanged. The desktop still
-uses `file://` pages. The style policy below is included in the same pending 1.0.53
+uses `file://` pages. The style policy below is included in the same local 1.0.53
 release.
 
 ## Desktop style policy
@@ -61,7 +61,7 @@ they are script arguments rather than Node runtime options. A test with an
 injected preload and inspector argument confirms that the generated launcher
 does not run the preload or open an inspector.
 
-After a future 1.0.53 installation, run **Settings > Browsers > Set Up Browser
+After installing 1.0.53, run **Settings > Browsers > Set Up Browser
 Extension** once to replace the old launcher. The existing status check detects
 its old contents and reports that setup is needed. This does not erase pairings;
 the browser extension remains 0.6.4. No real registration was changed during tests.
@@ -91,7 +91,8 @@ whose code was modified, and exclusion of an unpacked `resources/app` override.
 It also proves that the fuse reader rejects a deliberately weakened executable.
 The actual SLV build passed Chromium/Firefox pairing, save, fill, update, lock and
 encrypted persistence checks with synthetic vaults, isolated pipes and simulated
-registry writes. The installer gate itself will run when Setup is next built.
+registry writes. The final Setup inventory and fuse gates passed, and both helper
+checks passed again using the payload extracted from the actual 1.0.53 installer.
 
 References: [Electron fuses](https://www.electronjs.org/docs/latest/tutorial/fuses),
 [ASAR integrity](https://www.electronjs.org/docs/latest/tutorial/asar-integrity),

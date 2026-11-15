@@ -57,6 +57,31 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.53 installer
+
+Built on 2026-11-15 with `npm run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, backup,
+account data or personal browser profile was accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.53.exe` (116,713,816 bytes).
+- SHA-256: `ce8d5a4ffc8849a28816ff6dedde0eb1a6e102cac20402545787146dc055b241`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 124 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Actual Setup payload passed Chromium and Firefox pairing, authentication,
+  save, fill, update, lock and encrypted persistence checks using generated
+  synthetic vaults, isolated pipes and simulated registry writes.
+- Portable: `release/Secure Login Vault 1.0.53.exe` (116,479,220 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This combines runtime fuses, helper launcher environment cleanup and the stricter
+desktop style policy. The extension remains 0.6.4. After installation, use
+**Settings > Browsers > Set Up Browser Extension** to update the native launcher.
+Existing pairings are retained. Older local installer files were left intact.
+
 ## Local 1.0.52 installer
 
 Built on 2026-11-15 with `npm run dist -- --publish never` for local testing.

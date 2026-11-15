@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.53**, extension **0.6.4**. Source 1.0.53 adds [Electron runtime hardening and a stricter desktop style policy](docs/electron-fuses.md), verified with an unpacked build and synthetic renderer tests; it is not packaged as a Setup installer yet. Version 1.0.52 is packaged for local testing only; see [password-key compatibility and upgrade](docs/password-key-upgrade.md) before installing or downgrading and the [local package verification record](docs/package-privacy.md#local-1052-installer). The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
+**Current source versions:** desktop **1.0.53**, extension **0.6.4**. Source 1.0.53 adds [Electron runtime hardening and a stricter desktop style policy](docs/electron-fuses.md), verified with synthetic renderer tests and the extracted installer payload. Version 1.0.53 is packaged for local testing only; see [password-key compatibility and upgrade](docs/password-key-upgrade.md) before installing or downgrading and the [local package verification record](docs/package-privacy.md#local-1053-installer). The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -383,7 +383,7 @@ new auth records use scrypt `N=131072, r=8, p=1` without a separate bcrypt verif
 Older vaults are verified with their saved settings before an atomic auth-metadata
 upgrade; encrypted credential files and existing recovery keys are preserved.
 After upgrade, use the new app version: older installers cannot open the new auth
-format. Older backups remain readable by the new code. The 1.0.52 installer is
+format. Older backups remain readable by the new code. The 1.0.53 installer is
 for local testing only and has not been published.
 
 - Vault data is encrypted at rest with AES-256-GCM; password-based key derivation uses scrypt.
