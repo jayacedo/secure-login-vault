@@ -57,7 +57,7 @@ For this update, use **Upload a New Version** on the existing Secure Login Vault
 
 After installing the signed 0.6.5 XPI, reload the login page. On an email-first step, click **Fill**, click the site's **Next**, then click **Fill** again when the password step appears. SLV does not click Next or submit the form. Hidden password fields stay empty; visible signup fields and ambiguous email inputs still block the username-only fallback. Synthetic tests cover these cases, including inline fill and zero-sized hidden fields. The reported live Google page has not been accessed or verified. On a password-only step, **Save this login** recognizes a supported selected-account label or asks you to confirm the username in the popup. See [two-step saving](browser-extension.md#separate-username-and-password-steps-extension-062).
 
-Desktop 1.0.54 works with this add-on update. Its existing installer still bundles extension 0.6.4; no replacement desktop installer was made for this fix.
+Desktop 1.0.54 works with this add-on update. The local 1.0.55 installer bundles extension 0.6.5, but installing the desktop does not replace a signed Firefox add-on. Install the signed XPI separately if your Firefox extension is older than 0.6.5.
 
 Keep the add-on ID `secure-login-vault@jayacedo`: the Windows helper allows only this
 Firefox identity. Do not disable Firefox signature checking. No submission or

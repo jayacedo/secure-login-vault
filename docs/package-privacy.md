@@ -57,6 +57,31 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.55 installer
+
+Built on 2026-11-15 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, backup,
+account data or personal browser profile was accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.55.exe` (116,714,439 bytes).
+- SHA-256: `9bc021babf1be3629816f4f8b51af0c0e5e051b91293700c033ccd222a813a1e`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 124 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Synthetic renderer checks passed for the credential title/count alignment,
+  filtered controls, wide and minimum windows, large text, scrolling and menus.
+  Add Client reuses the existing dashboard icon button and tooltip styles.
+- Portable: `release/Secure Login Vault 1.0.55.exe` (116,479,813 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This update includes the dashboard layout fixes and extension 0.6.5's email-first
+fill detection fix. Desktop installation does not replace a signed Firefox add-on.
+Obsolete 1.0.54 package files were removed after the current installer passed its
+checks. Generated synthetic layout-test folders were also cleaned up.
+
 ## Local 1.0.54 installer
 
 Built on 2026-11-15 with `npm run dist -- --publish never` for local testing only.
