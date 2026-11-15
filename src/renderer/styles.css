@@ -3838,41 +3838,97 @@ button.dashboard-icon-button:focus-visible,
   --shadow: 0 24px 80px rgba(15, 9, 5, .5);
 }
 
-[data-palette="coffee"] body:not(.is-dashboard) {
-  background: linear-gradient(135deg, rgba(214, 165, 111, .09), transparent 42%), var(--bg);
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) body:not(.is-dashboard) {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 42%), var(--bg);
 }
 
-[data-palette="coffee"] .vault-panel { background: var(--panel); }
-[data-palette="coffee"] .primary-button,
-[data-palette="coffee"] .gen-generate-btn,
-[data-palette="coffee"] .settings-modal-container .seg-btn.is-active {
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .vault-panel { background: var(--panel); }
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .primary-button,
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .gen-generate-btn,
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .settings-modal-container .seg-btn.is-active {
   color: var(--accent-text);
 }
-[data-palette="coffee"] .primary-button:hover:not(:disabled),
-[data-palette="coffee"] .gen-generate-btn:hover,
-[data-palette="coffee"] .toast--sensitive { color: var(--accent-strong-text); }
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .primary-button:hover:not(:disabled),
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .gen-generate-btn:hover,
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .toast--sensitive { color: var(--accent-strong-text); }
 
-[data-palette="coffee"] .credential-row-item:hover,
-[data-palette="coffee"] .faq-question:hover,
-[data-palette="coffee"] .copy-btn:hover,
-[data-palette="coffee"] .signin-btn:is(:hover, :focus-visible) {
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .credential-row-item:hover,
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .faq-question:hover,
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .copy-btn:hover,
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .signin-btn:is(:hover, :focus-visible) {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
-[data-palette="coffee"] mark.search-highlight {
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) mark.search-highlight {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
-[data-palette="coffee"] .gen-use-btn {
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .gen-use-btn {
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-[data-palette="coffee"] :is(input:focus, button:focus-visible, select:focus-visible, textarea:focus-visible) {
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) :is(input:focus, button:focus-visible, select:focus-visible, textarea:focus-visible) {
   outline-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
-[data-palette="coffee"] .toast--info {
+:is([data-palette="coffee"], [data-palette="breeze"], [data-palette="forest"]) .toast--info {
   background: var(--panel-muted);
   color: var(--text);
 }
-.settings-modal-container .theme-options { flex-wrap: wrap; }
+:root[data-palette="breeze"] {
+  color-scheme: light;
+  --bg: #eaf4f8;
+  --panel: #f7fcff;
+  --panel-muted: #e4f1f5;
+  --text: #183449;
+  --muted: #4f6978;
+  --line: #bcd4dd;
+  --accent: #126e76;
+  --accent-strong: #0c5660;
+  --accent-text: #ffffff;
+  --accent-strong-text: #ffffff;
+  --warning: #875212;
+  --warning-soft: #fff0d4;
+  --danger: #b62f3b;
+  --success: #216c45;
+  --shadow: 0 24px 80px rgba(24, 52, 73, .15);
+}
+:root[data-palette="forest"] {
+  color-scheme: dark;
+  --bg: #101d18;
+  --panel: #192c24;
+  --panel-muted: #233c31;
+  --text: #edf5ec;
+  --muted: #b0c7b7;
+  --line: #405e4e;
+  --accent: #9bc7a1;
+  --accent-strong: #7dac86;
+  --accent-text: #102018;
+  --accent-strong-text: #102018;
+  --warning: #e8c27a;
+  --warning-soft: rgba(232, 194, 122, .14);
+  --danger: #ff9b91;
+  --success: #9bc7a1;
+  --shadow: 0 24px 80px rgba(4, 15, 9, .5);
+}
+/* Breeze keeps light controls, with pale blue surfaces instead of hard-coded white. */
+[data-palette="breeze"] :is(.auth-card, .dashboard-sidebar, .dashboard-toolbar, .credential-panel, .summary-grid article, .modal-container, .gen-preview-row, .icon-text-button) { background: var(--panel); }
+[data-palette="breeze"] :is(input, select, textarea, .secondary-button, .settings-info-grid) { background: var(--panel-muted); color: var(--text); border-color: var(--line); }
+[data-palette="breeze"] :is(input, textarea)::placeholder { color: var(--muted); }
+.settings-modal-container .theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 282px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.settings-modal-container .theme-options .seg-btn {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
 
 /* The vault list owns scrolling; its search and action controls stay in view. */
 body.is-dashboard.has-credential-list .dashboard-shell { height: 100dvh; min-height: 0; }

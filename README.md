@@ -4,7 +4,7 @@ A Windows desktop vault for managing passwords and web development client detail
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.
 
-**Current source versions:** desktop **1.0.53**, extension **0.6.4**. Source 1.0.53 adds [Electron runtime hardening and a stricter desktop style policy](docs/electron-fuses.md), verified with synthetic renderer tests and the extracted installer payload. Version 1.0.53 is packaged for local testing only; see [password-key compatibility and upgrade](docs/password-key-upgrade.md) before installing or downgrading and the [local package verification record](docs/package-privacy.md#local-1053-installer). The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
+**Current source versions:** desktop **1.0.54**, extension **0.6.4**. Version 1.0.54 adds Breeze and Forest themes; it is built for testing but not yet packaged as an installer. Source 1.0.53 adds [Electron runtime hardening and a stricter desktop style policy](docs/electron-fuses.md), verified with synthetic renderer tests and the extracted installer payload. Version 1.0.53 is packaged for local testing only; see [password-key compatibility and upgrade](docs/password-key-upgrade.md) before installing or downgrading and the [local package verification record](docs/package-privacy.md#local-1053-installer). The desktop uses Electron **45.3.2**, with asynchronous 2FA clipboard cleanup and Windows-protected browser-pairing storage. Pairing persistence is serialized and cancelled requests cannot commit after encryption. This desktop-only update does not require an extension update. See [Electron upgrade checks](docs/electron-45-upgrade.md).
 
 **Available in 1.0.26:** Settings > General adds opt-in Windows startup
 and system tray controls. Sign-in can start SLV quietly, locked in the tray.
@@ -311,6 +311,8 @@ Keep client infrastructure details in a separate workspace: WordPress, hosting, 
 The credential vault's active group filter does **not** apply to the Client Vault.
 
 ### Appearance and settings
+
+Desktop **1.0.54** adds **Breeze** (pale blue, navy and teal) and **Forest** (deep green and sage) in Settings > General > Appearance. Light, Dark, Coffee and System remain available. Theme selections apply and save immediately. Custom accents remain active across themes; Reset restores the selected theme?s default. The choices use two rows to fit the Settings panel. Synthetic renderer checks cover both palettes, text/status and button contrast, saved selection, accent preview/save/reset, and the strict style policy.
 
 Desktop **1.0.12** adds **Settings > General > Appearance > Text size**: **Small**, **Default**, or **Large**. The main SLV window previews the size immediately, using the existing font. **Apply** saves the choice for future launches. Closing Settings, pressing Escape or locking discards an unapplied size. Choose Default and Apply to restore the original size. Native Windows dialogs and the browser extension keep their own text settings.
 

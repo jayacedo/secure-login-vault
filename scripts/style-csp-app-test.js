@@ -40,9 +40,39 @@ async function main() {
   assert.equal(await visible('#active-group-banner'),true);
   await run('setActiveGroupBanner("")');assert.equal(await visible('#active-group-banner'),false);
   await run('openSettingsModal()');
-  for(const theme of ['light','dark','coffee','system']) {
+  for(const theme of ['light','dark','coffee','breeze','forest','system']) {
     await click(`.seg-btn[data-theme="${theme}"]`);
-    assert.equal(await run('document.documentElement.dataset.theme'),theme==='system' ? (await run('matchMedia("(prefers-color-scheme: dark)").matches')?'dark':'light') : theme==='coffee'?'dark':theme);
+    assert.equal(await run('document.documentElement.dataset.theme'),theme==='system' ? (await run('matchMedia("(prefers-color-scheme: dark)").matches')?'dark':'light') : ['coffee','forest'].includes(theme)?'dark':theme==='breeze'?'light':theme);
+  }
+  const luminance=hex=>{const c=hex.match(/[a-f\d]{2}/gi).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+  const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
+  for(const [theme,defaultAccent] of [['breeze','#126e76'],['forest','#9bc7a1']]) {
+    await click(`.seg-btn[data-theme="${theme}"]`);
+    assert.equal(await run('getPref(PREF_THEME)'),theme);
+    const palette=await run(`(()=>{const s=getComputedStyle(document.documentElement);return Object.fromEntries(['bg','panel','panel-muted','text','muted','accent','accent-text','accent-strong','accent-strong-text','danger','warning','success'].map(k=>[k,s.getPropertyValue('--'+k).trim()]));})()`);
+    assert.equal(palette.accent,defaultAccent);
+    for(const text of ['text','muted','danger','warning','success']) for(const surface of ['bg','panel','panel-muted']) assert(contrast(palette[text],palette[surface])>=4.5,`${theme}: ${text} on ${surface} is readable`);
+    assert(contrast(palette.accent,palette['accent-text'])>=4.5);
+    assert(contrast(palette['accent-strong'],palette['accent-strong-text'])>=4.5);
+    await run(`document.querySelector('#brand-accent-input').value='#8844aa';document.querySelector('#brand-accent-input').dispatchEvent(new Event('input'))`);
+    assert.equal(await run(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`),'#8844aa');
+    await run('closeSettingsModal();initTheme();openSettingsModal()');
+    assert.equal(await run(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`),defaultAccent,'cancel restores palette default');
+    assert.equal(await run(`document.querySelector('.theme-options .is-active').dataset.theme`),theme,'saved theme survives reopening Settings');
+    await run(`document.querySelector('#brand-accent-input').value='#8844aa';document.querySelector('#brand-accent-save-btn').click()`);
+    await click('.seg-btn[data-theme="light"]');await click(`.seg-btn[data-theme="${theme}"]`);
+    assert.equal(await run(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`),'#8844aa','saved custom accent survives theme changes');
+    await click('#brand-accent-reset-btn');
+    assert.equal(await run(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`),defaultAccent);
+    const originalSize=win.getSize();win.setSize(980,640);await run(`applyTextSize('large')`);
+    await run(`document.querySelector('.theme-options').scrollIntoView({block:'center'})`);await sleep(100);
+    assert.equal(await run(`(()=>{const panel=document.querySelector('.settings-modal-body'),controls=document.querySelector('.theme-options');return panel.scrollWidth<=panel.clientWidth+1&&controls.scrollWidth<=controls.clientWidth+1&&Array.from(controls.children).every(b=>b.scrollWidth<=b.clientWidth+1);})()`),true,'theme choices fit minimum window with large text');
+    win.setSize(...originalSize);await run(`applyTextSize('default')`);
+    await run(`document.querySelector('.theme-options').scrollIntoView({block:'center'})`);
+    await sleep(400);fs.writeFileSync(path.join(root,theme+'-settings.png'),(await win.webContents.capturePage()).toPNG());
+    await run('closeSettingsModal()');await sleep(400);
+    fs.writeFileSync(path.join(root,theme+'-dashboard.png'),(await win.webContents.capturePage()).toPNG());
+    await run('openSettingsModal()');
   }
   await click('.seg-btn[data-theme="coffee"]');
   const accent = await run(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`);
@@ -108,7 +138,7 @@ async function main() {
   assert.ok(violations.includes('style-src-attr'));assert.ok(violations.includes('style-src-elem'));
   await run(`document.querySelector('#csp-probe').remove();document.querySelector('#csp-injected').remove()`);
   assert.equal((await api('credentials.getAll()')).result.length,1);
-  console.log('PASS strict style CSP: theme/accent preview, text size, hidden banners/status, credential validation/strength, help filter, management/restore/backup dialogs; injected styles blocked. Synthetic screenshots: '+root);
+  console.log('PASS strict style CSP: six themes, Breeze/Forest contrast and persistence, custom accent preview/save/reset, text size, hidden banners/status, credential validation/strength, help filter, management/restore/backup dialogs; injected styles blocked. Synthetic screenshots: '+root);
   app.exit(0);
 }
 setTimeout(()=>{console.error('Style CSP test timeout');app.exit(1);},90000).unref();
