@@ -146,6 +146,69 @@ async function main() {
     assert.equal(forms.dom.window.document.querySelector("[name=username]").value, "alice@example.com");
   });
 
+  await check("email-first steps ignore hidden password fields without filling them", () => {
+    for (const hidden of [
+      '<input type="password" name="password" hidden>',
+      '<input type="password" name="password" style="display:none">',
+      '<section style="display:none"><input type="password" name="password"></section>',
+      '<input type="password" name="password" style="visibility:hidden">'
+    ]) {
+      for (const inline of [false, true]) {
+        const dom = openPage(`<form><input type="email" name="identifier" autocomplete="username">${hidden}<button type="button">Next</button></form>`);
+        const doc = dom.window.document;
+        const target = doc.querySelector('[name="identifier"]');
+        let submits = 0;
+        doc.querySelector('button').addEventListener('click', () => submits++);
+        doc.querySelector('form').addEventListener('submit', event => { event.preventDefault(); submits++; });
+        const options = { ...OPTIONS };
+        if (inline) {
+          dom.window.slvInlineContext = { token: "email-step", expires: Date.now() + 60000, target, form: target.form, url: dom.window.location.href };
+          options.inlineToken = "email-step";
+        }
+        const fill = loadIntoPage(dom);
+        const result = fill("https://example.com", CREDENTIALS, options);
+        assert.equal(result.status, "username-only", hidden);
+        assert.equal(target.value, CREDENTIALS.username);
+        assert.equal(doc.querySelector('[type="password"]').value, "");
+        assert.equal(result.filledPassword, false);
+        assert.equal(result.submitted, false);
+        assert.equal(submits, 0);
+        // Simulate the user advancing to a separate password step.
+        doc.querySelector('form').innerHTML = '<input type="password" name="password" autocomplete="current-password">';
+        assert.equal(fill("https://example.com", CREDENTIALS, OPTIONS).status, "filled");
+        assert.equal(doc.querySelector('input').value, CREDENTIALS.password);
+        dom.window.close();
+      }
+    }
+  });
+
+  await check("layout checks ignore zero-sized password fields on email-first steps", () => {
+    const dom = openPage('<form><input type="email" name="identifier"><input type="password" name="password"></form>');
+    const target = dom.window.document.querySelector('[type="email"]');
+    // jsdom has no layout: model the visible email and a zero-sized next step.
+    Object.defineProperty(target, 'offsetWidth', { value: 320 });
+    Object.defineProperty(target, 'offsetHeight', { value: 48 });
+    const result = loadIntoPage(dom)("https://example.com", CREDENTIALS, { ...OPTIONS, layout: true });
+    assert.equal(result.status, "username-only");
+    assert.equal(target.value, CREDENTIALS.username);
+    assert.equal(dom.window.document.querySelector('[type="password"]').value, "");
+    dom.window.close();
+  });
+
+  await check("email-first fallback still rejects visible signup and ambiguous email fields", () => {
+    for (const html of [
+      '<form><input type="email"><input type="password" autocomplete="new-password"></form>',
+      '<form><input type="email"><input type="password" disabled></form>',
+      '<form><input type="email"><input type="password" readonly></form>',
+      '<form><input type="email"><input type="email"><input type="password" hidden></form>'
+    ]) {
+      const dom = openPage(html);
+      assert.equal(loadIntoPage(dom)("https://example.com", CREDENTIALS, OPTIONS).status, "no-form");
+      for (const input of dom.window.document.querySelectorAll('input')) assert.equal(input.value, "");
+      dom.window.close();
+    }
+  });
+
   await check("it behaves exactly like the app's own filler on the same pages", () => {
     for (const name of Object.keys(PAGES)) {
       const mine = openPage(PAGES[name]);

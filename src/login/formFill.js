@@ -130,10 +130,15 @@ function fillLoginForm(doc, credentials, options) {
     return null;
   }
 
-  // First step of a two-step login: a username/email field with no password
-  // field on the page yet.
+  // First step of a two-step login: a username/email field with no visible
+  // password field. Multi-step pages can keep the next step hidden in the DOM.
   function findUsernameOnly() {
-    if (target ? target.form.querySelector('input[type="password"]') : doc.querySelector('input[type="password"]')) return null;
+    const scope = target ? target.form : doc;
+    const hasVisiblePassword = Array.prototype.some.call(
+      scope.querySelectorAll('input[type="password"]'), input => !isHidden(input)
+    );
+    // Visible disabled/readonly/new-password fields still block this fallback.
+    if (hasVisiblePassword) return null;
     const found = Array.prototype.slice
       .call(doc.querySelectorAll("input"))
       .filter((input) => (!target || input.form === target.form) && isTextLike(input) && isUsable(input) && looksLikeLoginName(input));
