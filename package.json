@@ -106,7 +106,8 @@
     "test:session-permissions": "node scripts/session-permissions-test.js",
     "test:auth-permissions-app": "node scripts/run-electron-test.js scripts/auth-permissions-app-test.js",
     "test:kdf-compatibility": "node scripts/kdf-compatibility-test.js",
-    "test:kdf-compatibility-app": "node scripts/run-electron-test.js scripts/kdf-compatibility-app-test.js"
+    "test:kdf-compatibility-app": "node scripts/run-electron-test.js scripts/kdf-compatibility-app-test.js",
+    "test:style-csp-app": "node scripts/run-electron-test.js scripts/style-csp-app-test.js"
   },
   "build": {
     "electronFuses": {

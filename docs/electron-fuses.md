@@ -21,8 +21,33 @@ after extracting its approved payload. Historical installers without these fuses
 do not satisfy the new fuse check, even if their privacy inventory passed earlier.
 
 Cookie encryption and file-protocol privileges are unchanged. The desktop still
-uses `file://` pages. The main page's inline-style CSP allowance is also unchanged;
-that needs a separate styling compatibility pass.
+uses `file://` pages. The style policy below is included in the same pending 1.0.53
+release.
+
+## Desktop style policy
+
+The main renderer now uses `style-src 'self'; style-src-attr 'none'` without
+`unsafe-inline`. Static spacing/width/wrapping rules are in `styles.css`, and
+messages, the active-group banner and help filtering use the `hidden` property.
+The stylesheet explicitly preserves hidden state even for flex/grid elements.
+
+Trusted renderer code still sets individual style properties for validated accent
+colors and numeric password-strength widths. CSP permits those CSSOM operations;
+it blocks injected style attributes and inline style elements. This does not
+protect against arbitrary JavaScript that already executes in the renderer.
+The existing script policy, sandbox, context isolation and IPC guards remain in
+place. Website pages opened through the browser helper are unaffected.
+
+`node scripts/run-electron-test.js scripts/style-csp-app-test.js` passed in a fresh
+synthetic profile: all six Settings tabs, light/dark/coffee/system themes, live
+accent preview and cancellation, text sizing, hidden banner/status messages,
+credential validation and strength display, help filtering, category/group status,
+and restore/backup-check dialog layout. Normal workflows emitted no CSP violations;
+deliberately injected style attributes and style elements were blocked. Settled
+screenshots of Settings and Add Credential were also checked. No real vault or
+backup was used; the test generated its own dummy credential and encrypted backup.
+
+Reference: [MDN style-src-attr](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/style-src-attr).
 
 ## Browser helper compatibility and limits
 

@@ -438,7 +438,7 @@ function renderDashboard(state) {
         </div>
       </header>
 
-      <div class="active-group-banner" id="active-group-banner" style="display:none">
+      <div class="active-group-banner" id="active-group-banner" hidden>
         ${renderShieldIcon()}
         <span>Locked to <strong id="active-group-banner-name"></strong> — other groups' credentials are hidden.</span>
         <button class="link-button" type="button" id="active-group-banner-clear">Show all</button>
@@ -715,13 +715,13 @@ function setActiveGroupBanner(activeGroup, { forceShow = false } = {}) {
     const dismissedFor = localStorage.getItem(ACTIVE_GROUP_BANNER_DISMISSED_KEY);
     if (!forceShow && dismissedFor === activeGroup) {
       banner.classList.remove("is-fading");
-      banner.style.display = "none";
+      banner.hidden = true;
       return;
     }
 
     if (nameEl) nameEl.textContent = activeGroup;
     banner.classList.remove("is-fading");
-    banner.style.display = "";
+    banner.hidden = false;
 
     // The lock itself is permanent and enforced server-side regardless of
     // this banner — it's just a heads-up, so it doesn't need to sit on
@@ -730,13 +730,13 @@ function setActiveGroupBanner(activeGroup, { forceShow = false } = {}) {
     _activeGroupBannerTimer = setTimeout(() => {
       banner.classList.add("is-fading");
       setTimeout(() => {
-        banner.style.display = "none";
+        banner.hidden = true;
         banner.classList.remove("is-fading");
       }, 300);
       localStorage.setItem(ACTIVE_GROUP_BANNER_DISMISSED_KEY, activeGroup);
     }, 5000);
   } else {
-    banner.style.display = "none";
+    banner.hidden = true;
     localStorage.removeItem(ACTIVE_GROUP_BANNER_DISMISSED_KEY);
   }
 }
@@ -1362,7 +1362,7 @@ function renderQrUploadField(id, existingDataUri) {
       <div class="qr-upload-area" id="${id}-area">
         ${existingDataUri ? renderQrPreviewMarkup(id, existingDataUri) : renderQrEmptyMarkup(id)}
       </div>
-      <p class="form-message is-error" id="${id}-error" style="display:none"></p>
+      <p class="form-message is-error" id="${id}-error" hidden></p>
     </div>
   `;
 }
@@ -1422,11 +1422,11 @@ function setupQrUploadField(container, id) {
   const showQrError = (msg) => {
     if (errorEl) {
       errorEl.textContent = msg;
-      errorEl.style.display = "";
+      errorEl.hidden = false;
     }
   };
   const clearQrError = () => {
-    if (errorEl) errorEl.style.display = "none";
+    if (errorEl) errorEl.hidden = true;
   };
 
   area.addEventListener("click", (e) => {
@@ -1919,7 +1919,7 @@ async function openCredentialModal(editId) {
           <span>Mark as Favorite</span>
         </label>
 
-        <p class="form-message is-error" id="modal-error" style="display:none"></p>
+        <p class="form-message is-error" id="modal-error" hidden></p>
       </div>
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="modal-cancel-btn">Cancel</button>
@@ -2023,11 +2023,11 @@ async function submitCredentialModal(editId) {
 
   if (!websiteName || !password) {
     errorEl.textContent = "Website Name and Password are required.";
-    errorEl.style.display = "";
+    errorEl.hidden = false;
     return;
   }
 
-  errorEl.style.display = "none";
+  errorEl.hidden = true;
 
   const data = {
     websiteName,
@@ -2056,7 +2056,7 @@ async function submitCredentialModal(editId) {
 
   if (!res.ok) {
     errorEl.textContent = res.message;
-    errorEl.style.display = "";
+    errorEl.hidden = false;
     saveBtn.disabled = false;
     saveBtn.textContent = editId !== null ? "Update Credential" : "Save Credential";
     return;
@@ -2580,7 +2580,7 @@ async function openClientModal(editId) {
           <span>Mark as Favorite</span>
         </label>
 
-        <p class="form-message is-error" id="client-modal-error" style="display:none"></p>
+        <p class="form-message is-error" id="client-modal-error" hidden></p>
       </div>
       <div class="modal-footer">
         ${isEdit ? `<button class="danger-button" type="button" id="client-modal-delete-btn">Delete</button>` : ""}
@@ -2646,10 +2646,10 @@ async function submitClientModal(editId) {
 
   if (!name) {
     errorEl.textContent = "Client / Business Name is required.";
-    errorEl.style.display = "";
+    errorEl.hidden = false;
     return;
   }
-  errorEl.style.display = "none";
+  errorEl.hidden = true;
 
   const isEdit = editId !== null && editId !== undefined;
   const data = {
@@ -2690,7 +2690,7 @@ async function submitClientModal(editId) {
 
   if (!res.ok) {
     errorEl.textContent = res.message;
-    errorEl.style.display = "";
+    errorEl.hidden = false;
     saveBtn.disabled = false;
     saveBtn.textContent = isEdit ? "Update Client" : "Save Client";
     return;
@@ -3095,7 +3095,7 @@ async function openSettingsModal() {
             </div>
             <div class="settings-row-control settings-backup-folder-control">
               <input class="settings-input" type="text" id="brand-name-input" maxlength="60"
-                     style="max-width:220px" value="${escapeHtml(currentBrandName)}"
+                     value="${escapeHtml(currentBrandName)}"
                      placeholder="${escapeHtml(DEFAULT_BRAND_NAME)}" />
               <div class="settings-backup-folder-btns">
                 <button class="primary-button settings-action-btn" type="button" id="brand-name-save-btn">Save</button>
@@ -3130,7 +3130,7 @@ async function openSettingsModal() {
                   </button>
                 </div>
               </div>
-              <p class="form-message" id="brand-logo-error" style="display:none"></p>
+              <p class="form-message" id="brand-logo-error" hidden></p>
             </div>
           </div>
 
@@ -3253,7 +3253,7 @@ async function openSettingsModal() {
             </div>
           </div>
 
-          <div class="settings-subgroup" style="margin-top: 16px;">
+          <div class="settings-subgroup settings-subgroup-spaced">
             <h4 class="settings-subgroup-title">Password Hint</h4>
             <p class="settings-section-hint">
               Shown on the login screen without the password, so keep it vague. Leave it empty to remove the hint.
@@ -3274,14 +3274,14 @@ async function openSettingsModal() {
                   </button>
                 </div>
               </div>
-              <p class="form-message" id="hint-status" style="display:none"></p>
+              <p class="form-message" id="hint-status" hidden></p>
               <button class="primary-button settings-cpw-btn" type="button" id="hint-submit-btn">
                 Save Hint
               </button>
             </div>
           </div>
 
-          <div class="settings-subgroup" style="margin-top: 16px;">
+          <div class="settings-subgroup settings-subgroup-spaced">
             <h4 class="settings-subgroup-title">Recovery Key</h4>
             <p class="settings-section-hint" id="recovery-status-hint">
               A recovery key lets you reset the master password if you forget it. Creating a new one replaces the old key.
@@ -3296,7 +3296,7 @@ async function openSettingsModal() {
                   </button>
                 </div>
               </div>
-              <p class="form-message" id="recovery-status" style="display:none"></p>
+              <p class="form-message" id="recovery-status" hidden></p>
               <button class="primary-button settings-cpw-btn" type="button" id="recovery-create-btn">
                 Create Recovery Key
               </button>
@@ -3304,7 +3304,7 @@ async function openSettingsModal() {
             <div id="recovery-result" hidden></div>
           </div>
 
-          <div class="settings-subgroup" style="margin-top: 16px;">
+          <div class="settings-subgroup settings-subgroup-spaced">
             <h4 class="settings-subgroup-title">Change Master Password</h4>
             <div class="change-pw-form" id="change-pw-form">
               <div class="settings-input-row">
@@ -3340,7 +3340,7 @@ async function openSettingsModal() {
                   <input class="settings-input" type="text" id="cpw-hint" maxlength="100" autocomplete="off" placeholder="Replaces the old hint">
                 </div>
               </div>
-              <p class="form-message" id="cpw-status" style="display:none"></p>
+              <p class="form-message" id="cpw-status" hidden></p>
               <button class="primary-button settings-cpw-btn" type="button" id="cpw-submit-btn">
                 Change Password
               </button>
@@ -3458,7 +3458,7 @@ async function openSettingsModal() {
               <span class="settings-row-hint" id="active-group-status-hint">Loading...</span>
             </div>
             <div class="settings-row-control settings-backup-folder-control">
-              <select class="settings-input" id="settings-active-group-select" style="max-width:200px">
+              <select class="settings-input" id="settings-active-group-select">
                 <option value="">All (no lock)</option>
               </select>
               <div class="settings-backup-folder-btns">
@@ -3606,7 +3606,7 @@ async function openSettingsModal() {
             <span class="settings-info-key">Vault location</span>
             <span class="settings-info-val settings-info-path">${escapeHtml(appInfo.vaultDirectory)}</span>
           </div>
-          <div class="settings-action-row" style="margin-top: 14px;">
+          <div class="settings-action-row settings-about-actions">
             <button class="secondary-button settings-action-btn" type="button" id="settings-open-help-btn">
               ${renderHelpIcon()} <span>Help &amp; FAQ</span>
             </button>
@@ -3619,7 +3619,7 @@ async function openSettingsModal() {
         </div>
       </div>
       <div class="modal-footer settings-footer">
-        <p class="form-message" id="settings-status" role="status" aria-live="polite" style="display:none"></p>
+        <p class="form-message" id="settings-status" role="status" aria-live="polite" hidden></p>
         <button class="secondary-button" type="button" id="settings-done-btn">Close</button>
       </div>
     </div>
@@ -3653,14 +3653,14 @@ async function openSettingsModal() {
   const showLogoError = (msg) => {
     logoErrorEl.textContent = msg;
     logoErrorEl.className = "form-message is-error";
-    logoErrorEl.style.display = "";
+    logoErrorEl.hidden = false;
   };
   const showLogoNotice = (msg) => {
     logoErrorEl.textContent = msg;
     logoErrorEl.className = "form-message";
-    logoErrorEl.style.display = "";
+    logoErrorEl.hidden = false;
   };
-  const clearLogoError = () => { logoErrorEl.style.display = "none"; };
+  const clearLogoError = () => { logoErrorEl.hidden = true; };
 
   overlay.querySelector("#brand-logo-upload-btn").addEventListener("click", () => logoFileInput.click());
 
@@ -4099,7 +4099,7 @@ async function openManageCategoriesModal() {
             ${renderPlusIcon()} <span>Add</span>
           </button>
         </div>
-        <p class="form-message" id="categories-status" style="display:none"></p>
+        <p class="form-message" id="categories-status" hidden></p>
         <div class="category-manage-list" id="category-manage-list" aria-label="Categories">
           <div class="category-manage-loading">Loading categories...</div>
         </div>
@@ -4140,7 +4140,7 @@ function setCategoriesStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || "";
   el.className = isError ? "form-message is-error" : "form-message is-success";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 // Always re-fetches and fully replaces the list body — never patches a
@@ -4249,7 +4249,7 @@ function openRenameCategoryModal(currentName) {
           <input class="modal-input" type="text" id="rename-category-input" maxlength="60"
                  value="${escapeHtml(currentName)}" autocomplete="off" />
         </label>
-        <p class="form-message" id="rename-category-status" style="display:none"></p>
+        <p class="form-message" id="rename-category-status" hidden></p>
       </div>
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="rename-category-cancel-btn">Cancel</button>
@@ -4288,7 +4288,7 @@ function setRenameCategoryStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || "";
   el.className = isError ? "form-message is-error" : "form-message is-success";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 async function confirmRenameCategory(currentName) {
@@ -4372,7 +4372,7 @@ function openDeleteCategoryModal(category, knownCategories) {
       </div>
       <div class="modal-body">
         ${reassignSection}
-        <p class="form-message" id="delete-category-status" style="display:none"></p>
+        <p class="form-message" id="delete-category-status" hidden></p>
       </div>
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="delete-category-cancel-btn">Cancel</button>
@@ -4403,7 +4403,7 @@ function setDeleteCategoryStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || "";
   el.className = isError ? "form-message is-error" : "form-message is-success";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 async function confirmDeleteCategory(category) {
@@ -4472,7 +4472,7 @@ async function openManageGroupsModal() {
             ${renderPlusIcon()} <span>Add</span>
           </button>
         </div>
-        <p class="form-message" id="groups-status" style="display:none"></p>
+        <p class="form-message" id="groups-status" hidden></p>
         <div class="category-manage-list" id="group-manage-list" aria-label="Groups">
           <div class="category-manage-loading">Loading groups...</div>
         </div>
@@ -4518,7 +4518,7 @@ function setGroupsStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || "";
   el.className = isError ? "form-message is-error" : "form-message is-success";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 async function loadGroupManageList() {
@@ -4623,7 +4623,7 @@ function openRenameGroupModal(currentName) {
           <input class="modal-input" type="text" id="rename-group-input" maxlength="60"
                  value="${escapeHtml(currentName)}" />
         </label>
-        <p class="form-message" id="rename-group-status" style="display:none"></p>
+        <p class="form-message" id="rename-group-status" hidden></p>
       </div>
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="rename-group-cancel-btn">Cancel</button>
@@ -4662,7 +4662,7 @@ function setRenameGroupStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || "";
   el.className = isError ? "form-message is-error" : "form-message is-success";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 async function confirmRenameGroup(currentName) {
@@ -4731,7 +4731,7 @@ function openDeleteGroupModal(group) {
       </div>
       <div class="modal-body">
         ${bodyText}
-        <p class="form-message" id="delete-group-status" style="display:none"></p>
+        <p class="form-message" id="delete-group-status" hidden></p>
       </div>
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="delete-group-cancel-btn">Cancel</button>
@@ -4762,7 +4762,7 @@ function setDeleteGroupStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message || "";
   el.className = isError ? "form-message is-error" : "form-message is-success";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 async function confirmDeleteGroup(group) {
@@ -4782,7 +4782,7 @@ function setSettingsStatus(message, isError = false) {
   if (!el) return;
   el.textContent = message;
   el.className = isError ? "form-message is-error" : "form-message";
-  el.style.display = message ? "" : "none";
+  el.hidden = !message;
 }
 
 function setSettingsButtonsDisabled(disabled) {
@@ -4806,7 +4806,7 @@ async function runChangeMasterPassword() {
   function showCpwStatus(msg, isError) {
     statusEl.textContent = msg;
     statusEl.className = isError ? "form-message is-error" : "form-message is-success";
-    statusEl.style.display = msg ? "" : "none";
+    statusEl.hidden = !msg;
   }
 
   showCpwStatus("", false);
@@ -5110,7 +5110,7 @@ async function runCreateRecoveryKey() {
   const formEl       = overlay.querySelector("#recovery-form");
   const resultEl     = overlay.querySelector("#recovery-result");
 
-  statusEl.style.display = "none";
+  statusEl.hidden = true;
   submitBtn.disabled = true;
 
   const res = await window.secureLoginVault.settings.createRecoveryKey({
@@ -5122,7 +5122,7 @@ async function runCreateRecoveryKey() {
   if (!res.ok) {
     statusEl.textContent = res.message || "Could not create the recovery key.";
     statusEl.className = "form-message is-error";
-    statusEl.style.display = "";
+    statusEl.hidden = false;
     return;
   }
 
@@ -5148,7 +5148,7 @@ async function runSavePasswordHint() {
   function showHintStatus(msg, isError) {
     statusEl.textContent = msg;
     statusEl.className = isError ? "form-message is-error" : "form-message is-success";
-    statusEl.style.display = msg ? "" : "none";
+    statusEl.hidden = !msg;
   }
 
   showHintStatus("", false);
@@ -5609,11 +5609,11 @@ async function runBackupCheck(mode = "choose") {
       <button type="button" class="modal-close-btn" aria-label="Close">${renderCloseIcon()}</button></div>
     <div class="modal-body">
       <p class="settings-section-hint">Your current vault stays unchanged. This check restores an encrypted temporary copy and verifies that its database opens correctly.</p>
-      <p id="backup-check-file" class="settings-section-hint" style="overflow-wrap:anywhere"></p>
+      <p id="backup-check-file" class="settings-section-hint"></p>
       <div id="backup-check-password"><label class="field-label" for="backup-check-input">Backup master password</label>
         <p class="settings-section-hint">Use the password you had when this backup was created.</p>
         <input id="backup-check-input" class="settings-input" type="password" maxlength="256" autocomplete="off" spellcheck="false"></div>
-      <div id="backup-check-status" role="status" aria-live="polite" style="white-space:pre-line;margin-top:16px"></div>
+      <div id="backup-check-status" role="status" aria-live="polite"></div>
     </div>
     <div class="modal-footer"><button class="secondary-button" id="backup-check-cancel" type="button">Cancel</button>
       <button class="primary-button" id="backup-check-run" type="button">Verify backup</button></div>
@@ -5722,14 +5722,14 @@ function showRestorePasswordModal() {
             Enter the master password that was used to create this backup.
             This will replace everything currently in your vault and cannot be undone.
           </p>
-          <div class="settings-input-wrap" style="margin-bottom: 10px;">
+          <div class="settings-input-wrap restore-password-wrap">
             <input class="settings-input" type="password" id="restore-pw-input"
                    autocomplete="current-password" placeholder="Backup master password" />
             <button class="settings-eye-btn" type="button" id="restore-pw-eye" aria-label="Show/Hide">
               ${renderEyeIcon()}
             </button>
           </div>
-          <p class="form-message" id="restore-pw-error" style="display:none; color: var(--danger);"></p>
+          <p class="form-message is-error" id="restore-pw-error" hidden></p>
         </div>
         <div class="modal-footer">
           <button class="secondary-button" type="button" id="restore-pw-cancel-btn">Cancel</button>
@@ -5762,7 +5762,7 @@ function showRestorePasswordModal() {
       const pw = input.value;
       if (!pw) {
         errorEl.textContent = "Please enter the backup master password.";
-        errorEl.style.display = "";
+        errorEl.hidden = false;
         return;
       }
       close(pw);
@@ -6105,7 +6105,7 @@ function openHelpModal() {
         <div id="faq-sections-wrap">
           ${sectionsHtml}
         </div>
-        <p class="faq-empty-state" id="faq-empty-state" style="display:none;">
+        <p class="faq-empty-state" id="faq-empty-state" hidden>
           No matching questions. Try a different search term.
         </p>
       </div>
@@ -6151,7 +6151,7 @@ function openHelpModal() {
       section.querySelectorAll(".faq-item").forEach((item) => {
         const text = item.textContent.toLowerCase();
         const matches = !query || text.includes(query);
-        item.style.display = matches ? "" : "none";
+        item.hidden = !matches;
         // Auto-expand matches while searching; collapse again when cleared
         if (query && matches) {
           item.classList.add("is-open");
@@ -6165,10 +6165,10 @@ function openHelpModal() {
           visibleCount++;
         }
       });
-      section.style.display = sectionHasMatch ? "" : "none";
+      section.hidden = !sectionHasMatch;
     });
 
-    emptyState.style.display = visibleCount === 0 ? "" : "none";
+    emptyState.hidden = visibleCount !== 0;
   });
 }
 

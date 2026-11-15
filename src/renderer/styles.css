@@ -19,6 +19,16 @@
   box-sizing: border-box;
 }
 
+/* Keep hidden state independent of layout rules and the inline-style CSP. */
+[hidden] { display: none !important; }
+#brand-name-input { max-width: 220px; }
+#settings-active-group-select { max-width: 200px; }
+.settings-subgroup.settings-subgroup-spaced { margin-top: 16px; }
+.settings-action-row.settings-about-actions { margin-top: 14px; }
+#backup-check-file { overflow-wrap: anywhere; }
+#backup-check-status { white-space: pre-line; margin-top: 16px; }
+.settings-input-wrap.restore-password-wrap { margin-bottom: 10px; }
+
 :root[data-text-size="small"] { font-size: 87.5%; }
 :root[data-text-size="default"] { font-size: 100%; }
 :root[data-text-size="large"] { font-size: 112.5%; }
