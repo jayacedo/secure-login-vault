@@ -57,6 +57,30 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.56 installer
+
+Built on 2026-11-15 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, backup,
+account data or personal browser profile was accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.56.exe` (116,714,373 bytes).
+- SHA-256: `0b94f1c67170691133433f50f12f6b241ccbede9463caa725d8fc5ec1ff393ee`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 124 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Synthetic resize checks passed for dropdown selections across the dashboard,
+  Activity History, all Settings sections, Client Vault and add dialogs. Tests
+  covered 980–1600 pixel window widths in both directions and large text.
+- Portable: `release/Secure Login Vault 1.0.56.exe` (116,479,794 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+Wrapped dashboard filters now align left and action icons right. The extension
+remains 0.6.5. Obsolete 1.0.55 packages were removed after verification; synthetic
+inspection folders were cleaned after the UI checks.
+
 ## Local 1.0.55 installer
 
 Built on 2026-11-15 with `npm.cmd run dist -- --publish never` for local testing only.
