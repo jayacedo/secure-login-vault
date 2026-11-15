@@ -101,7 +101,10 @@
     "start:test": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-slv-test.ps1",
     "start:test-browser": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-slv-test.ps1 -Browser",
     "test:test-environment": "node scripts/slv-test-environment-test.js",
-    "test:test-environment-app": "node scripts/run-electron-test.js scripts/slv-test-environment-app-test.js"
+    "test:test-environment-app": "node scripts/run-electron-test.js scripts/slv-test-environment-app-test.js",
+    "test:unlock-protection": "node scripts/unlock-protection-test.js",
+    "test:session-permissions": "node scripts/session-permissions-test.js",
+    "test:auth-permissions-app": "node scripts/run-electron-test.js scripts/auth-permissions-app-test.js"
   },
   "build": {
     "appId": "com.secureloginvault.app",

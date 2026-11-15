@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { BrowserWindow } = require("electron");
 const { canFillAt, buildFillScript } = require("./siteLogin");
+const { applySessionPermissions } = require("./sessionPermissions");
 
 // Opens a saved site in its own window and fills its login form.
 //
@@ -79,8 +80,7 @@ function createLoginWindows({
       lastActivity: 0
     };
 
-    loginSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-    loginSession.setPermissionCheckHandler(() => false);
+    applySessionPermissions(loginSession);
 
     // ── Navigation: web pages only ──────────────────────────────────────────
     const onlyWebAddresses = (event, url) => {

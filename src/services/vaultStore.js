@@ -69,11 +69,14 @@ const SCRYPT_OPTIONS = {
   maxmem: 64 * 1024 * 1024
 };
 
-function createVaultStore(basePath) {
+function createVaultStore(basePath, { now = Date.now } = {}) {
   const vaultDirectory = path.join(basePath, "vault");
   const authFilePath = path.join(vaultDirectory, AUTH_FILE_NAME);
   const databaseFilePath = path.join(vaultDirectory, DATABASE_FILE_NAME);
   const databaseBackupPath = `${databaseFilePath}.rekey.bak`;
+  // Local attempt metadata only; never contains passwords or credential data.
+  const unlockProtectionPath = path.join(vaultDirectory, "unlock-attempts.json");
+  const maxUnlockDelay = 5 * 60 * 1000;
   const preRestoreSuffix = ".pre-restore.bak";
   let sessionKey = null;
   let session = null;
@@ -209,6 +212,39 @@ function createVaultStore(basePath) {
     };
   }
 
+  async function saveUnlockProtection(state) {
+    try { await writeJsonAtomic(unlockProtectionPath, state); }
+    catch { throw createPublicError("Could not save unlock protection. The vault remains locked. Try again."); }
+  }
+
+  async function reserveUnlockAttempt() {
+    let state;
+    try {
+      state = JSON.parse(await fs.readFile(unlockProtectionPath, "utf8"));
+      if (state.version !== 1 || !Number.isInteger(state.failures) || state.failures < 0 || state.failures > 12 ||
+          !Number.isSafeInteger(state.retryAt) || state.retryAt < 0) throw new Error("Invalid attempt state");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw createPublicError("Unlock protection could not be read. No password attempt was made.");
+      state = { version: 1, failures: 0, retryAt: 0 };
+    }
+    const time = now();
+    // A backwards clock change must not create a lockout longer than five minutes.
+    if (state.retryAt > time + maxUnlockDelay) {
+      state.retryAt = time + maxUnlockDelay;
+      await saveUnlockProtection(state);
+    }
+    if (state.retryAt > time) {
+      const seconds = Math.ceil((state.retryAt - time) / 1000);
+      throw createPublicError(`Too many password attempts. Try again in ${seconds} second${seconds === 1 ? "" : "s"}.`);
+    }
+    const failures = Math.min(12, state.failures + 1);
+    const delay = failures < 3 ? 0 : Math.min(maxUnlockDelay, 1000 * 2 ** (failures - 3));
+    const reserved = { version: 1, failures, retryAt: time + delay };
+    // Persist before password verification, so quitting mid-attempt cannot reset it.
+    await saveUnlockProtection(reserved);
+    return reserved;
+  }
+
   async function unlockVault({ masterPassword }) {
     const normalizedPassword = normalizePassword(masterPassword);
 
@@ -217,10 +253,12 @@ function createVaultStore(basePath) {
     }
 
     const authRecord = await readAuthRecord();
+    const attempt = await reserveUnlockAttempt();
     const passwordMatches = await bcrypt.compare(normalizedPassword, authRecord.passwordHash);
 
     if (!passwordMatches) {
-      throw createPublicError("Master password is incorrect.");
+      const seconds = Math.ceil(Math.max(0, attempt.retryAt - now()) / 1000);
+      throw createPublicError("Master password is incorrect." + (seconds ? ` Try again in ${seconds} second${seconds === 1 ? "" : "s"}.` : ""));
     }
 
     const key = await deriveVaultKey(
@@ -240,6 +278,7 @@ function createVaultStore(basePath) {
     const databaseKey = authRecord.keyWrap ? unwrapBytes(authRecord.keyWrap.dek, key) : key;
 
     await ensureVaultDatabase(authRecord, databaseKey);
+    await saveUnlockProtection({ version: 1, failures: 0, retryAt: 0 });
     startSession(databaseKey, new Date().toISOString());
     if (databaseKey !== key) key.fill(0);
 

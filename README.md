@@ -372,6 +372,12 @@ See the [browser workflow and troubleshooting notes](docs/browser-extension.md) 
 
 ## Security
 
+The current source adds persistent master-password retry delays and explicit
+Electron permission policies. Copy buttons retain narrowly scoped clipboard-write
+permission; renderer clipboard reads and device permissions are denied. See
+[local authentication hardening](docs/local-auth-hardening.md) for behavior,
+limitations and synthetic-only validation. These changes are not yet packaged.
+
 - Vault data is encrypted at rest with AES-256-GCM; password-based key derivation uses scrypt.
 - The app and browser extension verify their pairing on each connection. Credential requests and replies use AES-256-GCM with separate directional session keys, message authentication and replay rejection.
 - Locked vaults refuse credential access. The extension requests one selected login for its matching website when filling.

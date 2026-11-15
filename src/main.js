@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard, Tray, Menu, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard, Tray, Menu, screen, session } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -20,6 +20,7 @@ const { createAutomaticBackups } = require("./services/automaticBackups");
 const { createBackupVerification } = require("./services/backupVerification");
 const { createAuthenticator } = require("./services/authenticator");
 const { createDesktopIntegration, DesktopIntegrationError } = require("./services/desktopIntegration");
+const { applySessionPermissions } = require("./services/sessionPermissions");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -1071,6 +1072,7 @@ async function handleVaultOperation(operation) {
 
 app.whenReady().then(async () => {
   if (!ownsDesktopInstance) return;
+  applySessionPermissions(session.defaultSession, { getMainWindow: () => mainWindow, pageUrl: appPageUrl });
   vaultStore = createVaultStore(app.getPath("userData"));
   backupVerification = createBackupVerification({ directory: path.join(app.getPath("userData"), "backup-checks") });
   try { await backupVerification.prepare(); }

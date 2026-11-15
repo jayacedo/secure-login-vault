@@ -63,6 +63,7 @@
     "src/services/loginWindows.js",
     "src/services/pairingStorage.js",
     "src/services/rateLimit.js",
+    "src/services/sessionPermissions.js",
     "src/services/siteLogin.js",
     "src/services/siteMatch.js",
     "src/services/sqliteVault.js",

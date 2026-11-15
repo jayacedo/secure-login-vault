@@ -1,5 +1,6 @@
 const { BrowserWindow, ipcMain, nativeTheme } = require("electron");
 const path = require("path");
+const { applySessionPermissions } = require("./sessionPermissions");
 
 // Only metadata reaches this renderer. The password stays in the save handler.
 function showSaveLoginPrompt({ parent, host, username, groups, categories, activeGroup, signal, timeoutMs = 30000 }) {
@@ -43,7 +44,7 @@ function showSaveLoginPrompt({ parent, host, username, groups, categories, activ
     win.webContents.on("render-process-gone", cancel);
     win.webContents.on("will-navigate", event => event.preventDefault());
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    applySessionPermissions(win.webContents.session);
     win.once("ready-to-show", () => { if (!finished) { win.show(); win.focus(); } });
     win.webContents.once("did-finish-load", () => {
       if (!finished) win.webContents.send("slv:save-prompt-channels", { ready: readyChannel, response: responseChannel });
