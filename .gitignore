@@ -31,3 +31,8 @@ vault-auth.json
 
 # test data (scripts/testTemp.js)
 /.tmp/
+
+# Persistent manual synthetic testing, never package or publish.
+/.slv-test/
+/SLV Test.lnk
+/SLV Test Browser.lnk

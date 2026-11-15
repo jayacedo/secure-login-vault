@@ -97,7 +97,11 @@
     "test:package-privacy": "node scripts/package-privacy-test.js",
     "verify:installer-privacy": "node scripts/package-privacy.js",
     "test:electron-compat": "node scripts/electron-compat-test.js",
-    "test:electron-storage-app": "node scripts/run-electron-test.js scripts/electron-storage-app-test.js"
+    "test:electron-storage-app": "node scripts/run-electron-test.js scripts/electron-storage-app-test.js",
+    "start:test": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-slv-test.ps1",
+    "start:test-browser": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-slv-test.ps1 -Browser",
+    "test:test-environment": "node scripts/slv-test-environment-test.js",
+    "test:test-environment-app": "node scripts/run-electron-test.js scripts/slv-test-environment-app-test.js"
   },
   "build": {
     "appId": "com.secureloginvault.app",

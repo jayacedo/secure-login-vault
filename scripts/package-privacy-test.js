@@ -43,6 +43,7 @@ async function main() {
     for (const [name, entry] of [
       ['vault-auth.json', { size: 1 }], ['credentials.sqlite', { size: 1 }],
       ['notes.txt', { size: 1 }], ['../escape', { size: 1 }],
+      ['.slv-test', { files: { 'environment.json': { size: 1 } } }],
       ['C:/private', { size: 1 }], ['assets\\private.png', { size: 1 }],
       ['LICENSE.md', { link: 'private' }]
     ]) {

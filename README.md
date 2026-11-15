@@ -398,6 +398,12 @@ The `.cmd` commands also work when PowerShell's execution policy blocks `npm.ps1
 
 ### Checks
 
+For manual testing on the same Windows account, use the isolated
+[SLV Test launcher](docs/local-test-environment.md) (`npm.cmd run start:test`).
+It keeps a separate synthetic vault and browser profile, displays a yellow TEST
+banner, and blocks file imports and real clipboard access. Use dummy data only.
+The test profile is excluded from Git and installers; no reinstall is needed.
+
 Run syntax and shared-transport consistency checks:
 
 ```powershell

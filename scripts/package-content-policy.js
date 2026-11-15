@@ -12,7 +12,7 @@ function validateName(name) {
       name.split('/').some(part => !part || part === '.' || part === '..')) {
     fail('invalid relative package path');
   }
-  if (/(^|\/)(database|\.tmp|\.git|work|userdata|user-data|profiles?|backups?)(\/|$)/i.test(name) ||
+  if (/(^|\/)(database|\.tmp|\.slv-test|\.git|work|userdata|user-data|profiles?|backups?)(\/|$)/i.test(name) ||
       /\.(db|db3|sqlite|sqlite3|slv|slvbackup|kdbx|csv)(?:-|$)/i.test(name) ||
       /(^|\/)(vault-auth\.json|backup-codes\.txt|firefox-qr\.png|github-2fa\.png|Cookies|Login Data|Local State|Preferences)$/i.test(name)) {
     fail(`user-data path is forbidden: ${name}`);
