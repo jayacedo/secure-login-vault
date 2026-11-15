@@ -14,7 +14,7 @@ function checkPackagedApp(appOutDir) {
   return { outerFiles: outer.length, archiveFiles: inner.length };
 }
 
-function checkInstaller(installer, workspace = path.resolve(__dirname, '..')) {
+async function checkInstaller(installer, workspace = path.resolve(__dirname, '..')) {
   const root = fs.realpathSync(workspace);
   const input = path.resolve(installer);
   if (!input.toLowerCase().startsWith((root + path.sep).toLowerCase()) || path.extname(input).toLowerCase() !== '.exe') {
@@ -56,8 +56,9 @@ function checkInstaller(installer, workspace = path.resolve(__dirname, '..')) {
     const payload = path.join(stage, 'payload');
     execFileSync(zip, ['x', payloadArchive, '-o' + payload, '-y'], { stdio: 'pipe', windowsHide: true });
     const counts = checkPackagedApp(payload);
+    const fuses = await require('./check-electron-fuses').checkElectronFuses(path.join(payload, 'Secure Login Vault.exe'));
     const sha256 = crypto.createHash('sha256').update(fs.readFileSync(input)).digest('hex');
-    return { ...counts, sha256 };
+    return { ...counts, sha256, fuses };
   } finally {
     // Only this generated directory; reject links before any recursive removal.
     const resolved = fs.realpathSync(stage);
@@ -75,11 +76,13 @@ function checkInstaller(installer, workspace = path.resolve(__dirname, '..')) {
 }
 
 if (require.main === module) {
-  try {
-    const version = require('../package.json').version;
-    const installer = process.argv[2] || path.resolve(__dirname, '../release', `Secure Login Vault Setup ${version}.exe`);
-    const result = checkInstaller(installer);
-    console.log('PASS installer privacy inventory (installer was not executed): ' + JSON.stringify(result));
-  } catch (error) { console.error(error.message); process.exitCode = 1; }
+  (async () => {
+    try {
+      const version = require('../package.json').version;
+      const installer = process.argv[2] || path.resolve(__dirname, '../release', `Secure Login Vault Setup ${version}.exe`);
+      const result = await checkInstaller(installer);
+      console.log('PASS installer privacy inventory (installer was not executed): ' + JSON.stringify(result));
+    } catch (error) { console.error(error.message); process.exitCode = 1; }
+  })();
 }
 module.exports = { checkPackagedApp, checkInstaller };

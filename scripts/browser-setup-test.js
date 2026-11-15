@@ -45,6 +45,14 @@ async function main() {
   assert.deepEqual((await fs.readdir(helperDir)).sort(), ["com.securelogin.vault.bat", "com.securelogin.vault.firefox.json", "com.securelogin.vault.json"]);
   console.log("PASS installed resource paths, preflight, idempotent setup, fixed folder and probe cleanup");
 
+  const launcherFile = path.join(helperDir, 'com.securelogin.vault.bat');
+  const currentLauncher = await fs.readFile(launcherFile, 'utf8');
+  await fs.writeFile(launcherFile, currentLauncher.replace('set NODE_OPTIONS=\r\nset NODE_EXTRA_CA_CERTS=\r\n', ''));
+  assert.equal((await service.status()).ready, false, 'old launcher must be reported as needing setup');
+  assert.equal((await service.setup()).ready, true);
+  assert.equal(await fs.readFile(launcherFile, 'utf8'), currentLauncher);
+  console.log('PASS old helper launcher detection and environment-scrubbing repair');
+
   const movedRuntime = path.join(root, "Moved.exe");
   await fs.copyFile(runtime, movedRuntime);
   const moved = createBrowserSetup({ ...options, runtimePath: movedRuntime, selfTest: async () => ({ ok: true, type: "pong" }) });

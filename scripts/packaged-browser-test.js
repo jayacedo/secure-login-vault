@@ -17,9 +17,16 @@ async function main() {
   const installer = path.join(__dirname, "../release", `Secure Login Vault Setup ${version}.exe`);
   const sevenZip = path.join(__dirname, "../node_modules/electron-winstaller/vendor/7z.exe");
   const payload = path.join(root, "installer-payload");
-  await fs.access(installer);
-  execFileSync(sevenZip, ["e", installer, "$PLUGINSDIR\\app-64.7z", `-o${payload}`, "-y"], { windowsHide: true, stdio: "pipe" });
-  execFileSync(sevenZip, ["x", path.join(payload, "app-64.7z"), `-o${install}`, "-y"], { windowsHide: true, stdio: "pipe" });
+  if (process.argv.includes('--unpacked')) {
+    const unpacked = path.resolve(__dirname, '../release/win-unpacked');
+    require('./package-privacy').checkPackagedApp(unpacked);
+    await fs.cp(unpacked, install, { recursive: true, errorOnExist: true, force: false });
+  } else {
+    await fs.access(installer);
+    execFileSync(sevenZip, ["e", installer, "$PLUGINSDIR\\app-64.7z", `-o${payload}`, "-y"], { windowsHide: true, stdio: "pipe" });
+    execFileSync(sevenZip, ["x", path.join(payload, "app-64.7z"), `-o${install}`, "-y"], { windowsHide: true, stdio: "pipe" });
+  }
+  await require('./check-electron-fuses').checkElectronFuses(path.join(install, 'Secure Login Vault.exe'));
   const resources = path.join(install, "resources");
   const appCode = path.join(root, "app-code");
   asar.extractAll(path.join(resources, "app.asar"), appCode);

@@ -21,6 +21,9 @@ images, exports, backup codes or backups. Tests use synthetic fixtures only.
   app payload and validating its contents. Neither the installer nor SLV is run.
   The portable target shares the before/afterPack gates; the additional final EXE
   extraction check is currently specific to NSIS Setup.
+- Since source 1.0.53, the final Setup gate also verifies the extracted executable's
+  [Electron fuse settings](electron-fuses.md). Older installers do not meet this
+  new fuse policy; their previously recorded privacy results remain historical.
 
 The gates apply to direct electron-builder calls as well as `npm run dist` through
 the hooks in `package.json`. Do not disable these hooks to get a release through.

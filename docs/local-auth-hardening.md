@@ -3,7 +3,7 @@
 This change adds main-process unlock throttling and explicit Electron permission
 policies. The subsequent [password-key upgrade](password-key-upgrade.md) handles
 key derivation and auth-format compatibility separately. Both changes are in the
-local-only 1.0.52 package; Electron fuses are unchanged. See the
+local-only 1.0.52 package. Later source 1.0.53 adds [Electron fuse hardening](electron-fuses.md). See the
 [package verification record](package-privacy.md#local-1052-installer).
 
 ## Unlock attempts

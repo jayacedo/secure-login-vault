@@ -91,7 +91,7 @@ async function main() {
   // ── Launcher ───────────────────────────────────────────────────────────────
   {
     const launcher = buildLauncher({ runtimePath: "C:\\Program Files\\App\\app.exe", hostScriptPath: "C:\\App Data\\src\\host.js" });
-    assert.equal(launcher, '@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"C:\\Program Files\\App\\app.exe" "C:\\App Data\\src\\host.js" %*\r\n');
+    assert.equal(launcher, '@echo off\r\nset NODE_OPTIONS=\r\nset NODE_EXTRA_CA_CERTS=\r\nset ELECTRON_RUN_AS_NODE=1\r\n"C:\\Program Files\\App\\app.exe" "C:\\App Data\\src\\host.js" %*\r\n');
 
     // % would be expanded by cmd.exe, so it must be doubled; other special characters stay inside quotes
     const tricky = buildLauncher({ runtimePath: "C:\\100%\\a (x86)&b\\app.exe", hostScriptPath: "C:\\u^s!er\\h.js" });

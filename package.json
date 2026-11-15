@@ -1,6 +1,6 @@
 {
   "name": "secure-login-vault",
-  "version": "1.0.52",
+  "version": "1.0.53",
   "description": "Offline-first Windows desktop credential vault built with Electron.",
   "main": "src/main.js",
   "author": "Secure Login Vault",
@@ -109,6 +109,13 @@
     "test:kdf-compatibility-app": "node scripts/run-electron-test.js scripts/kdf-compatibility-app-test.js"
   },
   "build": {
+    "electronFuses": {
+      "runAsNode": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
     "appId": "com.secureloginvault.app",
     "productName": "Secure Login Vault",
     "beforePack": "./scripts/before-pack-privacy.js",

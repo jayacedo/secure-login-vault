@@ -79,6 +79,10 @@ function buildLauncher({ runtimePath, hostScriptPath }) {
 
   return [
     "@echo off",
+    // Node mode does not enforce every desktop fuse. Never inherit Node preload
+    // or inspector options from the browser environment into this helper.
+    "set NODE_OPTIONS=",
+    "set NODE_EXTRA_CA_CERTS=",
     "set ELECTRON_RUN_AS_NODE=1",
     `${quoted(runtimePath)} ${quoted(hostScriptPath)} %*`,
     ""
