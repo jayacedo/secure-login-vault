@@ -57,6 +57,29 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.54 installer
+
+Built on 2026-11-15 with `npm run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, backup,
+account data or personal browser profile was accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.54.exe` (116,714,025 bytes).
+- SHA-256: `5923826f1d3a26740f45a9a855116117db282d3ba7b3b251f7e0eea4db9cd990`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 124 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Synthetic renderer checks passed for all six themes, Breeze/Forest text and
+  status contrast, saved selection, custom accent preview/save/reset, and the
+  minimum window size with large text. Strict style CSP checks also passed.
+- Portable: `release/Secure Login Vault 1.0.54.exe` (116,479,450 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This update adds Breeze and Forest themes. The extension remains 0.6.4 and does
+not need an update. The prior 1.0.53 local packages were left intact.
+
 ## Local 1.0.53 installer
 
 Built on 2026-11-15 with `npm run dist -- --publish never` for local testing only.
