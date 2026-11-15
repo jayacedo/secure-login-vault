@@ -2148,9 +2148,9 @@ async function renderClientVault(state) {
           <h1 id="dashboard-title">Client Vault</h1>
         </div>
         <div class="dashboard-actions">
-          <button class="primary-button add-button" type="button" id="add-client-btn">
+          <button class="primary-button add-button dashboard-icon-button" type="button" id="add-client-btn" aria-label="Add client">
             ${renderPlusIcon()}
-            <span>Add Client</span>
+            <span class="dashboard-action-tooltip" aria-hidden="true">Add client</span>
           </button>
         </div>
       </header>
