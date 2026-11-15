@@ -2807,6 +2807,9 @@ mark.search-highlight {
 
 .health-dashboard-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
 .credential-panel > .panel-header { position: relative; z-index: 1; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+.credential-heading { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
+.credential-heading h2 { flex-shrink: 0; margin: 0; }
+.credential-heading #credential-count-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .credential-tool-buttons { display: flex; align-items: center; gap: 10px; }
 .credential-tool-buttons > :first-child .dashboard-action-tooltip { left: 0; right: auto; }
 .vault-health-container { width: min(760px, 94vw); }
@@ -3943,8 +3946,7 @@ body.has-credential-list .credential-table:focus-visible { outline: 2px solid va
 body.has-credential-list .credential-row-head { position: sticky; top: 0; z-index: 1; height: 46px; background: var(--panel); }
 body.has-credential-list #credential-list-body { min-width: 690px; }
 body.has-credential-list .is-selecting #credential-list-body { min-width: 726px; }
-body.has-credential-list .health-dashboard-actions { flex: 1 1 600px; min-width: 0; gap: 8px; }
-body.has-credential-list #credential-count-label { overflow-wrap: anywhere; margin-right: auto; }
+body.has-credential-list .health-dashboard-actions { flex: 1 0 auto; width: max-content; min-width: 0; max-width: 100%; gap: 8px; }
 body.has-credential-list .credential-sort { flex: 0 0 190px; }
 body.has-credential-list .credential-tool-buttons { gap: 8px; flex-shrink: 0; }
 body.has-credential-list .dashboard-toolbar { flex-wrap: wrap; gap: 10px; }

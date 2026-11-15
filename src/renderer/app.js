@@ -457,9 +457,11 @@ function renderDashboard(state) {
 
       <section class="credential-panel" aria-labelledby="credential-list-title">
         <div class="panel-header">
-          <h2 id="credential-list-title">Credentials</h2>
-          <div class="health-dashboard-actions">
+          <div class="credential-heading">
+            <h2 id="credential-list-title">Credentials</h2>
             <span id="credential-count-label">${dashboardData.credentials.length} items</span>
+          </div>
+          <div class="health-dashboard-actions">
             ${renderCredentialSortControl()}
             ${renderCredentialQuickFilters()}
             <div class="credential-tool-buttons" role="group" aria-label="Credential tools">

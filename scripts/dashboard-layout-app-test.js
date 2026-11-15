@@ -1,8 +1,13 @@
 const assert=require("assert/strict"),fs=require("fs"),path=require("path");
-const {app,BrowserWindow}=require("electron");
+const {app,BrowserWindow,clipboard,dialog}=require("electron");
 const {testTempRoot}=require("./testTemp");
 const root=fs.mkdtempSync(path.join(testTempRoot(),"dashboard-layout-app-"));
-app.setPath("userData",root);process.env.SLV_PIPE_USER=`layout-${process.pid}`;
+for(const name of ['userData','sessionData','temp','logs']){const dir=path.join(root,name);fs.mkdirSync(dir);app.setPath(name,dir);}
+app.setPath('appData',root);process.env.APPDATA=root;process.env.LOCALAPPDATA=root;
+process.env.SLV_PIPE_USER=`layout-${process.pid}`;
+clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
+dialog.showOpenDialog=dialog.showSaveDialog=async()=>({canceled:true});
+require('../src/services/browserSetup').createBrowserSetup=()=>({status:async()=>({supported:false,ready:false})});
 require(path.join(process.env.SLV_TEST_CODE_ROOT || path.join(__dirname,".."),"src/main"));
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn){for(let i=0;i<150;i++){if(await fn())return;await sleep(50);}throw Error("Layout timed out");}
@@ -14,7 +19,7 @@ async function main(){
   const click=selector=>run(`document.querySelector(${JSON.stringify(selector)}).click()`);
   const pw="Synthetic layout master password";
   await api(`auth.createVault(${JSON.stringify({masterPassword:pw,confirmPassword:pw})})`);await api('groups.add("Synthetic group")');
-  for(let i=0;i<60;i++)assert.equal((await api(`credentials.add(${JSON.stringify({websiteName:`Synthetic site ${String(i).padStart(2,"0")}`,websiteUrl:"https://example.test/login",username:"synthetic-user",password:"Dummy layout password",groupName:"Synthetic group",favorite:i%2===0})})`)).ok,true);
+  for(let i=0;i<60;i++)assert.equal((await api(`credentials.add(${JSON.stringify({websiteName:`Synthetic site ${String(i).padStart(2,"0")}`,websiteUrl:i<4?"":"https://example.test/login",username:"synthetic-user",password:"Dummy layout password",groupName:"Synthetic group",favorite:i%2===0})})`)).ok,true);
   await api('groups.setActive("Synthetic group")');await run("initAuth()");await until(()=>run("document.querySelectorAll('.credential-row-item').length===60"));await run("refreshCredentials()");
   const before=JSON.stringify((await api("credentials.getAllForExport()")).result);
   const rect=selector=>run(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height}})()`);
@@ -22,6 +27,21 @@ async function main(){
   for(const [width,height,textSize] of [[1400,900,"default"],[1100,780,"default"],[980,640,"large"]]){
     win.setSize(width,height);await run(`document.documentElement.setAttribute('data-text-size',${JSON.stringify(textSize)});document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-palette','coffee');document.querySelector('.credential-table').scrollTop=0`);await sleep(120);
     const m=await metrics();assert(m.height>=100,JSON.stringify(m));assert(m.scroll>m.height);assert(m.page<=m.viewport+1,JSON.stringify(m));assert(m.pageWidth<=m.width+1,JSON.stringify(m));
+    for(const filter of ['all','no-url']){
+      await run(`document.querySelector('#credential-quick-filter').value=${JSON.stringify(filter)};document.querySelector('#credential-quick-filter').dispatchEvent(new Event('change'))`);await sleep(50);
+      const title=await rect('#credential-list-title'),count=await rect('#credential-count-label'),tools=await rect('.health-dashboard-actions');
+      assert(Math.abs((title.top+title.bottom)/2-(count.top+count.bottom)/2)<2,'Title and count share a line');
+      assert(count.left>=title.right && count.left-title.right<=14,'Count stays beside title');
+      assert(tools.left>=count.right || tools.top>=Math.max(title.bottom,count.bottom),'Controls do not overlap heading');
+      if(filter==='no-url'){
+        assert.equal(await run("document.querySelector('#credential-count-label').textContent"),'4 of 60 matching');
+        if(width<=980)assert(tools.top>=title.bottom,JSON.stringify({message:'Compact filtered controls wrap below heading',width,title,count,tools}));
+        await run("document.documentElement.setAttribute('data-palette','forest')");
+        await sleep(100);
+        fs.writeFileSync(path.join(root,`header-filtered-${width}.png`),(await win.webContents.capturePage()).toPNG());
+      }
+    }
+    await click('#credential-clear-filter');await sleep(50);
     const search=await rect('.dashboard-toolbar'),controls=await rect('.panel-header'),head=await rect('.credential-row-head');
     await run("document.querySelector('.credential-table').scrollTop=1200");await sleep(100);
     for(const [selector,original] of [['.dashboard-toolbar',search],['.panel-header',controls],['.credential-row-head',head]])assert(Math.abs((await rect(selector)).top-original.top)<1,`${selector} stays visible`);
