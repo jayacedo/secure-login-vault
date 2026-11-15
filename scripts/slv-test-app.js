@@ -88,7 +88,8 @@ function start(environment = openEnvironment()) {
   return environment;
 }
 module.exports = { start };
-if (require.main === module) {
+// Electron's default-app loader can own require.main when passed a JS entry.
+if (path.resolve(process.argv[1] || '') === __filename) {
   try { start(); }
   catch (error) { dialog.showErrorBox('SLV TEST did not start', 'Isolation could not be established. The regular vault was not opened.\n' + error.message); app.exit(1); }
 }
