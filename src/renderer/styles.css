@@ -3946,9 +3946,9 @@ body.has-credential-list .credential-table:focus-visible { outline: 2px solid va
 body.has-credential-list .credential-row-head { position: sticky; top: 0; z-index: 1; height: 46px; background: var(--panel); }
 body.has-credential-list #credential-list-body { min-width: 690px; }
 body.has-credential-list .is-selecting #credential-list-body { min-width: 726px; }
-body.has-credential-list .health-dashboard-actions { flex: 1 0 auto; width: max-content; min-width: 0; max-width: 100%; gap: 8px; }
+body.has-credential-list .health-dashboard-actions { flex: 1 0 auto; width: max-content; min-width: 0; max-width: 100%; gap: 8px; justify-content: flex-start; }
 body.has-credential-list .credential-sort { flex: 0 0 190px; }
-body.has-credential-list .credential-tool-buttons { gap: 8px; flex-shrink: 0; }
+body.has-credential-list .credential-tool-buttons { gap: 8px; flex-shrink: 0; margin-left: auto; }
 body.has-credential-list .dashboard-toolbar { flex-wrap: wrap; gap: 10px; }
 body.has-credential-list .search-box { flex: 1 1 300px; min-width: 0; }
 body.has-credential-list .active-group-banner { margin: 0; }
