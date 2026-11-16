@@ -1,7 +1,7 @@
 .notes-intro { color: var(--muted); margin: -8px 0 0; font-size: .9rem; }
 .notes-toolbar { flex-wrap: wrap; }
 .notes-toolbar .search-box { flex: 1 1 250px; }
-.notes-toolbar select { width: 190px; max-width: 100%; flex: 0 0 190px; }
+.notes-toolbar select { width: 190px; max-width: 100%; flex: 0 0 190px; min-height: 46px; align-self: stretch; font-family: inherit; }
 .notes-toolbar button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .notes-layout { display: grid; grid-template-columns: minmax(230px, 310px) minmax(0, 1fr); min-height: 460px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
 .notes-list-panel { border-right: 1px solid var(--line); min-width: 0; }
