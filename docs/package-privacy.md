@@ -57,6 +57,30 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.57 installer
+
+Built on 2026-11-16 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, backup,
+account data or personal browser profile was accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.57.exe` (116,719,503 bytes).
+- SHA-256: `6b9177e9a2f8d97e0be15a9a79bf9c0ef107c8168eb836d6255dbe5eae340ea0`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 127 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- The Notes source build passed synthetic CRUD, search, paging, stale-write,
+  encryption, backup compatibility, lock-race and responsive UI checks. Existing
+  dashboard layout and backup verification checks also passed.
+- Portable: `release/Secure Login Vault 1.0.57.exe` (116,484,925 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This update adds the [General Notes workspace](notes.md). The extension remains
+0.6.5 and does not need an update. Obsolete 1.0.56 package files were removed after
+verification. Installer-check extraction files were cleaned automatically.
+
 ## Local 1.0.56 installer
 
 Built on 2026-11-15 with `npm.cmd run dist -- --publish never` for local testing only.
