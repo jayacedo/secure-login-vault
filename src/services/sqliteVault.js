@@ -6,6 +6,7 @@ const { writeJsonAtomic } = require("./fsUtils");
 const { buildVaultHealth } = require("./vaultHealth");
 const trash = require("./credentialTrash");
 const activity = require("./activityHistory");
+const notes = require("./notes");
 const { collectDuplicateGroups, describeDuplicateGroup } = require("./duplicateReview");
 
 let sqlitePromise;
@@ -90,8 +91,9 @@ async function inspectEncryptedVault(filePath, key) {
     // Preparing these queries also checks that essential application fields exist.
     db.exec("SELECT id, website_name, website_url, username, password, email, notes, tags, qr_code FROM credentials LIMIT 0;");
     db.exec("SELECT id, name, admin_password, hosting_password, ftp_password, db_password, qr_code FROM clients LIMIT 0;");
+    db.exec("SELECT id, title, body, favorite, revision, created_at, updated_at FROM general_notes LIMIT 0;");
     const count = table => Number(queryOne(db, `SELECT COUNT(*) AS total FROM ${table}`).total);
-    return { credentials: count("credentials"), clients: count("clients"),
+    return { credentials: count("credentials"), clients: count("clients"), notes: count("general_notes"),
       deletedCredentials: count("credential_trash"), historyEntries: count("credential_activity") };
   });
 }
@@ -1258,6 +1260,7 @@ function ensureGroupExists(db, name) {
 // IF NOT EXISTS and the column check is explicit, so this is safe to run on
 // every open, including vaults that were created before this feature existed.
 function ensureSchemaUpgrades(db) {
+  notes.ensureSchema(db);
   db.run("PRAGMA secure_delete = ON");
   trash.ensureTrashSchema(db);
   // History and the password change commit together in the encrypted database.
@@ -1710,6 +1713,12 @@ function createPublicError(message) {
 }
 
 module.exports = {
+  listNotes: (file, key, options) => withDecryptedDatabase(file, key, db => notes.list(db, options)),
+  getNote: (file, key, id) => withDecryptedDatabase(file, key, db => notes.get(db, id)),
+  addNote: (file, key, data) => withDecryptedDatabaseWrite(file, key, db => notes.add(db, data)),
+  updateNote: (file, key, id, data) => withDecryptedDatabaseWrite(file, key, db => notes.update(db, id, data)),
+  toggleNoteFavorite: (file, key, id, revision) => withDecryptedDatabaseWrite(file, key, db => notes.toggleFavorite(db, id, revision)),
+  deleteNote: (file, key, id, revision, confirmed) => withDecryptedDatabaseWrite(file, key, db => notes.remove(db, id, revision, confirmed)),
   previewCredentialMove,
   moveCredentialsToGroup,
   previewCredentialCategory,

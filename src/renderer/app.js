@@ -141,6 +141,12 @@ document.addEventListener("keydown", (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
   if (!ctrl) return;
 
+  if (notesView && !document.querySelector(".modal-overlay.is-open")) {
+    if (e.key.toLowerCase() === "l") { e.preventDefault(); handleLockVault(); return; }
+    if (e.key.toLowerCase() === "n") { e.preventDefault(); document.querySelector("#add-note-btn")?.click(); return; }
+    if (e.key.toLowerCase() === "f") { e.preventDefault(); document.querySelector("#notes-search")?.focus(); return; }
+  }
+
   // Only fire dashboard shortcuts when the vault is unlocked and no modal is open
   const anyModalOpen = !!document.querySelector(".modal-overlay.is-open");
   const isDashboard = !!document.querySelector("#credential-search");
@@ -194,6 +200,7 @@ async function initAuth() {
 }
 
 function renderFromState(state) {
+  if (!state.isUnlocked) resetNotesWorkspace();
   if (!state.isUnlocked) document.body.classList.remove("has-credential-list");
   if (!state.isUnlocked) credentialQuickFilter = "all";
   if (!state.isUnlocked) closeCredentialDetails(false);
@@ -355,6 +362,7 @@ function renderPasswordInput({ id, label, autocomplete }) {
 let _lastAuthState = null;
 
 function renderDashboard(state) {
+  resetNotesWorkspace();
   closeCredentialDetails(false);
   resetBulkSelection();
   _lastAuthState = state;
@@ -394,6 +402,7 @@ function renderDashboard(state) {
           ${renderVaultIcon()}
           <span>Client Vault</span>
         </button>
+        <button type="button" id="open-notes-btn">${renderNotesIcon()}<span>Notes</span></button>
       </nav>
 
       <div class="category-nav-header">
@@ -514,6 +523,7 @@ function renderDashboard(state) {
   document.querySelector("#review-duplicates-btn").addEventListener("click", openDuplicateReview);
   document.querySelector("#activity-history-btn").addEventListener("click", openActivityHistory);
   document.querySelector("#manage-categories-btn").addEventListener("click", openManageCategoriesModal);
+  document.querySelector("#open-notes-btn").addEventListener("click", () => renderNotesWorkspace(state));
   document.querySelector("#open-client-vault-btn").addEventListener("click", () => renderClientVault(state));
   document.querySelector("#active-group-banner-clear").addEventListener("click", async () => {
     await window.secureLoginVault.groups.setActive("");
@@ -1165,6 +1175,7 @@ async function handleUnlockVault(event) {
 }
 
 async function handleLockVault() {
+  resetNotesWorkspace();
   credentialQuickFilter = "all";
   closeCredentialDetails(false);
   clearBulkUndo(true);
@@ -2083,6 +2094,7 @@ const clientSearchState = {
 };
 
 async function renderClientVault(state) {
+  resetNotesWorkspace();
   document.body.classList.remove("has-credential-list");
   closeCredentialDetails(false);
   resetBulkSelection();
@@ -2118,10 +2130,12 @@ async function renderClientVault(state) {
 
       <div class="category-nav-header"><span>Workspaces</span></div>
       <nav class="workspace-nav" aria-label="Workspaces">
+        <button type="button" id="client-open-vault">${renderFolderIcon()}<span>Vault</span></button>
         <button type="button" class="is-active">
           ${renderVaultIcon()}
           <span>Client Vault</span>
         </button>
+        <button type="button" id="open-notes-btn">${renderNotesIcon()}<span>Notes</span></button>
       </nav>
 
       <div class="category-nav-header"><span>Categories</span></div>
@@ -2174,8 +2188,10 @@ async function renderClientVault(state) {
 
   document.querySelector("#lock-vault-button").addEventListener("click", handleLockVault);
   document.querySelector("#add-client-btn").addEventListener("click", () => openClientModal(null));
+  document.querySelector("#open-notes-btn").addEventListener("click", () => renderNotesWorkspace(state));
   document.querySelector("#client-vault-back-to-credentials").addEventListener("click", () => renderDashboard(state));
 
+  document.querySelector("#client-open-vault").addEventListener("click", () => renderDashboard(state));
   setupClientVaultInteractions();
   await loadClientVaultData();
 }
@@ -2941,6 +2957,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  resetNotesWorkspace();
   credentialQuickFilter = "all";
   closeCredentialDetails(false);
   clearBulkUndo(true);
@@ -5646,7 +5663,7 @@ async function runBackupCheck(mode = "choose") {
       if (!response.ok) throw new Error(response.message);
       const { counts, backupCreatedAt } = response.result;
       const countLabel = (value, label) => `${value} ${label}${value === 1 ? "" : "s"}`;
-      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "credential")} · ${countLabel(counts.clients, "client")}\n${counts.deletedCredentials} recently deleted · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
+      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "credential")} · ${countLabel(counts.clients, "client")} · ${countLabel(counts.notes || 0, "note")}\n${counts.deletedCredentials} recently deleted · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
       overlay.querySelector("#backup-check-password").hidden = true;
       confirm.remove(); cancel.textContent = "Close"; cancel.focus();
     } catch (error) {

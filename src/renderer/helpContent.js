@@ -1,5 +1,9 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "General Notes", items: [
+    { q: "Where can I keep notes that do not belong to a login?", a: "Open Workspaces > Notes. Add a title and plain text, then Save note. Search titles and text, filter Favorites, or sort by title and update time. Notes are available across the vault, regardless of credential group filters." },
+    { q: "Are notes backed up, and what happens when I lock or delete?", a: "Saved notes are encrypted in your vault and included in full encrypted backups and restore, but not credential CSV/JSON exports. Locking discards unsaved edits immediately. Switching notes or workspaces asks before discarding changed text. Delete note permanently removes the note after confirmation; it does not go to Recently Deleted." }
+  ] },
   { title: "Dashboard Scrolling", items: [
     { q: "Can I keep search and filters visible while browsing a long list?", a: "Yes. The credential list scrolls inside the dashboard, while search, sorting, filters and bulk controls stay in place. Column headings remain at the top of the list. Tab into the list to scroll with the keyboard. Back to top returns to the first entry and focuses search. In smaller windows, controls wrap and the Actions menu opens upward when needed." }
   ] },

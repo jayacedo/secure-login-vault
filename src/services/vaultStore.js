@@ -6,6 +6,7 @@ const { promisify } = require("util");
 const { writeJsonAtomic, fileExists } = require("./fsUtils");
 const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, beforeVaultCommit, trackVaultBuffer } = require("./vaultOperationContext");
 const {
+  listNotes, getNote, addNote, updateNote, toggleNoteFavorite, deleteNote,
   previewCredentialMove,
   moveCredentialsToGroup,
   previewCredentialCategory,
@@ -952,6 +953,12 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
   }
 
   const operations = {
+    listNotes: options => listNotes(databaseFilePath, currentKey(), options),
+    getNote: id => getNote(databaseFilePath, currentKey(), id),
+    addNote: data => addNote(databaseFilePath, currentKey(), data),
+    updateNote: (id, data) => updateNote(databaseFilePath, currentKey(), id, data),
+    toggleNoteFavorite: (id, revision) => toggleNoteFavorite(databaseFilePath, currentKey(), id, revision),
+    deleteNote: (id, revision, confirmed) => deleteNote(databaseFilePath, currentKey(), id, revision, confirmed),
     createVault,
     getDashboardData,
     getState,

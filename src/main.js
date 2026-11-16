@@ -429,6 +429,12 @@ function registerAuthHandlers() {
   });
 
   // ─── Client Vault CRUD ──────────────────────────────────────────────────────
+  // Notes use the trusted-main-window and unlocked-session guards.
+  for (const method of ["listNotes", "getNote", "addNote", "updateNote", "toggleNoteFavorite", "deleteNote"]) {
+    handleAppRequest(`vault:notes:${method}`, async (_event, ...args) =>
+      handleVaultOperation(() => vaultStore[method](...args)));
+  }
+
   handleAppRequest("vault:get-clients", async () => {
     return handleVaultOperation(() => vaultStore.getAllClients());
   });

@@ -88,6 +88,15 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     open: (payload) => ipcRenderer.invoke("vault:open-login-window", payload)
   },
 
+  notes: {
+    list: options => ipcRenderer.invoke("vault:notes:listNotes", options),
+    getOne: id => ipcRenderer.invoke("vault:notes:getNote", id),
+    add: data => ipcRenderer.invoke("vault:notes:addNote", data),
+    update: (id, data) => ipcRenderer.invoke("vault:notes:updateNote", id, data),
+    toggleFavorite: (id, revision) => ipcRenderer.invoke("vault:notes:toggleNoteFavorite", id, revision),
+    remove: (id, revision, confirmed) => ipcRenderer.invoke("vault:notes:deleteNote", id, revision, confirmed)
+  },
+
   clients: {
     getAll:         ()          => ipcRenderer.invoke("vault:get-clients"),
     getOne:         (id)        => ipcRenderer.invoke("vault:get-client", id),
