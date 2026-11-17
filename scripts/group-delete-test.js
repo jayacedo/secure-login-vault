@@ -1,0 +1,65 @@
+const assert=require('assert/strict');
+const fs=require('fs/promises'), path=require('path');
+const {createVaultStore}=require('../src/services/vaultStore');
+const {testTempRoot}=require('./testTemp');
+async function main(){
+ const root=await fs.mkdtemp(path.join(testTempRoot(),'group-delete-'));
+ console.log('Synthetic workspace: '+root);
+ const store=createVaultStore(root), pw='Synthetic group deletion password';
+ await store.createVault({masterPassword:pw,confirmPassword:pw});
+ await store.createGroup('Source');await store.createGroup('Destination');await store.createGroup('Outside');
+ const data={websiteName:'Synthetic login',websiteUrl:'https://example.test/login',username:'dummy',password:'dummy-password',category:'Other',groupName:'Source',notes:'Synthetic note',tags:'test',favorite:true,qrCode:await require('qrcode').toDataURL('synthetic image')};
+ const first=(await store.createCredential(data)).id;
+ const second=(await store.createCredential({...data,websiteName:'Second synthetic'})).id;
+ const outside=(await store.createCredential({...data,groupName:'Outside'})).id;
+ await store.editCredential(first,{...data,password:'changed-dummy'});
+ const before=await store.getCredential(first), history=await store.getPasswordHistory(first);
+ await store.setCurrentActiveGroup('Source');
+ const file=path.join(root,'vault/vault-data.slv');const snapshot=await fs.readFile(file);
+ for(const destination of [undefined,null,{},'source','missing','   ']) await assert.rejects(store.removeGroup('Source',destination,2));
+ await assert.rejects(store.removeGroup('Source','Destination',1),/count changed/);
+ assert.deepEqual(await fs.readFile(file),snapshot,'rejected choices publish nothing');
+ const rename=fs.rename;
+ fs.rename=async(from,to)=>{if(path.resolve(to)===path.resolve(file))throw Error('synthetic disk failure');return rename(from,to);};
+ try{await assert.rejects(store.removeGroup('Source','Destination',2),/synthetic disk/);}finally{fs.rename=rename;}
+ assert.deepEqual(await fs.readFile(file),snapshot,'failed save publishes neither move nor deletion');
+ const result=await store.removeGroup('SOURCE','destination',2);
+ assert.equal(result.reassignedCount,2);assert.equal(result.destination,'Destination');
+ assert.equal(await store.getCurrentActiveGroup(),'Destination');
+ assert.equal((await store.getCredential(second)).groupName,'Destination');
+ const after=await store.getCredential(first);
+ const {groupName:g1,updatedAt:t1,...oldFields}=before;
+ const {groupName:g2,updatedAt:t2,...newFields}=after;
+ assert.deepEqual(newFields,oldFields,'all credential content preserved');
+ assert.deepEqual(await store.getPasswordHistory(first),history);
+ await store.setCurrentActiveGroup('');
+ assert.equal((await store.getCredential(outside)).groupName,'Outside');
+ assert.equal((await store.getAllGroups()).includes('Source'),false);
+ await store.setCurrentActiveGroup('Destination');
+ const moved=await store.removeGroup('Destination','',2);
+ assert.equal(moved.unassignedCount,2);assert.equal(await store.getCurrentActiveGroup(),'');
+ assert.equal((await store.getCredential(first)).groupName,'');
+ assert.equal((await store.getAllCredentials()).length,3);
+ await store.createGroup('Empty');await store.removeGroup('Empty',undefined,0);
+ await store.createGroup('Last');await store.removeGroup('Last',undefined,0);
+ await store.setCurrentActiveGroup('Outside');
+ await store.createGroup('Other empty');await store.removeGroup('Other empty',undefined,0);
+ assert.equal(await store.getCurrentActiveGroup(),'Outside');
+ await store.createGroup('Late');await store.createCredential({...data,groupName:'Late'});
+ await assert.rejects(store.removeGroup('Late',undefined,0),/count changed/);
+ // A lock before the atomic publish must preserve both source and assignments.
+ const beforeLock=await fs.readFile(file), write=fs.writeFile;
+ fs.writeFile=async(target,...args)=>{const value=await write(target,...args);if(String(target).startsWith(file+'.'))store.lockVault();return value;};
+ try{await assert.rejects(store.removeGroup('Late','Outside',1));}finally{fs.writeFile=write;}
+ assert.deepEqual(await fs.readFile(file),beforeLock);
+ await store.unlockVault({masterPassword:pw});
+ assert.equal((await store.getAllGroups()).includes('Late'),true);
+ store.lockVault();await assert.rejects(store.removeGroup('Late','Outside',1));
+ await store.unlockVault({masterPassword:pw});
+ for(const group of await store.getGroupsWithUsage()) await store.removeGroup(group.name,'',group.credentialCount);
+ assert.equal((await store.getAllGroups()).length,0,'last group may be deleted with explicit Unassigned');
+ assert.equal((await store.getAllCredentials()).length,4,'all credentials survive deleting the final group');
+ store.lockVault();
+ console.log('PASS group deletion: explicit destinations, active filter, field/history preservation, stale choices, empty groups, atomic failure and lock cancellation.');
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

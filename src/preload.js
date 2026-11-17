@@ -80,7 +80,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     getAllWithUsage: ()                       => ipcRenderer.invoke("vault:get-groups-with-usage"),
     add:             (name)                   => ipcRenderer.invoke("vault:add-group", name),
     rename:          (currentName, newName)   => ipcRenderer.invoke("vault:rename-group", currentName, newName),
-    remove:          (name)                   => ipcRenderer.invoke("vault:delete-group", name),
+    remove:          (name, destination, expectedCount) => ipcRenderer.invoke("vault:delete-group", name, destination, expectedCount),
     getActive:       ()                       => ipcRenderer.invoke("vault:get-active-group"),
     setActive:       (name)                   => ipcRenderer.invoke("vault:set-active-group", name)
   },

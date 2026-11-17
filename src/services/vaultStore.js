@@ -458,9 +458,9 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     return renameGroup(databaseFilePath, currentKey(), currentName, newName);
   }
 
-  async function removeGroup(name) {
+  async function removeGroup(name, reassignToName, expectedCount) {
     ensureUnlocked();
-    return deleteGroup(databaseFilePath, currentKey(), name);
+    return deleteGroup(databaseFilePath, currentKey(), name, reassignToName, expectedCount);
   }
 
   async function getCurrentActiveGroup() {

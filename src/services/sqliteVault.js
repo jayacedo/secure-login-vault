@@ -1175,7 +1175,7 @@ async function renameGroup(filePath, key, currentName, newName) {
   });
 }
 
-async function deleteGroup(filePath, key, name) {
+async function deleteGroup(filePath, key, name, reassignToName, expectedCount) {
   const target = normalizeGroupName(name);
 
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
@@ -1190,13 +1190,29 @@ async function deleteGroup(filePath, key, name) {
       [row.name]
     );
 
-    // Unlike categories, groups have no mandatory fallback — credentials
-    // simply become unassigned (group_name = NULL) rather than requiring
-    // a reassignment target.
+    const count = Number(usage.total || 0);
+    if (expectedCount !== undefined && (!Number.isInteger(expectedCount) || expectedCount !== count)) {
+      throw createPublicError("This group's credential count changed. Close this dialog and review it again.");
+    }
+    if ((count > 0 || reassignToName !== undefined) && typeof reassignToName !== "string") {
+      throw createPublicError("Choose a destination group or Unassigned before deleting.");
+    }
+    let destination = null;
+    if (typeof reassignToName === "string" && reassignToName !== "") {
+      const requested = normalizeGroupName(reassignToName);
+      if (requested.toLowerCase() === row.name.toLowerCase()) {
+        throw createPublicError("Choose a different destination group.");
+      }
+      const destinationRow = queryOne(db, "SELECT id, name FROM groups WHERE name = ? COLLATE NOCASE", [requested]);
+      if (destinationRow.id === undefined) throw createPublicError("The destination group no longer exists. Review the groups again.");
+      destination = destinationRow.name;
+    }
+    // Move and delete in one working copy and one atomic encrypted-file write.
+    // An empty string is an explicit Unassigned choice, never an implicit default.
     const clearCredentials = db.prepare(
-      "UPDATE credentials SET group_name = NULL, updated_at = ? WHERE group_name = ? COLLATE NOCASE;"
+      "UPDATE credentials SET group_name = ?, updated_at = ? WHERE group_name = ? COLLATE NOCASE;"
     );
-    clearCredentials.run([new Date().toISOString(), row.name]);
+    clearCredentials.run([destination, new Date().toISOString(), row.name]);
     clearCredentials.free();
 
     const deleteStmt = db.prepare("DELETE FROM groups WHERE id = ?;");
@@ -1205,10 +1221,10 @@ async function deleteGroup(filePath, key, name) {
 
     const activeGroup = getActiveGroupFilterValue(db);
     if (activeGroup.toLowerCase() === row.name.toLowerCase()) {
-      setActiveGroupValue(db, "");
+      setActiveGroupValue(db, destination || "");
     }
 
-    return { deleted: true, unassignedCount: Number(usage.total || 0) };
+    return { deleted: true, reassignedCount: destination ? count : 0, unassignedCount: destination ? 0 : count, destination: destination || "" };
   });
 }
 

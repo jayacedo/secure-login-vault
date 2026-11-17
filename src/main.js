@@ -442,8 +442,8 @@ function registerAuthHandlers() {
     return handleVaultOperation(() => vaultStore.editGroup(currentName, newName));
   });
 
-  handleAppRequest("vault:delete-group", async (_event, name) => {
-    return handleVaultOperation(() => vaultStore.removeGroup(name));
+  handleAppRequest("vault:delete-group", async (_event, name, reassignToName, expectedCount) => {
+    return handleVaultOperation(() => vaultStore.removeGroup(name, reassignToName, expectedCount));
   });
 
   handleAppRequest("vault:get-active-group", async () => {

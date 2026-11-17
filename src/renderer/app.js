@@ -102,9 +102,11 @@ document.addEventListener("keydown", (e) => {
       if (el && el.classList.contains("is-open")) {
         if (selector === "#help-modal-overlay") { e.preventDefault(); closeHelpModal(); return; }
         if (selector === "#csv-import-overlay" && csvReviewState?.busy) { e.preventDefault(); return; }
+        if (selector === "#group-delete-modal-overlay" && el.dataset.busy === "true") { e.preventDefault(); return; }
         el.classList.remove("is-open");
         if (selector === "#csv-import-overlay") closeCsvImportReview();
         if (selector === "#import-mode-overlay") closeImportModeModal();
+        if (selector === "#group-delete-modal-overlay") closeDeleteGroupModal();
         if (selector === "#authenticator-overlay") closeAuthenticator();
         if (selector === "#qr-lightbox-overlay") closeQrLightbox();
         if (selector === "#credential-modal-overlay") closeCredentialModal();
@@ -202,7 +204,7 @@ async function initAuth() {
 }
 
 function renderFromState(state) {
-  if (!state.isUnlocked) resetNotesWorkspace();
+  if (!state.isUnlocked) { resetNotesWorkspace(); dismissGroupManagementOnLock(); }
   if (!state.isUnlocked) document.body.classList.remove("has-credential-list");
   if (!state.isUnlocked) credentialQuickFilter = "all";
   if (!state.isUnlocked) closeCredentialDetails(false);
@@ -1158,6 +1160,7 @@ async function handleLockVault() {
   closeDuplicateReview();
   closeCredentialTrash();
   closeSettingsModal();
+  dismissGroupManagementOnLock();
   closeVaultHealth();
   closeCredentialModal();
   await window.secureLoginVault.auth.lockVault();
@@ -4433,9 +4436,11 @@ async function confirmDeleteCategory(category) {
 
 // ─── Manage Groups: List Modal ─────────────────────────────────────────────────
 //
-// Mirrors the Manage Categories list/rename/delete pattern. Deleting a group
-// doesn't require reassignment (unlike categories, which always need a
-// fallback) — affected credentials simply become unassigned.
+// Deleting an occupied group requires an explicit destination, including Unassigned.
+function dismissGroupManagementOnLock() {
+  for (const id of ["groups-modal-overlay", "group-delete-modal-overlay", "group-rename-modal-overlay"]) document.getElementById(id)?.remove();
+  _groupsModalReopenSettings = false;
+}
 
 function getOrCreateGroupsOverlay() {
   let overlay = document.querySelector("#groups-modal-overlay");
@@ -4541,7 +4546,7 @@ async function loadGroupManageList() {
   });
   list.querySelectorAll("[data-action='delete-group']").forEach((btn) => {
     const group = groups.find((g) => g.name === btn.dataset.name);
-    btn.addEventListener("click", () => openDeleteGroupModal(group));
+    btn.addEventListener("click", () => openDeleteGroupModal(group, groups));
   });
 }
 
@@ -4702,7 +4707,7 @@ function getOrCreateDeleteGroupOverlay() {
   return overlay;
 }
 
-function openDeleteGroupModal(group) {
+function openDeleteGroupModal(group, knownGroups = []) {
   if (!group) return;
   const listOverlay = document.querySelector("#groups-modal-overlay");
   if (listOverlay) listOverlay.classList.remove("is-open");
@@ -4712,12 +4717,16 @@ function openDeleteGroupModal(group) {
   const safeName = escapeHtml(group.name);
 
   const bodyText = inUse
-    ? `<p class="modal-confirm-text">
-        "${safeName}" is used by ${group.credentialCount} credential${group.credentialCount === 1 ? "" : "s"}.
-        Deleting it will leave ${group.credentialCount === 1 ? "that credential" : "those credentials"} unassigned
-        (visible only when no group is active). This cannot be undone.
-      </p>`
-    : `<p class="modal-confirm-text">Delete the group "${safeName}"? This cannot be undone.</p>`;
+    ? `<p class="modal-confirm-text">"${safeName}" contains ${group.credentialCount} credential${group.credentialCount === 1 ? "" : "s"}. Choose where to move them. The credentials stay saved; only this group is deleted.</p>
+      <label class="modal-label" for="delete-group-reassign-select"><span class="modal-label-text">Move credentials to</span>
+        <select class="modal-input" id="delete-group-reassign-select">
+          <option value="" disabled selected>Choose a destination</option>
+          ${knownGroups.filter(item => item.name.toLowerCase() !== group.name.toLowerCase()).map(item => `<option value="group:${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`).join("")}
+          <option value="unassigned">Unassigned (no group)</option>
+        </select>
+      </label>
+      <p class="form-note" id="delete-group-destination-note">Select a destination before confirming.</p>`
+    : `<p class="modal-confirm-text">Delete the empty group "${safeName}"? This cannot be undone.</p>`;
 
   overlay.innerHTML = `
     <div class="modal-container category-subtask-modal-container" role="dialog" aria-modal="true" aria-labelledby="delete-group-heading">
@@ -4733,8 +4742,8 @@ function openDeleteGroupModal(group) {
       </div>
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="delete-group-cancel-btn">Cancel</button>
-        <button class="primary-button danger-button" type="button" id="delete-group-confirm-btn">
-          ${renderTrashIcon()} <span>Delete</span>
+        <button class="primary-button danger-button" type="button" id="delete-group-confirm-btn" ${inUse ? "disabled" : ""}>
+          ${renderTrashIcon()} <span>${inUse ? "Move & delete group" : "Delete group"}</span>
         </button>
       </div>
     </div>
@@ -4744,6 +4753,13 @@ function openDeleteGroupModal(group) {
 
   overlay.querySelector("#delete-group-close-btn").addEventListener("click", closeDeleteGroupModal);
   overlay.querySelector("#delete-group-cancel-btn").addEventListener("click", closeDeleteGroupModal);
+  const destinationSelect = overlay.querySelector("#delete-group-reassign-select");
+  destinationSelect?.addEventListener("change", () => {
+    overlay.querySelector("#delete-group-confirm-btn").disabled = !destinationSelect.value;
+    overlay.querySelector("#delete-group-destination-note").textContent = destinationSelect.value === "unassigned"
+      ? "Credentials will have no group. Choose All (no lock) to see them." + (group.isActive ? " The active group filter will be cleared." : "")
+      : "Credentials will move to the selected group." + (group.isActive ? " That group will become active." : "");
+  });
   overlay.querySelector("#delete-group-confirm-btn").addEventListener("click", () => confirmDeleteGroup(group));
 }
 
@@ -4753,6 +4769,7 @@ function closeDeleteGroupModal() {
 
   const listOverlay = document.querySelector("#groups-modal-overlay");
   if (listOverlay) listOverlay.classList.add("is-open");
+  loadGroupManageList();
 }
 
 function setDeleteGroupStatus(message, isError = false) {
@@ -4764,15 +4781,31 @@ function setDeleteGroupStatus(message, isError = false) {
 }
 
 async function confirmDeleteGroup(group) {
-  const res = await window.secureLoginVault.groups.remove(group.name);
-  if (!res.ok) {
-    setDeleteGroupStatus(res.message || "Could not delete group.", true);
-    return;
+  const overlay = document.querySelector("#group-delete-modal-overlay");
+  if (!overlay || overlay.dataset.busy === "true") return;
+  const choice = overlay.querySelector("#delete-group-reassign-select")?.value;
+  if (group.credentialCount > 0 && !choice) { setDeleteGroupStatus("Choose a destination group or Unassigned.", true); return; }
+  const destination = choice === "unassigned" ? "" : choice?.startsWith("group:") ? choice.slice(6) : undefined;
+  overlay.dataset.busy = "true";
+  overlay.querySelectorAll("button,select").forEach(control => { control.disabled = true; });
+  try {
+    const res = await window.secureLoginVault.groups.remove(group.name, destination, group.credentialCount);
+    if (!overlay.isConnected || !overlay.classList.contains("is-open")) return;
+    if (!res.ok) { setDeleteGroupStatus(res.message || "Could not delete group.", true); return; }
+    closeDeleteGroupModal();
+    const moved = res.result.reassignedCount + res.result.unassignedCount;
+    setGroupsStatus(`Deleted "${group.name}".` + (moved ? ` Moved ${moved} credential${moved === 1 ? "" : "s"} to ${res.result.destination || "Unassigned"}.` : ""));
+    await loadGroupManageList();
+    await loadActiveGroupControl();
+    await refreshCredentials();
+  } catch {
+    if (overlay.isConnected) setDeleteGroupStatus("Could not delete group. Review the groups and try again.", true);
+  } finally {
+    if (overlay.isConnected) {
+      delete overlay.dataset.busy;
+      overlay.querySelectorAll("button,select").forEach(control => { control.disabled = false; });
+    }
   }
-
-  closeDeleteGroupModal();
-  setGroupsStatus(`Deleted "${group.name}".`);
-  await loadGroupManageList();
 }
 
 function setSettingsStatus(message, isError = false) {
