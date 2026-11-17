@@ -36,5 +36,6 @@ original group/category if needed. Group deletion has no Undo button.
   the original group was removed.
 
 Real accounts, vaults, notes, backups and browser profiles are never accessed by
-these tests. Version 1.0.65 is built unpacked only; the latest local installer
-remains 1.0.64. Extension 0.6.6 is unchanged.
+these tests. Version 1.0.65 is packaged for local testing only; see the
+[installer verification record](package-privacy.md#local-1065-installer).
+Extension 0.6.6 is unchanged.
