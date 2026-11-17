@@ -1,5 +1,7 @@
 # Windows lock and sleep protection
 
+Included in the locally verified [1.0.60 installer](package-privacy.md#local-1060-installer), together with clipboard, renderer-crash and timer fixes.
+
 Desktop 1.0.59 locks the vault on Windows lock and system suspend. Resume locks it again as a fallback if a suspend notification was missed. Returning to Windows never unlocks SLV: the master password is required again.
 
 These events bypass configurable inactivity/background timers and native-dialog grace periods. Locking clears the active vault session, closes login windows and approvals, cancels pairing requests and backup verification, and clears displayed Notes and unsaved Notes edits through the existing lock pathway. Saved content is preserved.

@@ -1,6 +1,6 @@
 # Clipboard, renderer crash and lock-policy hardening
 
-Desktop source 1.0.60 bundles these changes with 1.0.59 Windows lock/sleep protection. Installer packaging is deferred; 1.0.58 remains the latest installer.
+Desktop 1.0.60 bundles these changes with 1.0.59 Windows lock/sleep protection. The installer is packaged for local testing only; see the [verification record](package-privacy.md#local-1060-installer).
 
 ## Confirmed gaps and changes
 

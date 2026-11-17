@@ -57,6 +57,30 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.60 installer
+
+Built on 2026-11-17 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, backup,
+account data, personal browser profile or OS clipboard was accessed, read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.60.exe` (116,720,658 bytes).
+- SHA-256: `e2c503c241645e5b79bf7062e290fbc22713ab0072d257dcde312fdc0a1835f2`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 128 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Synthetic clipboard, actual isolated renderer-crash, Windows lock/sleep event,
+  background-lock policy and authentication/permission checks passed before packaging.
+- Portable: `release/Secure Login Vault 1.0.60.exe` (116,486,065 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer combines [Windows lock/sleep protection](system-lock.md) and
+[clipboard, crash and timer fixes](clipboard-crash-hardening.md). Extension 0.6.5
+is unchanged and does not need an update. Superseded 1.0.58 package files were
+removed after verification. Installer extraction files were cleaned automatically.
+
 ## Local 1.0.58 installer
 
 Built on 2026-11-17 with `npm.cmd run dist -- --publish never` for local testing only.
