@@ -1,8 +1,8 @@
 # Browser navigation and cancellation hardening
 
-Desktop 1.0.61 and extension 0.6.6, 2026-11-18. Built unpacked for local
-testing; no new installer or public release. The latest installer remains
-1.0.60 with extension 0.6.5. Firefox 0.6.6 needs Mozilla signing before
+Desktop 1.0.61 and extension 0.6.6, 2026-11-18. Initially built unpacked;
+now included in the local 1.0.62 installer with the Notes plain-text copy fix.
+See the [verified package record](package-privacy.md#local-1062-installer). No public release. Firefox 0.6.6 needs Mozilla signing before
 permanent installation. No extension permissions were added.
 
 ## Findings and changes

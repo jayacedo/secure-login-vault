@@ -57,6 +57,38 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.62 installer
+
+Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.62.exe` (116,722,621 bytes).
+- SHA-256: `4c6235df64871435dea6c40758cf9f2b75704fa0b6578136aa05feaa34996425`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 128 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Synthetic Notes tests passed for plain-text full/partial selection copying,
+  preserved line breaks, unaffected search-field copying, clipboard cleanup on
+  lock, editing, pagination, resizing and lock races. Browser navigation,
+  cancellation, native transport and isolated desktop tests passed before packaging.
+- Portable: `release/Secure Login Vault 1.0.62.exe` (116,488,042 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer combines the [Notes plain-text copy fix](notes.md) and
+[browser navigation/cancellation hardening](browser-navigation-hardening.md).
+It bundles extension 0.6.6. Reload the Chromium extension to use the extension
+changes; Firefox needs a newly signed 0.6.6 XPI installed separately. Desktop
+installation does not replace a signed Firefox add-on.
+
+Superseded 1.0.60 package files were removed after verification. Installer
+extraction files were cleaned automatically. Synthetic test profiles from the
+implementation phases were also removed.
+
 ## Local 1.0.60 installer
 
 Built on 2026-11-17 with `npm.cmd run dist -- --publish never` for local testing only.
