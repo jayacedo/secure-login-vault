@@ -47,4 +47,4 @@ discard confirmation, safe text rendering, deletion, pagination, responsive
 layouts, navigation and late responses after locking. It never opens an existing
 user vault or browser profile.
 
-1.0.57 is packaged for local testing only. See the [verified installer record](package-privacy.md#local-1057-installer).
+1.0.58 is packaged for local testing only. See the [verified installer record](package-privacy.md#local-1058-installer).
