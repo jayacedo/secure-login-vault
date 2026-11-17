@@ -14,6 +14,14 @@ trustedStorage.catch(() => {});
 const HOST_NAME = self.SLVStatus.HOST_NAME;
 // Covers four verification requests (8s each), then a confirmation request (35s).
 const OPERATION_DEADLINE_MS = 75000;
+const operations = new Set();
+function cancelOperations(tabId) {
+  let cancelled = false;
+  for (const controller of operations) {
+    if (tabId === undefined || controller.signal.tabId === tabId) { controller.abort(); cancelled = true; }
+  }
+  if (cancelled) link.cancelPending?.();
+}
 
 const link = self.SLVLink.createLink({
   hostName: HOST_NAME,
@@ -69,24 +77,46 @@ function describeFill(status) {
   }
 }
 
-async function fillActiveTab(loginId) {
-  const tab = await activeTab();
+async function fillActiveTab(loginId, selectedTab, signal) {
+  const tab = await selectedTab;
   const origin = tab && typeof tab.url === "string" ? originOf(tab.url) : "";
   if (!tab || !Number.isSafeInteger(tab.id) || !origin) {
     return { ok: false, status: "error", message: "Open the login page in this tab first." };
   }
-
+  signal.tabId = tab.id;
+  const stillCurrent = async () => {
+    const current = await activeTab();
+    return !signal.aborted && current?.id === tab.id && current?.url === tab.url;
+  };
+  if (!(await stillCurrent())) return describeFill("blocked");
+  const token = crypto.randomUUID();
+  let documentId;
+  try {
+    // No credentials are sent during this preflight. The token stays in the
+    // isolated world of this document, including on Firefox without documentIds.
+    const prepared = await extensionApi.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, world: "ISOLATED",
+      func: (url, token, lifetime) => {
+        if (location.href !== url || window !== window.top) return false;
+        globalThis.slvPopupFillContext = { token, url, expires: Date.now() + lifetime };
+        return true;
+      }, args: [tab.url, token, OPERATION_DEADLINE_MS] });
+    if (prepared?.[0]?.result !== true) return describeFill("blocked");
+    documentId = prepared[0].documentId;
+    if (!extensionApi.isFirefox && typeof documentId !== "string") return describeFill("blocked");
+  } catch { return describeFill("blocked"); }
+  if (!(await stillCurrent())) return describeFill("blocked");
   const fetched = await link.fetchLogin({ loginId, url: origin });
   if (!fetched.ok) return { ok: false, status: "error", message: fetched.message };
 
   let credentials = { username: fetched.username, password: fetched.password };
   fetched.password = "";
   try {
+    if (!(await stillCurrent())) return describeFill("blocked");
     const results = await extensionApi.scripting.executeScript({
-      target: { tabId: tab.id, frameIds: [0] }, // the main page only, never an embedded frame
+      target: extensionApi.isFirefox ? { tabId: tab.id, frameIds: [0] } : { tabId: tab.id, documentIds: [documentId] },
       world: "ISOLATED",
       func: slvFillInPage,
-      args: [origin, credentials, FILL_OPTIONS]
+      args: [origin, credentials, { ...FILL_OPTIONS, popupToken: token }]
     });
     const result = Array.isArray(results) && results[0] ? results[0].result : null;
     return describeFill(result && typeof result === "object" ? result.status : "");
@@ -107,9 +137,12 @@ function dropSaveRetry(id) {
   clearTimeout(saveRetries.get(id)?.timer);
   saveRetries.delete(id);
 }
-extensionApi.tabs.onRemoved.addListener(dropSaveRetry);
+extensionApi.tabs.onRemoved.addListener(id => { dropSaveRetry(id); cancelOperations(id); });
 extensionApi.tabs.onUpdated.addListener((id, change) => {
-  if (change.url || change.status === "loading") dropSaveRetry(id);
+  if (change.url || change.status === "loading") { dropSaveRetry(id); cancelOperations(id); }
+});
+extensionApi.tabs.onActivated?.addListener(({ tabId }) => {
+  for (const controller of operations) if (controller.signal.tabId !== undefined && controller.signal.tabId !== tabId) cancelOperations(controller.signal.tabId);
 });
 function describeSave(result) {
   if (result.ok) {
@@ -137,13 +170,16 @@ function canSaveFrom(address) {
   }
 }
 
-async function saveActiveTab(message = {}) {
+async function saveActiveTab(message = {}, selectedTab, signal) {
   await offers.initialized;
-  const tab = await activeTab();
+  const tab = await selectedTab;
   const origin = tab && typeof tab.url === "string" ? originOf(tab.url) : "";
   if (!tab || !Number.isSafeInteger(tab.id) || !origin) {
     return { ok: false, message: "Open the login page in this tab first." };
   }
+  signal.tabId = tab.id;
+  const initialTab = await activeTab();
+  if (signal.aborted || initialTab?.id !== tab.id || initialTab?.url !== tab.url) return { ok: false, message: READ_PROBLEMS.blocked };
   if (!canSaveFrom(origin)) {
     return { ok: false, message: "Logins are only saved from secure (https) pages." };
   }
@@ -172,7 +208,7 @@ async function saveActiveTab(message = {}) {
   if (!read || typeof read !== "object") return { ok: false, message: "Could not read this page. Open it again and retry." };
   // Recheck after injection: do not save a result from a tab that navigated.
   const currentTab = await activeTab();
-  if (currentTab?.id !== tab.id || currentTab?.url !== tab.url) return { ok: false, message: READ_PROBLEMS.blocked };
+  if (signal.aborted || currentTab?.id !== tab.id || currentTab?.url !== tab.url) return { ok: false, message: READ_PROBLEMS.blocked };
   if (read.status === "username-only") {
     offers.rememberUsername(tab.id, origin, read.username);
     return { ok: false, message: "Username remembered for two minutes in this tab. Continue to the password step, then press Save this login." };
@@ -196,14 +232,22 @@ async function saveActiveTab(message = {}) {
 // One operation at a time, so two popups cannot interleave pairing and checking.
 let queue = Promise.resolve();
 function runOperation(operation) {
-  const run = queue.then(() => trustedStorage).then(() => withDeadline(operation()));
+  const controller = new AbortController();
+  operations.add(controller);
+  const run = queue.then(() => trustedStorage).then(() => {
+    if (controller.signal.aborted) return describeFill("blocked");
+    return withDeadline(Promise.resolve().then(() => operation(controller.signal)), controller);
+  }).finally(() => operations.delete(controller));
   queue = run.catch(() => {});
   return run;
 }
 
-function withDeadline(promise) {
+function withDeadline(promise, controller) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(self.SLVStatus.describeStatus({ ok: false, error: "timeout" }, "")), OPERATION_DEADLINE_MS);
+    const timer = setTimeout(() => {
+      controller.abort(); link.cancelPending?.();
+      resolve(self.SLVStatus.describeStatus({ ok: false, error: "timeout" }, ""));
+    }, OPERATION_DEADLINE_MS);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -277,15 +321,18 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === "pair" && typeof message.code === "string") {
     runOperation(() => link.pair(message.code, { url })).then(sendResponse);
   } else if (message.type === "forget") {
+    cancelOperations();
     for (const id of saveRetries.keys()) dropSaveRetry(id);
     offers.clear();
     inline.clear();
     runOperation(() => link.forget()).then(sendResponse);
   } else if (message.type === "fill" && Number.isSafeInteger(message.loginId)) {
     // Only the login's id is taken from the popup; the page and its address are read here.
-    runOperation(() => fillActiveTab(message.loginId)).then(sendResponse);
+    const selectedTab = activeTab();
+    runOperation(signal => fillActiveTab(message.loginId, selectedTab, signal)).then(sendResponse);
   } else if (message.type === "save-login" || message.type === "save-login-username") {
-    runOperation(() => saveActiveTab(message)).then(sendResponse);
+    const selectedTab = activeTab();
+    runOperation(signal => saveActiveTab(message, selectedTab, signal)).then(sendResponse);
   } else if (message.type === "save-login-cancel") {
     for (const [id, entry] of saveRetries) if (entry.token === message.token) { dropSaveRetry(id); offers.forgetUsername(id); }
     sendResponse({ ok: true });

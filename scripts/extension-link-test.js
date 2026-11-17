@@ -674,6 +674,34 @@ async function main() {
     app = await startApp(pipeName);
   });
 
+  await check("cancelling pending fill/save closes the verified channel and aborts approval", async () => {
+    for (const action of ["fill", "save", "desktop-lock"]) {
+      await app.stop();
+      let entered, aborted, approvalSignal, writes = 0;
+      const began = new Promise(resolve => { entered = resolve; });
+      const ended = new Promise(resolve => { aborted = resolve; });
+      const approve = (_details, signal) => new Promise(resolve => {
+        approvalSignal = signal; entered();
+        signal.addEventListener("abort", () => { aborted(); resolve(true); }, { once: true });
+      });
+      app = await startApp(pipeName, {
+        vault: { getCredentials: async () => action === "save" ? [] : [{ id: 1, websiteName: "Synthetic", websiteUrl: "https://example.com", username: "synthetic", password: "synthetic-secret" }],
+          addCredential: async () => { writes++; }, updatePassword: async () => { writes++; } },
+        handlerOptions: { approve, approveSave: approve }
+      });
+      assert.equal((await link.pair(app.pairing.startPairing().code)).state, "verified");
+      const pending = action === "save" ? link.saveLogin({ url: "https://example.com", username: "synthetic", password: "synthetic-secret" }) : link.fetchLogin({ loginId: 1, url: "https://example.com" });
+      await began;
+      if (action === "desktop-lock") {
+        app.bridge.closeConnections();
+        assert.equal(approvalSignal.aborted, true, "desktop revocation is synchronous");
+      } else link.cancelPending();
+      const result = await pending; await ended;
+      assert.equal(result.ok, false); assert.equal(result.password, undefined); assert.equal(writes, 0);
+      assert.equal(browser.stats.open, 0);
+    }
+  });
+
   await check("a damaged stored secret is treated as not paired", async () => {
     for (const junk of ["nothex", "ab", 5, {}]) {
       browser.setSecret(junk);

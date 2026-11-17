@@ -98,7 +98,7 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     connections.add(socket);
     // Per-connection state the handlers may read and set (e.g. "authenticated").
     const abort = new AbortController();
-    const context = { authenticated: false, signal: abort.signal };
+    const context = { authenticated: false, signal: abort.signal, cancel: () => abort.abort() };
     contexts.set(socket, context);
     const authTimer = setTimeout(() => { if (!context.authenticated) socket.destroy(); }, config.authTimeoutMs);
     let work = Promise.resolve();
@@ -185,6 +185,12 @@ function createExtensionBridge({ pipeName, handlers = {}, limits = {} }) {
     closeConnections(pairingId) {
       for (const socket of connections) {
         if (pairingId !== undefined && contexts.get(socket)?.pairingId !== pairingId) continue;
+        const context = contexts.get(socket);
+        if (context) {
+          context.authenticated = false;
+          context.cancel();
+          context.channel?.destroy();
+        }
         socket.destroy();
         connections.delete(socket);
         contexts.delete(socket);

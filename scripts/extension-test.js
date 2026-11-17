@@ -197,7 +197,10 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
       }
     },
     scripting: {
-      async executeScript() {
+      async executeScript({ func, args }) {
+        if (func.name !== "slvFillInPage" && typeof args?.[0] === "string" && typeof args?.[1] === "string") {
+          return [{ result: true, documentId: "synthetic-document" }]; // token preflight has no credentials
+        }
         throw new Error("a fill that reached the page without a verified app");
       }
     },
@@ -220,6 +223,7 @@ function loadBackground({ respond = () => undefined, connectThrows = false, disc
   };
   addOfferApis(chrome, { tab });
   const sandbox = {
+    AbortController,
     chrome,
     crypto: crypto.webcrypto,
     console,

@@ -29,7 +29,7 @@ async function fixture(firefox = false) {
     saveLogin: async request => { saves.push({ ...request }); return { ok: true, mode: "add" }; },
     inspectLogin: async () => ({ ok: true, mode: "add" }), forget: async () => ({ ok: true })
   };
-  const sandbox = { chrome, URL, Date: FakeDate, console, clearTimeout,
+  const sandbox = { chrome, URL, AbortController, Date: FakeDate, console, clearTimeout,
     setTimeout: (fn, ms) => { const timer = setTimeout(fn, ms); timer.unref(); return timer; },
     crypto: { randomUUID: () => `synthetic-token-${++serial}` },
     SLVSecretStorage: { createSecretStorage: () => ({ ready: Promise.resolve() }) },

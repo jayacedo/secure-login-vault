@@ -72,9 +72,14 @@
         if (!ticket || ticket.token !== message.token || ticket.url !== src.url || ticket.documentId !== src.documentId ||
             ticket.expires <= now() || !ticket.ids.includes(message.loginId)) return expired();
         tickets.delete(src.tabId); // one use, including declines or failures
-        return run(async () => {
-          if (ticket.expires <= now() || !(await source(sender))) return expired();
-          return fill(message.loginId, ticket, async () => ticket.generation === generation && Boolean(await source(sender)));
+        return run(async signal => {
+          if (signal) signal.tabId = src.tabId;
+          const current = await source(sender);
+          if (signal?.aborted || ticket.generation !== generation || ticket.expires <= now() || !current) return expired();
+          return fill(message.loginId, ticket, async () => {
+            const current = await source(sender);
+            return !signal?.aborted && ticket.generation === generation && ticket.expires > now() && Boolean(current);
+          });
         });
       }
       return {};

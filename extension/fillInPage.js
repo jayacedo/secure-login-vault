@@ -11,6 +11,13 @@ function slvFillInPage(expectedOrigin, credentials, options) {
   if (typeof expectedOrigin !== "string" || location.origin !== expectedOrigin) {
     return { status: "blocked" };
   }
+  if (options?.popupToken) {
+    const context = globalThis.slvPopupFillContext;
+    globalThis.slvPopupFillContext = null; // single use, including failure
+    if (!context || context.token !== options.popupToken || context.url !== location.href || context.expires <= Date.now()) {
+      return { status: "blocked" };
+    }
+  }
 
   function fillLoginForm(doc, credentials, options) {
     const opts = options || {};

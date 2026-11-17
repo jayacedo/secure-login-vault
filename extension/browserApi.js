@@ -32,7 +32,8 @@
       get: id => browser.tabs.get(id),
       sendMessage: (...args) => browser.tabs.sendMessage(...args),
       onUpdated: browser.tabs?.onUpdated,
-      onRemoved: browser.tabs?.onRemoved
+      onRemoved: browser.tabs?.onRemoved,
+      onActivated: browser.tabs?.onActivated
     },
     storage: browser.storage,
     permissions: browser.permissions,

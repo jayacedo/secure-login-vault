@@ -28,6 +28,12 @@
     var status = deps.status;
     var timeoutMs = deps.requestTimeoutMs || REQUEST_TIMEOUT_MS;
     var approvalTimeoutMs = deps.approvalRequestTimeoutMs || APPROVAL_REQUEST_TIMEOUT_MS;
+    var generation = 0;
+    var sessions = new Set();
+    function cancelPending() {
+      generation++;
+      for (const session of sessions) session.close();
+    }
 
     function lastErrorText() {
       try {
@@ -104,8 +110,10 @@
       const session = {
         async enableEncryption(secret, nonceE, nonceA) {
           channel = await secure.createChannel({ secret, nonceE, nonceA, role: "extension" });
+          if (ended) { channel.destroy(); throw new Error("Session cancelled"); }
         },
         async request(type, fields) {
+          if (ended) return { runtimeError: "closed" };
           if (!channel) {
             if (!["ping", "pair-begin", "pair-finish", "auth-begin", "auth-finish"].includes(type)) return { runtimeError: "Encryption required" };
             return rawRequest(type, fields);
@@ -124,6 +132,7 @@
           }
         },
         close: function () {
+          sessions.delete(session);
           if (channel) channel.destroy();
           ended = "closed";
           settleAll({ runtimeError: "closed" }); // nothing may be left waiting
@@ -134,6 +143,7 @@
           }
         }
       };
+      sessions.add(session);
       return session;
     }
 
@@ -158,8 +168,10 @@
     // { verified: true, value } where value is whatever afterVerified(session, status)
     // produced. afterVerified runs only on a fully verified connection.
     function runVerified(afterVerified) {
+      const started = generation;
       return deps.storage.get().then(function (stored) {
         var secretHex = pairing.isSecretHex(stored) ? stored : null;
+        if (started !== generation) return { status: genericError(secretHex) };
         var session = openSession();
         if (!session) return { status: withFlags(status.describeStatus(undefined, ""), secretHex) };
 
@@ -180,8 +192,10 @@
               };
             }
             return verify(session, secretHex, base).then(function (result) {
+              if (started !== generation) return { status: genericError(secretHex) };
               if (result.state !== "verified") return { status: result };
               return Promise.resolve(afterVerified(session, result)).then(function (value) {
+                if (started !== generation) return { status: genericError(secretHex) };
                 return { verified: true, status: result, value: value };
               });
             });
@@ -404,9 +418,11 @@
     }
 
     function pair(codeText, options) {
+      const started = generation;
       var codeBytes = pairing.parseCode(codeText);
       return deps.storage.get().then(function (stored) {
         var secretHex = pairing.isSecretHex(stored) ? stored : null;
+        if (started !== generation) return genericError(secretHex);
         if (!codeBytes) {
           return pairFailed("Code not recognised", "That does not look like a pairing code. It has 26 letters and numbers in groups of four, separated by dashes.", secretHex);
         }
@@ -494,10 +510,11 @@
 
     // ── forget ────────────────────────────────────────────────────────────────
     function forget() {
+      cancelPending();
       return deps.storage.clear().then(check);
     }
 
-    return { check: check, pair: pair, forget: forget, fetchLogin: fetchLogin, saveLogin: saveLogin, inspectLogin: inspectLogin };
+    return { check: check, pair: pair, forget: forget, cancelPending: cancelPending, fetchLogin: fetchLogin, saveLogin: saveLogin, inspectLogin: inspectLogin };
   }
 
   var api = { createLink: createLink, REQUEST_TIMEOUT_MS: REQUEST_TIMEOUT_MS };

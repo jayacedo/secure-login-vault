@@ -160,6 +160,7 @@ function applyWindowState(state) {
 }
 
 function lockDesktopVault(reason, notify = true) {
+  extensionBridge?.closeConnections();
   sensitiveClipboard?.clear();
   backupVerification?.cancel();
   authenticator?.clear(); pathGrants.clear(); saveApprovalAbort?.abort();
@@ -548,12 +549,12 @@ const APPROVAL_TIMEOUT_MS = Math.min(30000, Math.max(200, Number(process.env.SLV
 // What is shown comes from saved data, so strip anything that could reorder or hide text.
 const forPrompt = (text) => String(text || "").replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").trim().slice(0, 80);
 
-async function askBeforeFilling({ host, name }) {
+async function askBeforeFilling({ host, name }, signal) {
   if (!extensionState.askBeforeFill) return true;
   return confirmInApp({
     message: `Fill "${forPrompt(name)}" on ${forPrompt(host)}?`,
     detail: "A browser extension asked to fill this login. Choose Fill only if you just asked for it.",
-    buttons: ["Don't fill", "Fill"]
+    buttons: ["Don't fill", "Fill"], signal
   });
 }
 

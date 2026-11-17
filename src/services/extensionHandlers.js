@@ -38,6 +38,7 @@ function requireAuth(handler) {
 
 const LOCKED_MESSAGE = "Vault is locked.";
 const isLocked = error => Boolean(error && (error.message === LOCKED_MESSAGE || error.code === "VAULT_SESSION_CHANGED"));
+const isCurrent = context => context.authenticated === true && !context.signal?.aborted && (!context.isPairingCurrent || context.isPairingCurrent());
 
 // Passwords leave the app one at a time, and not faster than a person could use them.
 const FILL_LIMITS = Object.freeze({ perConnection: 10, overall: 20, windowMs: 60 * 1000 });
@@ -84,11 +85,12 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
   }
 
   if (vault) {
-    handlers["find-logins"] = requireAuth(async (request) => {
+    handlers["find-logins"] = requireAuth(async (request, context) => {
       if (typeof request.url !== "string") return { error: "bad-message" };
 
       const read = await readCredentials();
       if (read.error) return { error: read.error };
+      if (!isCurrent(context)) return { error: "not-authenticated" };
 
       const match = matchLogins(request.url, read.credentials);
       if (!match.ok) return { error: match.reason };
@@ -107,6 +109,7 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
       if (read.error) return { error: read.error };
 
       const credential = (Array.isArray(read.credentials) ? read.credentials : []).find((c) => c && typeof c === "object" && Number(c.id) === request.loginId);
+      if (!isCurrent(context)) return { error: "not-authenticated" };
       if (!credential) return { error: "no-match" };
 
       // The page must be exactly the site this login was saved for: the same rule as
@@ -121,13 +124,15 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
 
       if (approve) {
         // Only the site and the entry's name are shown; the person decides in the app.
-        const approved = await approve({ host: match.host, name: match.logins[0].name });
+        const approved = await approve({ host: match.host, name: match.logins[0].name }, context.signal);
         if (approved !== true) return { error: "declined" };
+        if (!isCurrent(context)) return { error: "not-authenticated" };
 
         // Time has passed while the person decided: the vault may have been locked or the
         // entry changed. Read it again and apply every check to what is there now.
         const fresh = await readCredentials();
         if (fresh.error) return { error: fresh.error };
+        if (!isCurrent(context)) return { error: "not-authenticated" };
         const current = (Array.isArray(fresh.credentials) ? fresh.credentials : []).find((c) => c && typeof c === "object" && Number(c.id) === request.loginId);
         const again = current ? matchLogins(request.url, [current]) : null;
         if (!again || !again.ok || again.logins.length !== 1) return { error: "no-match" };
@@ -158,7 +163,7 @@ function createExtensionHandlers({ getAppVersion, pairing, vault, approve, appro
       if (!inspectLimiter.take()) return { error: "rate-limited" };
       const read = await readCredentials();
       if (read.error) return { error: read.error };
-      if (!context.authenticated || context.signal?.aborted) return { error: "not-authenticated" };
+      if (!isCurrent(context)) return { error: "not-authenticated" };
       const existing = findSaved(read.credentials, request.url, request.username.trim());
       return { mode: !existing ? "add" : String(existing.password || "") === request.password ? "unchanged" : "update" };
     });

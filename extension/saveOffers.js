@@ -137,8 +137,10 @@
       }
       if (message.type === "offer-save") {
         entry.busy = true;
-        const result = await run(async () => {
-          if (current(src) !== entry || !(await source(sender))) return { ok: false, message: "The page changed or the offer expired. Nothing was saved." };
+        const result = await run(async signal => {
+          if (signal) signal.tabId = src.tabId;
+          const currentSource = await source(sender);
+          if (signal?.aborted || current(src) !== entry || !currentSource) return { ok: false, message: "The page changed or the offer expired. Nothing was saved." };
           // save-login rechecks the vault, always asks in the desktop app, then checks again.
           return link.saveLogin({ url: entry.origin, username: entry.username, password: entry.password });
         });
