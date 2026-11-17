@@ -57,6 +57,38 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.64 installer
+
+Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.64.exe` (116,725,972 bytes).
+- SHA-256: `e102d168a558b2d9f9ea0acb5ec175709645a6dbf3bfe552494f876d10b30744`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 131 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Synthetic import/restore checks passed before packaging: bounded reads, malformed
+  input, interrupted writes, atomic replacement, group scope and lock cancellation.
+- Synthetic unlock-layout checks passed before packaging: saved preferences,
+  themes, large text, narrow windows, inactive preview, focus return, hint/reveal,
+  actual synthetic unlock and preview dismissal on lock. Rendered screens inspected.
+- Portable: `release/Secure Login Vault 1.0.64.exe` (116,491,350 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer combines [unlock layout choices](unlock-layouts.md) and
+[import/restore protections](import-restore-hardening.md). Extension 0.6.6 is
+unchanged; an existing 0.6.6 installation needs no update for these desktop changes.
+Desktop installation does not replace a signed Firefox add-on.
+
+Superseded 1.0.62 package files were removed after verification. Installer
+extraction files were cleaned automatically. Synthetic profiles from the
+implementation phases were also removed.
+
 ## Local 1.0.62 installer
 
 Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.

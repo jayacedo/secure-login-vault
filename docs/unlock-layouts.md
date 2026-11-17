@@ -34,6 +34,6 @@ against the synthetic vault, and preview dismissal on lock. Screenshots are
 generated only from this synthetic profile.
 
 No real accounts, notes, vault files, backups, browser profiles or clipboard are
-read or copied. The source and unpacked 1.0.64 build include the prior 1.0.63
-import protections. No installer is packaged for this change yet; the latest
-local installer remains 1.0.62. Extension 0.6.6 is unchanged.
+read or copied. The verified local 1.0.64 installer includes these layouts and
+the prior 1.0.63 import protections. See the [package verification record](package-privacy.md#local-1064-installer).
+Extension 0.6.6 is unchanged.

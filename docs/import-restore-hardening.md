@@ -1,7 +1,7 @@
 # Import and restore hardening
 
-Desktop 1.0.63, 2026-11-18. Built unpacked for local testing; the latest local
-installer remains 1.0.62. Extension 0.6.6 is unchanged by this phase.
+Desktop 1.0.63, 2026-11-18. Initially built unpacked; included in the verified
+local 1.0.64 installer. Extension 0.6.6 is unchanged by this phase.
 
 ## File and import limits
 
