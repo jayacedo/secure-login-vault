@@ -6,7 +6,7 @@ const { createVaultStore } = require("./services/vaultStore");
 const { isSafeExternalUrl, createPathGrants, isTrustedAppSender } = require("./services/ipcGuards");
 const { runVaultOperation, assertVaultOperationActive, beforeVaultCommit } = require("./services/vaultOperationContext");
 const { createLockManager, normalizePolicy } = require("./services/lockManager");
-const { writeJsonAtomic } = require("./services/fsUtils");
+const { writeJsonAtomic, readBoundedText, MAX_IMPORT_BYTES } = require("./services/fsUtils");
 const { buildLoginTarget, describeTargetProblem } = require("./services/siteLogin");
 const { createLoginWindows } = require("./services/loginWindows");
 const { createExtensionBridge } = require("./services/extensionBridge");
@@ -334,6 +334,9 @@ function registerAuthHandlers() {
 
   handleAppRequest("vault:add-credential", async (_event, data) => {
     return handleVaultOperation(() => vaultStore.createCredential(data));
+  });
+  handleAppRequest("vault:import-credentials", async (_event, request) => {
+    return handleVaultOperation(() => vaultStore.importCredentials(request));
   });
 
   handleAppRequest("vault:update-credential", async (_event, id, data) => {
@@ -835,7 +838,7 @@ function registerImportExportHandlers() {
 
     return handleVaultOperation(async () => {
       const filePath = result.filePaths[0];
-      const content = await fs.readFile(filePath, "utf8");
+      const content = await readBoundedText(filePath, MAX_IMPORT_BYTES, "an import file", assertVaultOperationActive);
       return {
         canceled: false,
         filePath,

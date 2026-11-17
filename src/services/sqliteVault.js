@@ -7,6 +7,7 @@ const { buildVaultHealth } = require("./vaultHealth");
 const trash = require("./credentialTrash");
 const activity = require("./activityHistory");
 const notes = require("./notes");
+const importPolicy = require("../shared/importPolicy");
 const { collectDuplicateGroups, describeDuplicateGroup } = require("./duplicateReview");
 
 let sqlitePromise;
@@ -310,7 +311,36 @@ async function resolveDuplicateReview(filePath, key, choice, guard = () => {}) {
 }
 
 async function addCredential(filePath, key, data, options = {}) {
-  return withDecryptedDatabaseWrite(filePath, key, (db) => {
+  return withDecryptedDatabaseWrite(filePath, key, db => insertCredential(db, data, options));
+}
+
+async function importCredentials(filePath, key, request) {
+  if (!request || typeof request.replace !== "boolean" ||
+      (request.expectedActiveGroup !== undefined && (typeof request.expectedActiveGroup !== "string" || request.expectedActiveGroup.length > 200))) {
+    throw createPublicError("Review the import and choose Merge or Replace first.");
+  }
+  importPolicy.rows(request.rows);
+  return withDecryptedDatabaseWrite(filePath, key, db => {
+    const activeGroup = getActiveGroupFilterValue(db);
+    if (request.expectedActiveGroup !== undefined && request.expectedActiveGroup !== activeGroup) {
+      throw createPublicError("The active group changed. Review the import again.");
+    }
+    let deleted = 0;
+    if (request.replace) {
+      // Derive replacement scope from validated rows, never a separate list
+      // supplied by the renderer. Use the same fallback as insertCredential.
+      const groups = [...new Set(request.rows.map(row => normalizeGroupValue(row.groupName) || activeGroup || ""))];
+      const matches = queryAll(db, `SELECT * FROM credentials WHERE COALESCE(group_name, '') COLLATE NOCASE IN (${groups.map(() => "?").join(",")})`, groups);
+      deleted = trash.moveToTrash(db, matches).deleted;
+    }
+    for (const row of request.rows) insertCredential(db, row);
+    // The decrypted working copy is published once, only after every insert.
+    // Throwing or a pre-commit session change leaves the encrypted file intact.
+    return { imported: request.rows.length, deleted };
+  });
+}
+
+function insertCredential(db, data, options = {}) {
     activity.setContext(db, options.source);
     validateCredentialData(data);
     const now = new Date().toISOString();
@@ -351,7 +381,6 @@ async function addCredential(filePath, key, data, options = {}) {
     stmt.free();
     const result = queryOne(db, "SELECT last_insert_rowid() AS id");
     return { id: Number(result.id), createdAt: now };
-  });
 }
 
 async function updateCredential(filePath, key, id, data) {
@@ -1741,6 +1770,7 @@ module.exports = {
   getDuplicateReview,
   resolveDuplicateReview,
   addCredential,
+  importCredentials,
   updateBrowserPassword,
   getActivityHistory,
   purgeActivityHistory,

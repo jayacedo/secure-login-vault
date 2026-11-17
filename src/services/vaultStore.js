@@ -3,7 +3,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { promisify } = require("util");
-const { writeJsonAtomic, fileExists } = require("./fsUtils");
+const { writeJsonAtomic, fileExists, readBoundedText, MAX_BACKUP_BYTES } = require("./fsUtils");
 const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, beforeVaultCommit, trackVaultBuffer } = require("./vaultOperationContext");
 const {
   listNotes, getNote, addNote, updateNote, toggleNoteFavorite, deleteNote,
@@ -28,6 +28,7 @@ const {
   getDuplicateReview,
   resolveDuplicateReview,
   addCredential,
+  importCredentials,
   updateBrowserPassword,
   getActivityHistory,
   purgeActivityHistory,
@@ -778,7 +779,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
       throw createPublicError("Enter the master password for this backup.");
     }
 
-    const raw = await fs.readFile(sourcePath, "utf8");
+    const raw = await readBoundedText(sourcePath, MAX_BACKUP_BYTES, "an encrypted backup file", assertVaultOperationActive);
     let bundle;
     try {
       bundle = JSON.parse(raw);
@@ -969,6 +970,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     getCredential,
     getCredentialDetails: id => getCredentialDetails(databaseFilePath, currentKey(), id),
     createCredential,
+    importCredentials: request => importCredentials(databaseFilePath, currentKey(), request),
     createBrowserCredential,
     updateBrowserPassword: (id, password) => { ensureUnlocked(); return updateBrowserPassword(databaseFilePath, currentKey(), Number(id), password); },
     getActivityHistory: options => { ensureUnlocked(); return getActivityHistory(databaseFilePath, currentKey(), options); },

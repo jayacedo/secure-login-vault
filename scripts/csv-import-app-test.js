@@ -1,10 +1,19 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, clipboard, dialog } = require('electron');
 const { testTempRoot } = require('./testTemp');
 const root = fs.mkdtempSync(path.join(testTempRoot(), 'csv-import-app-'));
-app.setPath('userData', root); process.env.SLV_PIPE_USER = `csv-import-${process.pid}`;
+for (const name of ['userData', 'sessionData', 'temp', 'logs']) {
+ const directory = path.join(root, name); fs.mkdirSync(directory); app.setPath(name, directory);
+}
+app.setPath('appData', root); process.env.APPDATA = root; process.env.LOCALAPPDATA = root;
+process.env.SLV_PIPE_USER = `csv-import-${process.pid}`;
+clipboard.readText = clipboard.writeText = clipboard.clear = () => { throw Error('Real clipboard forbidden'); };
+let selectedSyntheticFile = null;
+dialog.showOpenDialog = async () => selectedSyntheticFile ? { canceled: false, filePaths: [selectedSyntheticFile] } : { canceled: true };
+dialog.showSaveDialog = async () => ({ canceled: true });
+require('../src/services/browserSetup').createBrowserSetup = () => ({ status: async () => ({ supported: false, ready: false }) });
 require('../src/main');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn) { for(let i=0;i<100;i++){if(await fn())return;await sleep(80);}throw Error('CSV UI timeout'); }
@@ -16,8 +25,22 @@ async function main() {
  const masterPassword='CSV import dummy vault password';
  assert.equal((await api(`auth.createVault(${JSON.stringify({masterPassword,confirmPassword:masterPassword})})`)).ok,true);
  await run('initAuth()');
+ const oversizedFile = path.join(root, 'oversized-synthetic.csv');
+ fs.writeFileSync(oversizedFile, ''); fs.truncateSync(oversizedFile, 16 * 1024 * 1024 + 1);
+ selectedSyntheticFile = oversizedFile;
+ const rejectedFile = await api('importExport.pickImportFile()');
+ assert.equal(rejectedFile.ok, false); assert.match(rejectedFile.message, /16 MB/);
+ selectedSyntheticFile = null;
+ for (const content of ['null', '[null]', '[{"websiteName":"Bad","password":{}}]', '[{"websiteName":"Missing password"}]']) {
+  assert.equal(await run(`(()=>{try{parseImportFile('json',${JSON.stringify(content)},'synthetic.json');return false;}catch{return true;}})()`), true);
+ }
+ assert.equal(await run(`(()=>{try{parseImportFile('keepass','Title,Password\\nA,"unfinished','synthetic.csv');return false;}catch{return true;}})()`), true);
+ assert.equal(await run(`parseImportFile('json','[{"websiteName":"Synthetic JSON","password":"  dummy  "}]','synthetic.json')[0].password`), '  dummy  ');
  const existing={websiteName:'Example',websiteUrl:'https://example.com/login',username:'demo',password:'Old dummy password',groupName:'Team A',category:'WordPress'};
  await api(`credentials.add(${JSON.stringify(existing)})`);
+ const rejectedBatch = await api(`credentials.importBatch(${JSON.stringify({ rows: [existing, { ...existing, notes: 'x'.repeat(100001) }], replace: true })})`);
+ assert.equal(rejectedBatch.ok, false);
+ assert.equal((await api('credentials.getAllForExport()')).result.length, 1, 'main process rejects the whole invalid batch');
  const secret='  Dummy,"exact" password  ';
  const source='Website,Login URL,Username,Password,Group,Category\r\n'+[
  'Example,https://example.com/login,demo,Changed dummy password,Team A,WordPress',
@@ -80,6 +103,18 @@ async function main() {
  await run('openCredentialModal()');
  assert.equal(await run('document.querySelector("label[for=m-website-url] .modal-label-text").textContent'),'Login URL');
  assert.equal(await run('document.querySelector("#m-website-url").placeholder'),'https://example.com/login');
+ await run('closeCredentialModal()');
+ const jsonRows = [{websiteName:'Synthetic JSON batch',password:'  dummy JSON  ',groupName:'JSON test'}];
+ await run(`performImport(parseJsonImport(${JSON.stringify(JSON.stringify(jsonRows))}), document.createElement('button'), {replace:false,expectedActiveGroup:'Team B'})`);
+ assert.equal((await api('credentials.getAllForExport()')).result.find(row=>row.websiteName==='Synthetic JSON batch').password,'  dummy JSON  ');
+ await run(`openImportModeModal(${JSON.stringify(jsonRows)}, document.createElement('button'))`);
+ assert.equal(await run('!!document.querySelector("#import-mode-overlay.is-open")'),true);
+ await run('handleLockVault()');
+ assert.equal(await run('document.querySelector("#import-mode-overlay")===null'),true,'lock removes import controls and their row closures');
+ assert.equal((await api('auth.unlockVault({masterPassword:'+JSON.stringify(masterPassword)+'})')).ok,true);
+ await run('initAuth()');
+ await run(`(async()=>{const pending=openImportModeModal(${JSON.stringify(jsonRows)}, document.createElement('button'));closeSettingsModal();await pending;})()`);
+ assert.equal(await run('document.querySelector("#import-mode-overlay")===null'),true,'cancelled asynchronous review must not reopen');
  console.log(`PASS CSV preview, organization defaults, duplicates, exact passwords, safe DOM, cancel/lock/group-change guards, pagination and responsive layouts. Screenshots: ${root}`);
  app.exit(0);
 }

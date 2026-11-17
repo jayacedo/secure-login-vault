@@ -77,6 +77,7 @@ document.addEventListener("keydown", (e) => {
     }
     // Priority: sub-modals first, then primary modals
     const subModalOrder = [
+      "#import-mode-overlay",
       "#csv-import-overlay",
       "#authenticator-overlay",
       "#qr-lightbox-overlay",
@@ -103,6 +104,7 @@ document.addEventListener("keydown", (e) => {
         if (selector === "#csv-import-overlay" && csvReviewState?.busy) { e.preventDefault(); return; }
         el.classList.remove("is-open");
         if (selector === "#csv-import-overlay") closeCsvImportReview();
+        if (selector === "#import-mode-overlay") closeImportModeModal();
         if (selector === "#authenticator-overlay") closeAuthenticator();
         if (selector === "#qr-lightbox-overlay") closeQrLightbox();
         if (selector === "#credential-modal-overlay") closeCredentialModal();
@@ -4010,6 +4012,7 @@ async function refreshBackupCheckStatus() {
 function closeSettingsModal() {
   closeBackupCheck();
   closeCsvImportReview();
+  closeImportModeModal();
   applyTextSize(getTextSize());
   brandAccentPreview = null;
   applyAccentColor(getBrandAccent());
@@ -5225,7 +5228,8 @@ async function runImportFlow(formatKind, triggerBtn) {
     return;
   }
 
-  await openImportModeModal(rows, triggerBtn);
+  try { await openImportModeModal(rows, triggerBtn); }
+  catch (error) { setSettingsStatus(error.message || "Could not review the import.", true); }
 }
 
 // Lets the user choose how the parsed rows should land: Merge (add alongside
@@ -5235,11 +5239,19 @@ async function runImportFlow(formatKind, triggerBtn) {
 // group from another device" case). Replace never touches any group that
 // isn't actually present in the file.
 async function openImportModeModal(rows, triggerBtn) {
+  const request = csvReviewRequest;
+  const activeRes = await window.secureLoginVault.groups.getActive();
+  if (request !== csvReviewRequest) return;
+  if (!activeRes.ok) throw Error("Unlock the vault and review the import again.");
+  const expectedActiveGroup = activeRes.result || "";
+  rows = rows.map(row => ({ ...row, groupName: row.groupName?.trim() || expectedActiveGroup }));
   const groupKeys = Array.from(new Set(rows.map((r) => (r.groupName || "").trim())));
   const groupLabels = groupKeys.map((g) => (g ? g : "Unassigned"));
 
   const existingRes = await window.secureLoginVault.credentials.getAllForExport();
-  const existing = existingRes.ok ? existingRes.result : [];
+  if (request !== csvReviewRequest) return;
+  if (!existingRes.ok) throw Error("Unlock the vault and review the import again.");
+  const existing = existingRes.result;
   const existingCount = existing.filter((c) => groupKeys.includes((c.groupName || "").trim())).length;
 
   const overlay = getOrCreateImportModeOverlay();
@@ -5273,16 +5285,21 @@ async function openImportModeModal(rows, triggerBtn) {
   `;
   overlay.classList.add("is-open");
 
-  const close = () => overlay.classList.remove("is-open");
+  const close = closeImportModeModal;
   overlay.querySelector("#import-mode-close-btn").addEventListener("click", close);
   overlay.querySelector("#import-mode-merge-btn").addEventListener("click", () => {
     close();
-    performImport(rows, triggerBtn, { replace: false, groupKeys: [] });
+    performImport(rows, triggerBtn, { replace: false, expectedActiveGroup });
   });
   overlay.querySelector("#import-mode-replace-btn").addEventListener("click", () => {
     close();
-    performImport(rows, triggerBtn, { replace: true, groupKeys });
+    performImport(rows, triggerBtn, { replace: true, expectedActiveGroup });
   });
+}
+
+function closeImportModeModal() {
+  csvReviewRequest++;
+  document.querySelector("#import-mode-overlay")?.remove();
 }
 
 function getOrCreateImportModeOverlay() {
@@ -5296,42 +5313,27 @@ function getOrCreateImportModeOverlay() {
   return overlay;
 }
 
-async function performImport(rows, triggerBtn, { replace, groupKeys }) {
+async function performImport(rows, triggerBtn, { replace, expectedActiveGroup }) {
+  const request = csvReviewRequest;
   setSettingsButtonsDisabled(true);
   const originalLabel = triggerBtn.innerHTML;
   triggerBtn.innerHTML = `<span>Importing...</span>`;
 
-  let deleted = 0;
-  if (replace && groupKeys.length > 0) {
-    const delRes = await window.secureLoginVault.credentials.removeByGroups(groupKeys);
-    if (delRes.ok) deleted = delRes.result.deleted;
+  try {
+    ImportPolicy.rows(rows);
+    const response = await window.secureLoginVault.credentials.importBatch({ rows, replace, expectedActiveGroup });
+    if (request !== csvReviewRequest) return;
+    if (!response.ok) throw Error(response.message || "Import failed. No partial import was saved.");
+    const { imported, deleted } = response.result;
+    setSettingsStatus((replace ? `Replaced ${deleted} existing. ` : "") + `Imported ${imported} credentials successfully.`);
+    showToast("Import complete", "info");
+    refreshCredentials();
+  } catch (error) {
+    setSettingsStatus(error.message || "Could not import the file.", true);
+  } finally {
+    setSettingsButtonsDisabled(false);
+    triggerBtn.innerHTML = originalLabel;
   }
-
-  let imported = 0;
-  let failed = 0;
-  const failedNames = [];
-
-  for (const row of rows) {
-    const res = await window.secureLoginVault.credentials.add(row);
-    if (res.ok) {
-      imported++;
-    } else {
-      failed++;
-      failedNames.push(row.websiteName || "(unnamed)");
-    }
-  }
-
-  setSettingsButtonsDisabled(false);
-  triggerBtn.innerHTML = originalLabel;
-
-  const deletedNote = replace ? `Replaced ${deleted} existing. ` : "";
-  const summary = failed
-    ? `${deletedNote}Imported ${imported} of ${rows.length}. ${failed} failed: ${failedNames.slice(0, 5).join(", ")}${failedNames.length > 5 ? "..." : ""}`
-    : `${deletedNote}Imported ${imported} credential${imported === 1 ? "" : "s"} successfully.`;
-
-  setSettingsStatus(summary, Boolean(failed));
-  showToast(failed ? "Import finished with some errors" : "Import complete", failed ? "error" : "info");
-  refreshCredentials();
 }
 
 function parseImportFile(formatKind, content, fileName) {
@@ -5342,6 +5344,7 @@ function parseImportFile(formatKind, content, fileName) {
 }
 
 function parseJsonImport(content) {
+  ImportPolicy.text(content);
   let data;
   try {
     data = JSON.parse(content);
@@ -5349,11 +5352,15 @@ function parseJsonImport(content) {
     throw new Error("That file is not valid JSON.");
   }
 
-  const list = Array.isArray(data) ? data : Array.isArray(data.credentials) ? data.credentials : null;
+  const list = Array.isArray(data) ? data : Array.isArray(data?.credentials) ? data.credentials : null;
   if (!list) throw new Error("JSON file must contain an array of credentials.");
 
-  return list
-    .map((item) => ({
+  if (list.length > ImportPolicy.MAX_ROWS) throw Error("Import at most 5,000 credentials at a time.");
+  const rows = list
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("Each JSON credential must be an object.");
+      for (const value of Object.values(item)) if (value !== null && typeof value === "object") throw Error("JSON credential fields must contain plain values.");
+      return ({
       websiteName: String(item.websiteName || item.website_name || item.name || "").trim(),
       websiteUrl: String(item.websiteUrl || item.website_url || item.url || "").trim(),
       category: String(item.category || "Other").trim() || "Other",
@@ -5365,59 +5372,16 @@ function parseJsonImport(content) {
       notes: String(item.notes || "").trim(),
       qrCode: safeImageSrc(item.qrCode || item.qr_code || ""),
       favorite: Boolean(item.favorite)
-    }))
-    .filter((row) => row.websiteName && row.password);
+      });
+    });
+  if (rows.length) ImportPolicy.rows(rows);
+  return rows;
 }
 
 // Minimal RFC-4180-ish CSV parser: handles quoted fields, escaped quotes
 // ("" inside a quoted field), commas/newlines inside quotes, and CRLF/LF.
 function parseCsvRows(content) {
-  const rows = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-  const text = content.replace(/^\uFEFF/, ""); // strip BOM if present
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (ch === "\r") {
-      // swallow; \n (if present) handles the row break
-    } else {
-      field += ch;
-    }
-  }
-
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
-  return rows.filter((r) => r.some((cell) => cell.trim() !== ""));
+  return CsvImport.parseRows(content).filter(row => row.some(cell => cell.trim()));
 }
 
 function parseCsvImport(content, mapRowFn) {
@@ -5427,13 +5391,15 @@ function parseCsvImport(content, mapRowFn) {
   const header = rows[0].map((h) => h.trim().toLowerCase());
   const dataRows = rows.slice(1);
 
-  return dataRows
+  const mapped = dataRows
     .map((cells) => {
-      const record = {};
+      if (cells.length !== header.length) throw Error("CSV column count does not match the header.");
+      const record = Object.create(null);
       header.forEach((key, idx) => (record[key] = key === "password" ? (cells[idx] || "") : (cells[idx] || "").trim()));
       return mapRowFn(record);
-    })
-    .filter((row) => row.websiteName && row.password);
+    });
+  if (mapped.length) ImportPolicy.rows(mapped);
+  return mapped;
 }
 
 // Maps a CSV exported by this app (or a similarly-shaped generic CSV).

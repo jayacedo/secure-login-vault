@@ -1,5 +1,6 @@
 /* Shared by the renderer and import tests; contains no vault or DOM access. */
 const CsvImport = (() => {
+  const policy = typeof module !== 'undefined' ? require('../shared/importPolicy') : ImportPolicy;
   const fields = [
     ['websiteName', 'Website Name', ['website name', 'website_name', 'website', 'name']],
     ['websiteUrl', 'Login URL', ['login url', 'login_url', 'website url', 'website_url', 'url']],
@@ -10,9 +11,17 @@ const CsvImport = (() => {
   ];
 
   function parseRows(content) {
+    policy.text(content);
     const rows = []; let row = [], field = '', quoted = false, closed = false;
     const text = content.replace(/^\uFEFF/, '');
-    const endField = () => { row.push(field); field = ''; closed = false; };
+    const endField = () => {
+      if (row.length >= policy.MAX_COLUMNS) throw Error('CSV files may contain at most 32 columns.');
+      row.push(field); field = ''; closed = false;
+    };
+    const endRow = () => {
+      if (rows.length >= policy.MAX_ROWS + 1) throw Error('Import at most 5,000 CSV rows at a time. Split the file and try again.');
+      rows.push(row); row = [];
+    };
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
       if (quoted) {
@@ -23,15 +32,16 @@ const CsvImport = (() => {
       } else if (ch === ',') endField();
       else if (ch === '\r' || ch === '\n') {
         if (ch === '\r' && text[i + 1] === '\n') i++;
-        endField(); rows.push(row); row = [];
+        endField(); endRow();
       } else if (ch === '"' && !field && !closed) quoted = true;
       else {
         if (closed || ch === '"') throw Error('Invalid CSV quoting. Save the sheet as CSV and try again.');
         field += ch;
       }
+      if (field.length > policy.MAX_CELL) throw Error('CSV fields may contain at most 100,000 characters.');
     }
     if (quoted) throw Error('The CSV contains an unclosed quoted field.');
-    if (field || row.length || closed) { endField(); rows.push(row); }
+    if (field || row.length || closed) { endField(); endRow(); }
     return rows;
   }
 
@@ -79,6 +89,7 @@ const CsvImport = (() => {
       const data = { ...entry.data, groupName: entry.data.groupName || defaults.groupName || '',
         category: entry.categoryMissing ? (defaults.category || 'Other') : entry.data.category };
       let issue = entry.issue;
+      try { policy.row(data); } catch (error) { issue ||= error.message; }
       if (!data.websiteName) issue ||= 'Website Name is required';
       if (!data.password) issue ||= 'Password is required';
       if (data.websiteUrl) {

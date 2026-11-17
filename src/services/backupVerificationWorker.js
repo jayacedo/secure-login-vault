@@ -2,26 +2,13 @@ const { parentPort, workerData } = require("worker_threads");
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
+const { readBoundedFile, MAX_BACKUP_BYTES } = require("./fsUtils");
 const { createVaultStore } = require("./vaultStore");
 
 async function run() {
   let bytes, store;
   try {
-    const source = await fs.open(workerData.sourcePath, "r");
-    try {
-      const stat = await source.stat();
-      if (!stat.isFile() || stat.size > 256 * 1024 * 1024) {
-        throw Object.assign(new Error("Choose an encrypted backup file up to 256 MB."), { isPublic: true });
-      }
-      bytes = Buffer.alloc(stat.size);
-      let offset = 0;
-      while (offset < bytes.length) {
-        const { bytesRead } = await source.read(bytes, offset, bytes.length - offset, offset);
-        if (!bytesRead) throw new Error("Backup changed during read");
-        offset += bytesRead;
-      }
-      if ((await source.stat()).size !== stat.size) throw new Error("Backup changed during read");
-    } finally { await source.close(); }
+    bytes = await readBoundedFile(workerData.sourcePath, MAX_BACKUP_BYTES, "an encrypted backup file");
     const fingerprint = crypto.createHash("sha256").update(bytes).digest("hex");
     const snapshot = path.join(workerData.workspace, "snapshot.slvbackup");
     await fs.writeFile(snapshot, bytes, { flag: "wx", mode: 0o600 });

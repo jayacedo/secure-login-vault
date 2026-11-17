@@ -93,27 +93,18 @@ async function commitCsvImportReview() {
   const rows = getCsvReviewedRows();
   const overlay = document.querySelector('#csv-import-overlay');
   overlay.querySelectorAll('button,input').forEach(el => { el.disabled = true; });
-  let imported = 0, failed = 0;
   try {
-    const active = await window.secureLoginVault.groups.getActive();
+    const result = await window.secureLoginVault.credentials.importBatch({
+      rows: rows.filter(row => row.include).map(row => row.data), replace: false, expectedActiveGroup: state.activeGroup
+    });
     if (csvReviewState !== state) return;
-    if (!active.ok || (active.result || '') !== state.activeGroup) throw Error('The active group changed. Close this preview and choose the file again.');
-    for (const row of rows.filter(row => row.include)) {
-      if (csvReviewState !== state) return;
-      const result = await window.secureLoginVault.credentials.add(row.data);
-      if (csvReviewState !== state) return;
-      if (result.ok) imported++; else failed++;
-    }
+    if (!result.ok) throw Error(result.message || 'Could not import the file.');
     closeCsvImportReview();
-    const message = `Imported ${imported}; skipped ${rows.filter(row => !row.include).length}; failed ${failed}.`;
-    setSettingsStatus(message, failed > 0); showToast(message, failed ? 'error' : 'info'); refreshCredentials();
+    const message = `Imported ${result.result.imported}; skipped ${rows.filter(row => !row.include).length}; failed 0.`;
+    setSettingsStatus(message, false); showToast(message, 'info'); refreshCredentials();
   } catch (error) {
     if (csvReviewState !== state) return;
-    // Avoid offering a retry after any writes: reopening rechecks duplicates.
-    if (imported || failed) { closeCsvImportReview(); setSettingsStatus(`Import stopped. Added ${imported}; failed ${failed}. Choose the file again to review remaining rows.`, true); refreshCredentials(); }
-    else {
-      state.busy = false; overlay.querySelectorAll('button,input').forEach(el => { el.disabled = false; });
-      renderCsvImportReview(); document.querySelector('#csv-import-error').textContent = error.message || 'Could not import the file.';
-    }
+    state.busy = false; overlay.querySelectorAll('button,input').forEach(el => { el.disabled = false; });
+    renderCsvImportReview(); document.querySelector('#csv-import-error').textContent = error.message || 'Could not import the file.';
   }
 }

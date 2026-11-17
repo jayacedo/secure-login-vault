@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   credentials: {
+    importBatch: request => ipcRenderer.invoke("vault:import-credentials", request),
     previewMove: choice => ipcRenderer.invoke("vault:preview-credential-move", choice),
     moveToGroup: choice => ipcRenderer.invoke("vault:move-credentials-to-group", choice),
     previewCategory: choice => ipcRenderer.invoke("vault:preview-credential-category", choice),
