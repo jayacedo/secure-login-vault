@@ -1,5 +1,18 @@
 // Plaintext UI only: no note content in browser storage, logs, HTML, or URLs.
 let notesView = null;
+// Chromium's default selection copy includes themed HTML. Route reading-pane
+// copies through the plain-text clipboard service, including its lock cleanup.
+document.addEventListener("copy", event => {
+  if (event.defaultPrevented || !notesView?.note || notesView.editing) return;
+  if (document.activeElement?.closest("input, textarea, select, [contenteditable]")) return;
+  const detail = document.querySelector("#note-detail"), selection = window.getSelection();
+  if (!detail || !selection || selection.isCollapsed || !selection.rangeCount ||
+      !detail.contains(selection.anchorNode) || !detail.contains(selection.focusNode)) return;
+  const text = selection.toString();
+  if (!text) return;
+  event.preventDefault();
+  copyToClipboard(text, "Note text copied!", null, true);
+});
 function renderNotesIcon() {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>';
 }

@@ -8,6 +8,10 @@ Workspace buttons remain visible in compact windows.
 - Select a note to read it. **Edit note** opens its editor; **Cancel** discards
   edits after confirmation if text changed. Changing workspace or selecting
   another note also asks before discarding unsaved edits.
+- Since 1.0.62, selecting text in the reading pane and copying uses plain text.
+  Line breaks are preserved; theme colors, fonts and backgrounds are not copied
+  into email editors. Only the selected text is copied. These copies use the
+  configured clipboard timeout and are cleared on lock if still unchanged.
 - Search titles and text, filter Favorites, or sort by update time or title.
   Results use pages of 50 notes. Search and filters preserve an open draft.
 - **Delete note** asks for confirmation and permanently removes that note.
@@ -42,7 +46,8 @@ search, favorites, paging, stale updates, encryption, lock cancellation, and
 old/new encrypted backup compatibility.
 
 `npm run test:notes-app` uses a fresh isolated Electron profile with real
-clipboard access blocked and browser registration replaced. It checks editing,
+clipboard mocked in memory and browser registration replaced. It checks plain-text
+selection copying, partial selections, preserved line breaks, lock cleanup, editing,
 discard confirmation, safe text rendering, deletion, pagination, responsive
 layouts, navigation and late responses after locking. It never opens an existing
 user vault or browser profile.

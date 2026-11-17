@@ -7,7 +7,12 @@ for (const name of ["userData", "sessionData", "temp", "logs"]) {
 }
 app.setPath("appData", root); process.env.APPDATA = root; process.env.LOCALAPPDATA = root;
 process.env.SLV_PIPE_USER = `notes-${process.pid}`;
-clipboard.readText = clipboard.writeText = clipboard.clear = () => { throw Error("Real clipboard forbidden"); };
+// In-memory clipboard only: never call the original operating-system methods.
+let copiedText = "", copiedHtml = "", copyCount = 0;
+clipboard.readText = () => copiedText;
+clipboard.writeText = text => { copiedText = text; copiedHtml = ""; copyCount++; };
+clipboard.clear = () => { copiedText = ""; copiedHtml = ""; };
+clipboard.write = clipboard.readHTML = clipboard.writeHTML = () => { throw Error("Real clipboard forbidden"); };
 dialog.showOpenDialog = dialog.showSaveDialog = async () => ({ canceled: true });
 require("../src/services/browserSetup").createBrowserSetup = () => ({ status: async () => ({ supported: false, ready: false }) });
 require("../src/main");
@@ -33,6 +38,36 @@ async function main() {
   await click("#note-save");
   await until(() => run("!!document.querySelector('#note-heading') && !notesView.busy"));
   assert.equal(await run("document.querySelector('#note-heading').textContent"), "Synthetic project checklist");
+  const syntheticNote = "Synthetic notes only.\nReview the demo layout.\nCheck the fake checklist.";
+  const copySelection = (start, end) => run(`(() => {
+    const node = document.querySelector('#note-reading-body').firstChild;
+    const selection = window.getSelection(); selection.removeAllRanges();
+    const range = document.createRange(); range.setStart(node, ${start}); range.setEnd(node, ${end}); selection.addRange(range);
+    const event = new Event('copy', { bubbles: true, cancelable: true });
+    document.dispatchEvent(event); return event.defaultPrevented;
+  })()`);
+  copiedHtml = '<span style="background:#123">Old synthetic rich text</span>';
+  assert.equal(await copySelection(0, syntheticNote.length), true, "native rich-text copy is suppressed");
+  await until(() => copyCount === 1);
+  assert.equal(copiedText, syntheticNote, "multiline text is unchanged");
+  assert.equal(copiedHtml, "", "plain-text write replaces rich clipboard formats");
+  assert.equal(await copySelection(10, 28), true);
+  await until(() => copyCount === 2);
+  assert.equal(copiedText, syntheticNote.slice(10, 28), "only the selected portion is copied");
+  assert.equal(await run(`(() => {
+    const input = document.querySelector('#notes-search'); input.focus(); input.value = 'Synthetic query'; input.select();
+    const event = new Event('copy', { bubbles: true, cancelable: true }); input.dispatchEvent(event);
+    input.value = ''; input.blur(); return event.defaultPrevented;
+  })()`), false, "search input copy is not replaced by an old note selection");
+  assert.equal(await run(`(() => {
+    const selection = window.getSelection(); selection.removeAllRanges();
+    const event = new Event('copy', { bubbles: true, cancelable: true }); document.dispatchEvent(event); return event.defaultPrevented;
+  })()`), false, "empty selections keep default behavior");
+  assert.equal(await run(`(() => {
+    const range = document.createRange(); range.selectNodeContents(document.querySelector('#dashboard-title'));
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    const event = new Event('copy', { bubbles: true, cancelable: true }); document.dispatchEvent(event); selection.removeAllRanges(); return event.defaultPrevented;
+  })()`), false, "copy outside the note is unchanged");
   await click("#note-favorite"); await until(() => run("notesView.note.favorite===1 && !notesView.busy"));
   await click("#notes-favorites"); await until(() => run("notesView.favorites && document.querySelectorAll('[data-note-id]').length===1"));
   await click("#notes-favorites");
@@ -93,6 +128,7 @@ async function main() {
   await click("#lock-vault-button"); await until(() => run("!!document.querySelector('#master-password')"));
   assert.equal(await run("notesView===null && !document.querySelector('#note-body')"), true);
   assert.equal((await api("notes.list({})")).ok, false, "IPC rejects notes while locked");
+  await until(() => copiedText === "");
   await api(`auth.unlockVault(${JSON.stringify({ masterPassword: password })})`);
   await run("initAuth()"); await until(() => run("!!document.querySelector('#open-notes-btn')"));
   await click("#open-notes-btn"); await until(() => run("document.querySelectorAll('[data-note-id]').length>0"));
@@ -100,7 +136,7 @@ async function main() {
   await run("openNote(Number(document.querySelector('[data-note-id]').dataset.noteId));handleLockVault()");
   await until(() => run("!!document.querySelector('#master-password')")); await sleep(250);
   assert.equal(await run("notesView===null && !document.querySelector('#note-heading') && !document.body.textContent.includes('Dummy planning notes')"), true);
-  console.log(`Notes UI passed: CRUD, safe text, dirty edits, pagination, navigation, resize and lock races. Synthetic screenshots: ${root}`);
+  console.log(`Notes UI passed: plain-text selection copy, clipboard lock cleanup, CRUD, safe text, dirty edits, pagination, navigation, resize and lock races. Synthetic screenshots: ${root}`);
   app.exit(0);
 }
 setTimeout(() => { console.error("Notes UI timeout"); app.exit(1); }, 120000).unref();
