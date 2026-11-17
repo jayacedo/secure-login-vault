@@ -57,6 +57,36 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.66 installer
+
+Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.66.exe` (116,728,199 bytes).
+- SHA-256: `71eb2e8f39a824f40d99cc40e21b4ba091bb0fe300765f2ffd0469af1acdb8a0`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 134 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Before packaging, synthetic export tests passed for fresh password verification,
+  persisted cooldown, single-use format/path/session binding, expiry, cancellation,
+  lock races, reload/password-change revocation, warning and password-field cleanup.
+  CSV compatibility and existing IPC/lock hardening regressions also passed.
+- Portable: `release/Secure Login Vault 1.0.66.exe` (116,493,563 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer adds [plaintext export protection](plaintext-export-protection.md).
+Encrypted backup behavior and extension 0.6.6 are unchanged. Desktop installation
+does not replace a signed Firefox add-on.
+
+Superseded 1.0.65 package files were removed after verification. Installer
+extraction files were cleaned automatically. Synthetic profiles from the
+implementation phase were already removed.
+
 ## Local 1.0.65 installer
 
 Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
