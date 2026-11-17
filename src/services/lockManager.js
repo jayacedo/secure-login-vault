@@ -103,9 +103,11 @@ function createLockManager({ onLock, setTimer = setTimeout, clearTimer = clearTi
     },
 
     setPolicy(next) {
+      const previous = policy;
       policy = normalizePolicy(next);
       armIdle();
       if (policy.backgroundGraceSeconds === null) clearBackground();
+      else if (backgrounded && dialogDepth === 0 && previous.backgroundGraceSeconds !== policy.backgroundGraceSeconds) startBackgroundLock();
     },
 
     // Call when the vault becomes unlocked (true) or locked by any path (false).
@@ -114,6 +116,7 @@ function createLockManager({ onLock, setTimer = setTimeout, clearTimer = clearTi
       clearBackground();
       if (unlocked) {
         armIdle();
+        if (backgrounded && dialogDepth === 0) startBackgroundLock();
       } else {
         clearIdle();
       }

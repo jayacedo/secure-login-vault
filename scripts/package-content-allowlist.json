@@ -17,6 +17,7 @@
     "package.json",
     "src/login/formFill.js",
     "src/main.js",
+    "src/services/sensitiveClipboard.js",
     "src/native-host/config.js",
     "src/native-host/framing.js",
     "src/native-host/host.js",

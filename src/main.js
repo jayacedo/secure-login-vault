@@ -21,6 +21,7 @@ const { createBackupVerification } = require("./services/backupVerification");
 const { createAuthenticator } = require("./services/authenticator");
 const { createDesktopIntegration, DesktopIntegrationError } = require("./services/desktopIntegration");
 const { applySessionPermissions } = require("./services/sessionPermissions");
+const { createSensitiveClipboard } = require("./services/sensitiveClipboard");
 
 const isDevelopment = !app.isPackaged;
 const DEFAULT_ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
@@ -36,6 +37,7 @@ let automaticBackups;
 let backupVerification;
 let trashMaintenance;
 let authenticator;
+let sensitiveClipboard;
 let desktopIntegration;
 let compactUnlock = false;
 let dashboardBounds;
@@ -158,6 +160,7 @@ function applyWindowState(state) {
 }
 
 function lockDesktopVault(reason, notify = true) {
+  sensitiveClipboard?.clear();
   backupVerification?.cancel();
   authenticator?.clear(); pathGrants.clear(); saveApprovalAbort?.abort();
   lockManager?.setUnlocked(false);
@@ -199,8 +202,15 @@ function createMainWindow() {
     const state = applyWindowState(await vaultStore.getState());
     if (!desktopIntegration?.shouldStartHidden(process.argv, state.hasVault)) mainWindow.show();
   });
-  for (const event of ["did-start-loading", "render-process-gone", "destroyed"]) {
-    mainWindow.webContents.on(event, () => { authenticator?.clear(); backupVerification?.cancel(); });
+  mainWindow.webContents.on("did-start-loading", () => {
+    sensitiveClipboard?.clear(); authenticator?.clear(); backupVerification?.cancel();
+  });
+  for (const event of ["render-process-gone", "destroyed"]) {
+    // Do not send into a crashed/destroyed renderer. The main process revokes
+    // the session immediately, including browser access and pending work.
+    mainWindow.webContents.on(event, () => {
+      if (!servicesDisposed) lockDesktopVault("renderer-gone", false);
+    });
   }
 
   // Background auto-lock is enforced here, not in the renderer: minimizing or
@@ -252,6 +262,7 @@ function createMainWindow() {
 }
 
 function registerAuthHandlers() {
+  handleAppRequest("vault:copy-text", async (_event, payload) => ({ ok: true, result: await sensitiveClipboard.copy(payload) }));
   // ─── Auth & vault lifecycle ─────────────────────────────────────────────────
   handleAppRequest("vault:get-state", async () => {
     return applyWindowState(await vaultStore.getState());
@@ -1091,6 +1102,7 @@ app.whenReady().then(async () => {
   if (!ownsDesktopInstance) return;
   applySessionPermissions(session.defaultSession, { getMainWindow: () => mainWindow, pageUrl: appPageUrl });
   vaultStore = createVaultStore(app.getPath("userData"));
+  sensitiveClipboard = createSensitiveClipboard({ clipboard, vault: vaultStore });
   // Register before asynchronous service initialization. These boundaries bypass
   // inactivity settings and native-dialog grace periods. Resume also locks as a
   // fallback if the platform did not deliver a suspend notification.
@@ -1194,7 +1206,7 @@ function disposeDesktopServices() {
   desktopIntegration?.dispose();
   automaticBackups?.stop();
   clearInterval(trashMaintenance);
-  clipboardCleanup = authenticator?.clear() || Promise.resolve();
+  clipboardCleanup = Promise.all([authenticator?.clear(), sensitiveClipboard?.clear()]);
   if (extensionBridge) {
     extensionBridge.stop();
   }

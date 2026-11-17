@@ -3262,7 +3262,7 @@ async function openSettingsModal() {
           <div class="settings-row">
             <div class="settings-row-label">
               <span class="settings-row-name">Clipboard Auto-Clear</span>
-              <span class="settings-row-hint">Clear copied passwords from clipboard automatically.</span>
+              <span class="settings-row-hint">Clear copied secrets after the chosen delay. Locking or closing SLV also attempts cleanup, even with the timer off. Different text copied afterward is preserved.</span>
             </div>
             <div class="settings-row-control">
               <select class="settings-select" id="clipboard-clear-select">
@@ -5958,7 +5958,7 @@ function setupPasswordGenerator(container) {
   // Copy button
   copyBtn.addEventListener("click", () => {
     if (!lastGenerated) return;
-    copyToClipboard(lastGenerated, "Password copied!", copyBtn, false);
+    copyToClipboard(lastGenerated, "Password copied!", copyBtn, true);
   });
 
   // Use button — puts generated password into the password field
@@ -6421,9 +6421,6 @@ function renderManageCategoriesIcon() {
 
 // ─── Phase 8: Clipboard Management ──────────────────────────────────────────
 
-// Auto-clear timer reference
-let _clipboardClearTimer = null;
-
 /**
  * Copy text to clipboard, show a toast, and schedule auto-clear.
  * @param {string}  text        - Text to copy
@@ -6453,7 +6450,8 @@ function resolveWebsiteUrl(rawValue) {
 }
 
 function copyToClipboard(text, label, triggerEl = null, sensitive = false) {
-  navigator.clipboard.writeText(text).then(() => {
+  return window.secureLoginVault.clipboard.copy({ text, sensitive, delayMs: sensitive ? getClipboardClearDelay() : 0 }).then(response => {
+    if (!response.ok) throw new Error("Copy failed");
     // Visual feedback on trigger button
     if (triggerEl) {
       triggerEl.classList.add("is-copied");
@@ -6463,19 +6461,9 @@ function copyToClipboard(text, label, triggerEl = null, sensitive = false) {
     // Show toast
     showToast(label, sensitive ? "sensitive" : "info");
 
-    // Auto-clear clipboard for sensitive values (passwords)
-    if (sensitive) {
-      const delay = getClipboardClearDelay();
-      if (delay > 0) {
-        clearTimeout(_clipboardClearTimer);
-        _clipboardClearTimer = setTimeout(() => {
-          navigator.clipboard.writeText("").catch(() => {});
-          showToast("Clipboard cleared automatically", "info");
-        }, delay);
-      }
-    }
+    // Sensitive cleanup is owned by the main process and survives UI teardown.
   }).catch(() => {
-    showToast("Failed to copy - check browser permissions", "error");
+    showToast("Could not copy. Unlock the vault and try again.", "error");
   });
 }
 

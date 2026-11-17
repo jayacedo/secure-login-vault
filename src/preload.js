@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("secureLoginVault", {
   appName: "Secure Login Vault",
   phase: "UI Polish",
+  clipboard: { copy: payload => ipcRenderer.invoke("vault:copy-text", payload) },
 
   auth: {
     getState:     ()        => ipcRenderer.invoke("vault:get-state"),

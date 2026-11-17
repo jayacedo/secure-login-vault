@@ -251,4 +251,39 @@ for (const bad of [
   assert.deepEqual(locks, ["inactivity"]);
 }
 
+// Policy changes must affect an already-backgrounded window, including enabling
+// a previously disabled policy. Resyncing an unchanged policy cannot defer it.
+for (const original of [60, null]) {
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: original });
+  manager.setUnlocked(true); manager.windowBackgrounded();
+  manager.setPolicy({ idleSeconds: 0, backgroundGraceSeconds: 1 });
+  clock.advance(500);
+  manager.setPolicy({ idleSeconds: 0, backgroundGraceSeconds: 1 });
+  clock.advance(500);
+  assert.deepEqual(locks, ["background"]);
+}
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 60 });
+  manager.setUnlocked(true); manager.windowBackgrounded();
+  manager.setPolicy({ idleSeconds: 0, backgroundGraceSeconds: 0 });
+  assert.deepEqual(locks, ["background"], "zero grace applies immediately");
+}
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 1 });
+  manager.setUnlocked(true); manager.windowBackgrounded();
+  manager.setPolicy({ idleSeconds: 0, backgroundGraceSeconds: null });
+  clock.advance(60000); assert.deepEqual(locks, [], "disabling cancels background timer");
+}
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 60 });
+  manager.setUnlocked(true); manager.pauseBackground(); manager.windowBackgrounded();
+  manager.setPolicy({ idleSeconds: 0, backgroundGraceSeconds: 0 });
+  clock.advance(1000); assert.deepEqual(locks, [], "policy changes respect bounded dialog grace");
+  manager.resumeBackground(); clock.advance(500); assert.deepEqual(locks, ["background"]);
+}
+{
+  const { clock, locks, manager } = setup({ idleSeconds: 0, backgroundGraceSeconds: 1 });
+  manager.windowBackgrounded(); manager.setUnlocked(true);
+  clock.advance(1000); assert.deepEqual(locks, ["background"], "unlock in background arms policy");
+}
 console.log("lock-manager tests passed");

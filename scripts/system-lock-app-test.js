@@ -8,13 +8,18 @@ for (const name of ["userData", "sessionData", "temp", "logs"]) {
 }
 app.setPath("appData", root); process.env.APPDATA = root; process.env.LOCALAPPDATA = root;
 process.env.SLV_PIPE_USER = `system-lock-${process.pid}`;
-clipboard.readText = clipboard.writeText = clipboard.clear = () => { throw Error("Real clipboard forbidden"); };
+// Entire clipboard is an in-memory mock; never call any original OS method.
+let syntheticClipboard = "";
+clipboard.readText = async () => syntheticClipboard;
+clipboard.writeText = async value => { syntheticClipboard = value; };
+clipboard.clear = async () => { syntheticClipboard = ""; };
 dialog.showOpenDialog = dialog.showSaveDialog = async () => ({ canceled: true });
 powerMonitor.getSystemIdleState = () => "locked";
-let lastUnlock;
+let lastUnlock, testStore;
 const vaultModule = require("../src/services/vaultStore"), originalCreateStore = vaultModule.createVaultStore;
 vaultModule.createVaultStore = (...args) => {
   const store = originalCreateStore(...args), unlock = store.unlockVault;
+  testStore = store;
   store.unlockVault = (...params) => (lastUnlock = unlock(...params));
   return store;
 };
@@ -37,12 +42,16 @@ async function main() {
   await until(() => run("!!document.querySelector('#open-notes-btn')"));
   // These events are emitted into this test process only. Windows is never locked or suspended.
   await api("settings.setLockPolicy({idleSeconds:0,backgroundGraceSeconds:null})");
+  await run('copyToClipboard("synthetic copied secret", "Copied", null, true)');
+  assert.equal(syntheticClipboard, "synthetic copied secret");
   const note = (await api('notes.add({title:"Synthetic note",body:"Synthetic private note text"})')).result;
   await run(`renderNotesWorkspace(_lastAuthState);openNote(${note.id})`);
   await until(() => run("!!document.querySelector('#note-heading')"));
   powerMonitor.emit("lock-screen");
   await sleep(250);
   assert.equal((await api("auth.getState()")).isUnlocked, false, "Windows locking must lock the vault even with timers off");
+  await until(() => syntheticClipboard === "");
+  assert.equal((await api('clipboard.copy({text:"denied",sensitive:true,delayMs:0})')).ok, false);
   await until(() => run("!!document.querySelector('#master-password')"));
   assert.equal(await run("notesView===null && !document.body.textContent.includes('Synthetic private note text')"), true);
   assert.equal((await api(`notes.getOne(${note.id})`)).ok, false);
@@ -89,6 +98,18 @@ async function main() {
   powerMonitor.emit("unlock-screen");
   await unlock();
   assert.equal((await api(`notes.getOne(${note.id})`)).result.body, "Synthetic private note text", "saved synthetic note survives locking");
+  assert.equal((await api('clipboard.copy({text:"synthetic crash secret",sensitive:true,delayMs:0})')).ok, true);
+  const crashed = new Promise(resolve => win.webContents.once("render-process-gone", resolve));
+  win.webContents.forcefullyCrashRenderer();
+  await crashed;
+  assert.equal(testStore.isUnlocked(), false, "actual synthetic renderer crash locks main-process vault");
+  await until(() => syntheticClipboard === "");
+  const loaded = new Promise(resolve => win.webContents.once("did-finish-load", resolve));
+  win.webContents.reload(); await loaded;
+  assert.equal((await api("auth.getState()")).isUnlocked, false, "renderer recovery cannot reopen vault");
+  assert.equal((await api(`notes.getOne(${note.id})`)).ok, false);
+  assert.equal((await api('clipboard.copy({text:"denied",sensitive:true,delayMs:0})')).ok, false);
+  console.log("PASS mocked clipboard lock cleanup, actual isolated renderer crash, locked IPC and renderer recovery");
   console.log(`PASS system lock/suspend/resume, disabled timers, blocked unlock, cleared Notes and pending-unlock cancellation. Synthetic profile: ${root}`);
   app.exit(0);
 }
