@@ -56,6 +56,8 @@ const systemLockHandlers = {
   resume: () => { systemSuspended = false; lockDesktopVault("resume"); }
 };
 const pathGrants = createPathGrants();
+const exportApproval = require("./services/exportApproval").createExportApproval();
+const credentialExport = require("./shared/credentialExport");
 // One writer process per user-data profile. The native helper runs separately
 // through its own entry point and does not acquire this desktop lock.
 const ownsDesktopInstance = app.requestSingleInstanceLock();
@@ -163,7 +165,7 @@ function lockDesktopVault(reason, notify = true) {
   extensionBridge?.closeConnections();
   sensitiveClipboard?.clear();
   backupVerification?.cancel();
-  authenticator?.clear(); pathGrants.clear(); saveApprovalAbort?.abort();
+  authenticator?.clear(); pathGrants.clear(); exportApproval.clear(); saveApprovalAbort?.abort();
   lockManager?.setUnlocked(false);
   extensionPairing?.cancelPairing(); loginWindows?.closeAll();
   const result = vaultStore.lockVault();
@@ -204,7 +206,7 @@ function createMainWindow() {
     if (!desktopIntegration?.shouldStartHidden(process.argv, state.hasVault)) mainWindow.show();
   });
   mainWindow.webContents.on("did-start-loading", () => {
-    sensitiveClipboard?.clear(); authenticator?.clear(); backupVerification?.cancel();
+    sensitiveClipboard?.clear(); authenticator?.clear(); backupVerification?.cancel(); exportApproval.clear();
   });
   for (const event of ["render-process-gone", "destroyed"]) {
     // Do not send into a crashed/destroyed renderer. The main process revokes
@@ -850,7 +852,18 @@ function registerImportExportHandlers() {
 
   // ─── Phase 9: Export ────────────────────────────────────────────────────────
 
-  handleAppRequest("vault:pick-export-path", async (_event, { defaultName, format }) => {
+  handleAppRequest("vault:authorize-export", async (_event, { masterPassword, format } = {}) => handleVaultOperation(async () => {
+    const started = exportApproval.begin();
+    if (!["csv", "json"].includes(format)) throw createPublicError("Choose CSV or JSON export.");
+    const epoch = vaultStore.getOperationEpoch();
+    await vaultStore.verifyExportPassword({ masterPassword });
+    assertVaultOperationActive();
+    return { token: exportApproval.approve(started, format, epoch) };
+  }));
+  handleAppRequest("vault:cancel-export", async () => { exportApproval.clear(); return { ok: true }; });
+  handleAppRequest("vault:pick-export-path", async (_event, { defaultName, format, token } = {}) => {
+    if (!["csv", "json", "backup"].includes(format) || typeof defaultName !== "string" || defaultName.length > 4096) throw createPublicError("Choose a supported export format.");
+    if (format !== "backup") exportApproval.validate(token, format, vaultStore.getOperationEpoch());
     const filterMap = {
       csv: { name: "CSV", extensions: ["csv"] },
       json: { name: "JSON", extensions: ["json"] },
@@ -867,29 +880,33 @@ function registerImportExportHandlers() {
     );
 
     if (result.canceled || !result.filePath) {
+      if (format !== "backup") exportApproval.clear();
       return { ok: true, result: { canceled: true } };
     }
 
     // Remember the choice: only a path picked here may be written to below.
-    pathGrants.grant("export", result.filePath);
+    if (format === "backup") pathGrants.grant("backup-export", result.filePath);
+    else exportApproval.bind(token, format, vaultStore.getOperationEpoch(), result.filePath);
     return { ok: true, result: { canceled: false, filePath: result.filePath } };
   });
 
-  handleAppRequest("vault:write-export-file", async (_event, { filePath, content } = {}) => {
+  handleAppRequest("vault:write-export-file", async (_event, { filePath, token, format } = {}) => {
     return handleVaultOperation(async () => {
-      if (!pathGrants.has("export", filePath) || typeof content !== "string") {
-        throw createPublicError("Choose where to save the file first.");
-      }
-      pathGrants.revoke("export", filePath);
+      const receipt = exportApproval.consume(token, format, vaultStore.getOperationEpoch(), filePath);
+      const credentials = await vaultStore.getAllCredentialsForExport();
+      assertVaultOperationActive();
+      exportApproval.assertLive(receipt, vaultStore.getOperationEpoch());
+      const content = format === "json" ? credentialExport.buildJsonExport(credentials) : credentialExport.buildCsvExport(credentials);
       // Stage plaintext exports and recheck the originating unlocked session
       // immediately before publishing them. Cancelled temp files are removed.
       const temporary = `${filePath}.${require("crypto").randomBytes(6).toString("hex")}.tmp`;
       try {
         await fs.writeFile(temporary, content, { encoding: "utf8", flag: "wx" });
+        exportApproval.assertLive(receipt, vaultStore.getOperationEpoch());
         beforeVaultCommit();
         await fs.rename(temporary, filePath);
       } finally { await fs.rm(temporary, { force: true }).catch(() => {}); }
-      return { written: true, filePath };
+      return { written: true, filePath, count: credentials.length };
     });
   });
 
@@ -897,10 +914,10 @@ function registerImportExportHandlers() {
 
   handleAppRequest("vault:create-backup", async (_event, { filePath } = {}) => {
     return handleVaultOperation(async () => {
-      if (!pathGrants.has("export", filePath)) {
+      if (!pathGrants.has("backup-export", filePath)) {
         throw createPublicError("Choose where to save the backup first.");
       }
-      pathGrants.revoke("export", filePath);
+      pathGrants.revoke("backup-export", filePath);
       return vaultStore.createEncryptedBackup(filePath);
     });
   });
@@ -932,7 +949,7 @@ function registerImportExportHandlers() {
       authenticator.clear();
       backupVerification.cancel();
       const outcome = await vaultStore.restoreEncryptedBackup(filePath, masterPassword);
-      pathGrants.clear();
+      pathGrants.clear(); exportApproval.clear();
       lockManager.setUnlocked(false); // restore locks the vault
       loginWindows.closeAll();
       pathGrants.revoke("restore", filePath);
@@ -1004,6 +1021,7 @@ function registerSettingsHandlers() {
   // ─── Phase 10: Settings ─────────────────────────────────────────────────────
 
   handleAppRequest("vault:change-master-password", async (_event, payload) => {
+    exportApproval.clear();
     return handleVaultOperation(() => vaultStore.changeMasterPassword(payload));
   });
 
@@ -1021,7 +1039,7 @@ function registerSettingsHandlers() {
     backupVerification.cancel();
     const response = await handleVaultOperation(() => vaultStore.resetWithRecoveryKey(payload || {}));
     if (response.ok) {
-      pathGrants.clear();
+      pathGrants.clear(); exportApproval.clear();
       authenticator.clear();
       lockManager.setUnlocked(false);
       loginWindows.closeAll();
@@ -1206,7 +1224,7 @@ function disposeDesktopServices() {
   if (servicesDisposed) return;
   servicesDisposed = true;
   for (const [event, handler] of Object.entries(systemLockHandlers)) powerMonitor.removeListener(event, handler);
-  pathGrants.clear(); saveApprovalAbort?.abort();
+  pathGrants.clear(); exportApproval.clear(); saveApprovalAbort?.abort();
   desktopIntegration?.dispose();
   automaticBackups?.stop();
   clearInterval(trashMaintenance);

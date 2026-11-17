@@ -241,6 +241,19 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     return reserved;
   }
 
+  async function verifyExportPassword({ masterPassword } = {}) {
+    ensureUnlocked();
+    const password = normalizePassword(masterPassword);
+    if (!password) throw createPublicError("Enter the master password.");
+    const record = await readAuthRecord();
+    await reserveUnlockAttempt();
+    const key = await verifyMasterPassword(record, password, "Master password is incorrect.");
+    key.fill(0);
+    assertVaultOperationActive();
+    await saveUnlockProtection({ version: 1, failures: 0, retryAt: 0 });
+    return { verified: true };
+  }
+
   async function unlockVault({ masterPassword }) {
     const normalizedPassword = normalizePassword(masterPassword);
 
@@ -965,6 +978,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
     getState,
     lockVault,
     unlockVault,
+    verifyExportPassword,
     getAllCredentials,
     getAllCredentialsForExport,
     getCredential,

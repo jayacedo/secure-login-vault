@@ -2,11 +2,20 @@ const assert = require("assert/strict");
 const fs = require("fs/promises");
 const syncFs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, clipboard } = require("electron");
 const { spawn } = require("child_process");
 const { testTempRoot } = require("./testTemp");
 const root = syncFs.mkdtempSync(path.join(testTempRoot(), "hardening-app-"));
-app.setPath("userData", root); process.env.SLV_PIPE_USER = `hardening-app-${process.pid}`;
+app.setPath("userData", root);
+for (const name of ['sessionData', 'temp', 'logs']) {
+ const directory = path.join(root, name); syncFs.mkdirSync(directory); app.setPath(name, directory);
+}
+app.setPath('appData', root); process.env.APPDATA=root; process.env.LOCALAPPDATA=root;
+clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
+dialog.showOpenDialog=async()=>({canceled:true});dialog.showSaveDialog=async()=>({canceled:true});
+require('../src/services/browserSetup').createBrowserSetup=()=>({status:async()=>({supported:false,ready:false})}); process.env.SLV_PIPE_USER = `hardening-app-${process.pid}`;
+// Deterministic OS state for this isolated synthetic profile only.
+require('electron').powerMonitor.getSystemIdleState = () => 'active';
 require("../src/main");
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn) { for (let i = 0; i < 100; i++) { if (await fn()) return; await sleep(60); } throw Error("Timed out"); }
@@ -45,9 +54,11 @@ async function main() {
   assert.equal(late.ok, false); assert.equal(JSON.stringify(late).includes(data.password), false);
   assert.equal((await unlock()).ok, true);
 
+  const authorize=async()=>{const res=await api('importExport.authorizeExport('+JSON.stringify({masterPassword:pw,format:'csv'})+')');assert.equal(res.ok,true,res.message);return res.result.token;};
+  let token=await authorize();
   const output = path.join(root, "dummy-export.csv"), originalDialog = dialog.showSaveDialog;
   let finishDialog; dialog.showSaveDialog = () => new Promise(resolve => { finishDialog = resolve; });
-  const pick = api('importExport.pickExportPath({defaultName:"dummy.csv",format:"csv"})');
+  const pick = api('importExport.pickExportPath('+JSON.stringify({defaultName:'dummy.csv',format:'csv',token})+')');
   await until(() => finishDialog); await api("auth.lockVault()");
   finishDialog({ canceled: false, filePath: output }); assert.equal((await pick).ok, false);
   dialog.showSaveDialog = originalDialog; await unlock();
@@ -55,8 +66,9 @@ async function main() {
   assert.equal(syncFs.existsSync(output), false);
   console.log("PASS pending credential reads and file dialogs are cancelled on lock; expired sessions cannot grant export access");
 
+  token=await authorize();
   dialog.showSaveDialog = async () => ({ canceled: false, filePath: output });
-  assert.equal((await api('importExport.pickExportPath({defaultName:"dummy.csv",format:"csv"})')).ok, true);
+  assert.equal((await api('importExport.pickExportPath('+JSON.stringify({defaultName:'dummy.csv',format:'csv',token})+')')).ok, true);
   dialog.showSaveDialog = originalDialog;
   const originalWrite = fs.writeFile; let staged, resumeWrite;
   const stagedPromise = new Promise(resolve => { staged = resolve; });
@@ -66,7 +78,7 @@ async function main() {
     if (typeof args[0] === "string" && args[0].startsWith(output + ".")) { staged(); await resumePromise; }
     return result;
   };
-  const exporting = api(`importExport.writeExportFile(${JSON.stringify({ filePath: output, content: data.password })})`);
+  const exporting = api(`importExport.writeExportFile(${JSON.stringify({ filePath: output, format: "csv", token })})`);
   await stagedPromise; await api("auth.lockVault()"); resumeWrite(); fs.writeFile = originalWrite;
   assert.equal((await exporting).ok, false);
   assert.equal(syncFs.existsSync(output), false);
@@ -75,13 +87,14 @@ async function main() {
   console.log("PASS locking before export publication removes the staged plaintext file");
 
   const secondScript = path.join(root, "second.js");
-  await fs.writeFile(secondScript, `const {app}=require("electron");app.setPath("userData",${JSON.stringify(root)});require(${JSON.stringify(path.resolve(__dirname, "../src/main.js"))});setTimeout(()=>app.exit(9),8000);`);
+  await fs.writeFile(secondScript, `const {app}=require("electron");app.setPath("userData",${JSON.stringify(root)});app.setPath("appData",${JSON.stringify(root)});for(const name of ["sessionData","temp","logs"])app.setPath(name,require("path").join(${JSON.stringify(root)},name));require(${JSON.stringify(path.resolve(__dirname, "../src/main.js"))});setTimeout(()=>app.exit(9),8000);`);
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
   const second = spawn(process.execPath, [secondScript], { env, windowsHide: true, stdio: "ignore" });
   const exit = await new Promise((resolve, reject) => { second.on("error", reject); second.on("exit", resolve); });
   assert.equal(exit, 0, "second process exits without becoming another writer");
   assert.equal((await api(`credentials.getOne(${id})`)).result.password, data.password);
   console.log("PASS a second desktop process for the same profile exits while the original vault remains usable");
+  console.log("Synthetic fixture: " + root);
   app.exit(0);
 }
 setTimeout(() => { console.error("Local hardening UI timed out"); app.exit(1); }, 60000).unref();

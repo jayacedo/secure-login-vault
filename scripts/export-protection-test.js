@@ -1,0 +1,61 @@
+const assert = require('assert/strict');
+const fs = require('fs/promises');
+const path = require('path');
+const { createExportApproval } = require('../src/services/exportApproval');
+const { createVaultStore } = require('../src/services/vaultStore');
+const { testTempRoot } = require('./testTemp');
+
+async function main() {
+  let time = 1800000000000;
+  const gate = createExportApproval(() => time);
+  const approve = () => gate.approve(gate.begin(), 'csv', 1);
+  const file = path.resolve('synthetic-export.csv'); // gate checks only; never written
+  let token = approve();
+  assert.throws(() => gate.consume(token, 'csv', 1, file), /expired/);
+  token = approve(); gate.bind(token, 'csv', 1, file);
+  assert.throws(() => gate.validate('wrong', 'csv', 1), /expired/);
+  assert.throws(() => gate.validate(token, 'json', 1), /expired/);
+  assert.throws(() => gate.validate(token, 'csv', 2), /expired/);
+  assert.throws(() => gate.bind(token, 'csv', 1, file), /expired/);
+  assert.throws(() => gate.consume(token, 'csv', 1, file + 'other'), /expired/);
+  token = approve(); gate.bind(token, 'csv', 1, file);
+  const receipt = gate.consume(token, 'csv', 1, file);
+  assert.throws(() => gate.consume(token, 'csv', 1, file), /expired/);
+  gate.assertLive(receipt, 1);
+  time += 120000;
+  assert.throws(() => gate.assertLive(receipt, 1), /expired/);
+  token = approve(); time += 120000;
+  assert.throws(() => gate.validate(token, 'csv', 1), /expired/);
+  token = approve(); gate.bind(token, 'csv', 1, file);
+  const active = gate.consume(token, 'csv', 1, file);
+  gate.clear(); assert.throws(() => gate.assertLive(active, 1), /expired/);
+  const pending = gate.begin(); gate.clear();
+  assert.throws(() => gate.approve(pending, 'csv', 1), /expired/);
+  const older = gate.begin(); const latest = gate.begin();
+  assert.throws(() => gate.approve(older, 'csv', 1), /expired/);
+  gate.approve(latest, 'csv', 1);
+  console.log('PASS export approval: format/path/session binding, single use, expiry, cancellation and concurrent requests');
+
+  const root = await fs.mkdtemp(path.join(testTempRoot(), 'export-protection-'));
+  const store = createVaultStore(root, { now: () => time });
+  const pw = 'Synthetic export master password';
+  await store.createVault({ masterPassword: pw, confirmPassword: pw });
+  await store.createCredential({ websiteName: 'Synthetic only', password: 'dummy-entry' });
+  const epoch = store.getOperationEpoch();
+  const database = await fs.readFile(path.join(root, 'vault/vault-data.slv'));
+  for (let i = 0; i < 3; i++) await assert.rejects(store.verifyExportPassword({ masterPassword: 'wrong synthetic' }), /incorrect/);
+  await assert.rejects(store.verifyExportPassword({ masterPassword: pw }), /Too many password attempts/);
+  time += 1000;
+  assert.equal((await store.verifyExportPassword({ masterPassword: pw })).verified, true);
+  assert.equal(store.getOperationEpoch(), epoch, 'reauth does not replace the unlocked session');
+  assert.deepEqual(await fs.readFile(path.join(root, 'vault/vault-data.slv')), database);
+  for (let i = 0; i < 3; i++) await assert.rejects(store.verifyExportPassword({ masterPassword: 'wrong synthetic' }), /incorrect/);
+  store.lockVault();
+  await assert.rejects(store.verifyExportPassword({ masterPassword: pw }), /locked|unlock/i);
+  const reopened = createVaultStore(root, { now: () => time });
+  await assert.rejects(reopened.unlockVault({ masterPassword: pw }), /Too many password attempts/);
+  time += 1000;
+  await reopened.unlockVault({ masterPassword: pw }); reopened.lockVault();
+  console.log('PASS export reauthentication: shared persisted cooldown, correct password, unchanged synthetic vault and locked rejection. Fixture: ' + root);
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

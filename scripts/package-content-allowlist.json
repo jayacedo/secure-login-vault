@@ -78,7 +78,10 @@
     "src/services/vaultStore.js",
     "src/shared/secureChannel.js",
     "src/renderer/unlockLayouts.js",
-    "src/renderer/unlockLayouts.css"
+    "src/renderer/unlockLayouts.css",
+    "src/services/exportApproval.js",
+    "src/shared/credentialExport.js",
+    "src/renderer/exportConfirmation.js"
   ],
   "dependencies": [
     "node_modules/bcryptjs/LICENSE",

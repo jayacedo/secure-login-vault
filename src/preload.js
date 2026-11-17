@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   importExport: {
+    authorizeExport: opts => ipcRenderer.invoke("vault:authorize-export", opts),
+    cancelExport: () => ipcRenderer.invoke("vault:cancel-export"),
     pickImportFile:   ()                       => ipcRenderer.invoke("vault:pick-import-file"),
     pickExportPath:   (opts)                    => ipcRenderer.invoke("vault:pick-export-path", opts),
     writeExportFile:  (opts)                    => ipcRenderer.invoke("vault:write-export-file", opts),

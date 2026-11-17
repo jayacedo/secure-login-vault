@@ -1,5 +1,7 @@
 # Secure Login Vault
 
+**Source 1.0.66:** CSV/JSON exports now require fresh master-password confirmation and show a plaintext warning. Approval expires after two minutes, permits one export, and clears on cancellation or lock. Encrypted backup behavior is unchanged. See [export protection](docs/plaintext-export-protection.md). This version is built unpacked for local testing; the latest installer remains 1.0.65.
+
 A Windows desktop vault for managing passwords and web development client details locally, with an optional Chrome, Edge, Brave and Firefox companion extension.
 
 SLV stores vault data in an encrypted SQLite database. The browser extension connects to the running desktop app to fill logins and offer to save new or changed credentials. The app-to-extension connection uses encrypted, authenticated messages; no cloud service is involved in that handoff.

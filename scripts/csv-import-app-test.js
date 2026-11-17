@@ -14,6 +14,8 @@ let selectedSyntheticFile = null;
 dialog.showOpenDialog = async () => selectedSyntheticFile ? { canceled: false, filePaths: [selectedSyntheticFile] } : { canceled: true };
 dialog.showSaveDialog = async () => ({ canceled: true });
 require('../src/services/browserSetup').createBrowserSetup = () => ({ status: async () => ({ supported: false, ready: false }) });
+// Deterministic OS state for this isolated synthetic profile only.
+require('electron').powerMonitor.getSystemIdleState = () => 'active';
 require('../src/main');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn) { for(let i=0;i<100;i++){if(await fn())return;await sleep(80);}throw Error('CSV UI timeout'); }

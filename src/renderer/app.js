@@ -77,6 +77,7 @@ document.addEventListener("keydown", (e) => {
     }
     // Priority: sub-modals first, then primary modals
     const subModalOrder = [
+      "#plaintext-export-overlay",
       "#import-mode-overlay",
       "#csv-import-overlay",
       "#authenticator-overlay",
@@ -100,6 +101,7 @@ document.addEventListener("keydown", (e) => {
     for (const selector of subModalOrder) {
       const el = document.querySelector(selector);
       if (el && el.classList.contains("is-open")) {
+        if (selector === "#plaintext-export-overlay") { e.preventDefault(); closePlaintextExport(); return; }
         if (selector === "#help-modal-overlay") { e.preventDefault(); closeHelpModal(); return; }
         if (selector === "#csv-import-overlay" && csvReviewState?.busy) { e.preventDefault(); return; }
         if (selector === "#group-delete-modal-overlay" && el.dataset.busy === "true") { e.preventDefault(); return; }
@@ -3986,6 +3988,7 @@ async function refreshBackupCheckStatus() {
 }
 
 function closeSettingsModal() {
+  closePlaintextExport();
   closeUnlockLayoutPreview(false);
   closeBackupCheck();
   closeCsvImportReview();
@@ -5437,95 +5440,12 @@ function mapKeePassCsvRow(record) {
 
 async function runExportFlow(formatKind, triggerBtn) {
   setSettingsStatus("");
-
-  if (formatKind === "backup") {
-    await runBackupExport(triggerBtn);
-    return;
-  }
-
-  const allRes = await window.secureLoginVault.credentials.getAllForExport();
-  if (!allRes.ok) {
-    setSettingsStatus(allRes.message, true);
-    return;
-  }
-
-  const credentials = allRes.result;
-  const stamp = new Date().toISOString().slice(0, 10);
-  const defaultName = `secure-login-vault-export-${stamp}.${formatKind}`;
-
-  const picked = await window.secureLoginVault.importExport.pickExportPath({
-    defaultName,
-    format: formatKind
-  });
-  if (!picked.ok) {
-    setSettingsStatus(picked.message, true);
-    return;
-  }
-  if (picked.result.canceled) return;
-
-  const content = formatKind === "json" ? buildJsonExport(credentials) : buildCsvExport(credentials);
-
-  setSettingsButtonsDisabled(true);
-  const writeRes = await window.secureLoginVault.importExport.writeExportFile({
-    filePath: picked.result.filePath,
-    content
-  });
-  setSettingsButtonsDisabled(false);
-
-  if (!writeRes.ok) {
-    setSettingsStatus(writeRes.message, true);
-    return;
-  }
-
-  setSettingsStatus(`Exported ${credentials.length} credential${credentials.length === 1 ? "" : "s"} to ${picked.result.filePath}.`);
-  showToast("Export complete", "info");
+  if (formatKind === "backup") return runBackupExport(triggerBtn);
+  openPlaintextExport(formatKind, triggerBtn);
 }
 
-// Includes every field (via ...rest), so the qrCode data URI rides along
-// automatically — JSON has no practical size limit for it.
-function buildJsonExport(credentials) {
-  const payload = {
-    format: "secure-login-vault-export",
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    credentials: credentials.map(({ id, ...rest }) => rest)
-  };
-  return `${JSON.stringify(payload, null, 2)}\n`;
-}
-
-// CSV deliberately excludes qrCode (unlike JSON above): a QR data URI can
-// run past Excel/Sheets' per-cell character limit, and would make an
-// already-plain-text CSV export even riskier to casually open. Use JSON
-// (or the encrypted backup) to carry 2FA QR codes between vaults.
-
-function buildCsvExport(credentials) {
-  const headers = [
-    "Website Name", "Login URL", "Category", "Username",
-    "Email", "Password", "Tags", "Group", "Notes", "Favorite"
-  ];
-  const lines = [headers.map(csvEscape).join(",")];
-
-  for (const c of credentials) {
-    lines.push(
-      [
-        c.websiteName, c.websiteUrl, c.category, c.username,
-        c.email, c.password, c.tags, c.groupName, c.notes, c.favorite ? "true" : "false"
-      ]
-        .map(csvEscape)
-        .join(",")
-    );
-  }
-
-  return `${lines.join("\r\n")}\r\n`;
-}
-
-function csvEscape(value) {
-  const str = String(value ?? "");
-  if (/[",\r\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
+function buildJsonExport(credentials) { return CredentialExport.buildJsonExport(credentials); }
+function buildCsvExport(credentials) { return CredentialExport.buildCsvExport(credentials); }
 
 async function runBackupExport(triggerBtn) {
   const stamp      = new Date().toISOString().slice(0, 10);
