@@ -289,36 +289,7 @@ function renderCreateForm() {
 function renderUnlockForm(state) {
   const hint = state && typeof state.passwordHint === "string" ? state.passwordHint : "";
   const authCard = getAuthCard();
-  authCard.innerHTML = `
-    <form class="auth-form" id="unlock-vault-form" novalidate>
-      ${state.compactUnlock ? `<div class="compact-unlock-brand">${renderBrandMark("compact")}<div><strong>${escapeHtml(getBrandName())}</strong><small>Local vault</small></div><span>${renderLockIcon()} Locked</span></div>` : ""}
-      <div>
-        ${state.compactUnlock ? "" : '<p class="eyebrow">Returning user</p>'}
-        <h2>${state.compactUnlock ? "Welcome back" : "Login"}</h2>
-        <p class="form-note">Enter the master password to unlock this vault session.</p>
-      </div>
-
-      ${renderPasswordInput({
-        id: "master-password",
-        label: "Master Password",
-        autocomplete: "current-password"
-      })}
-
-      ${state.hasRecoveryKey || hint ? `
-        <div class="unlock-help">
-          ${state.hasRecoveryKey ? '<button class="link-button" type="button" id="forgot-password-btn">Forgot password?</button>' : ""}
-          ${hint ? `
-            <div class="hint-reveal">
-              <button class="link-button" type="button" id="show-hint-btn" aria-expanded="false" aria-controls="hint-text">Show password hint</button>
-              <p class="hint-text" id="hint-text" hidden></p>
-            </div>` : ""}
-        </div>` : ""}
-
-      <button class="primary-button" type="submit">Unlock Vault</button>
-      ${state.compactUnlock ? '<button class="secondary-button" type="button" id="unlock-cancel-btn">Cancel</button>' : ""}
-      <p class="form-message" id="form-message" role="status"></p>
-    </form>
-  `;
+  authCard.innerHTML = renderUnlockLayout(state);
 
   const form = document.querySelector("#unlock-vault-form");
   setupPasswordToggles(form);
@@ -3191,6 +3162,7 @@ async function openSettingsModal() {
         </section>
         <section class="settings-section">
           <h3 class="settings-section-title">Appearance</h3>
+          ${renderUnlockLayoutSettings()}
 
           <div class="settings-row">
             <div class="settings-row-label">
@@ -3757,6 +3729,7 @@ async function openSettingsModal() {
   });
 
   // ── Theme segmented control ──────────────────────────────────────────────────
+  setupUnlockLayoutSettings(overlay);
   const textSizeSelect = overlay.querySelector("#text-size-select");
   textSizeSelect.addEventListener("change", () => {
     applyTextSize(textSizeSelect.value);
@@ -4010,6 +3983,7 @@ async function refreshBackupCheckStatus() {
 }
 
 function closeSettingsModal() {
+  closeUnlockLayoutPreview(false);
   closeBackupCheck();
   closeCsvImportReview();
   closeImportModeModal();

@@ -76,7 +76,9 @@
     "src/services/vaultHealth.js",
     "src/services/vaultOperationContext.js",
     "src/services/vaultStore.js",
-    "src/shared/secureChannel.js"
+    "src/shared/secureChannel.js",
+    "src/renderer/unlockLayouts.js",
+    "src/renderer/unlockLayouts.css"
   ],
   "dependencies": [
     "node_modules/bcryptjs/LICENSE",
