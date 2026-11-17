@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard, Tray, Menu, screen, session } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, safeStorage, clipboard, Tray, Menu, screen, session, powerMonitor } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -45,6 +45,14 @@ let clipboardCleanup = Promise.resolve();
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
 let pairingExpiresAt = 0;
+let systemSessionLocked = false;
+let systemSuspended = false;
+const systemLockHandlers = {
+  "lock-screen": () => { systemSessionLocked = true; lockDesktopVault("system-lock"); },
+  "unlock-screen": () => { systemSessionLocked = false; }, // Never unlock the vault here.
+  suspend: () => { systemSuspended = true; lockDesktopVault("suspend"); },
+  resume: () => { systemSuspended = false; lockDesktopVault("resume"); }
+};
 const pathGrants = createPathGrants();
 // One writer process per user-data profile. The native helper runs separately
 // through its own entry point and does not acquire this desktop lock.
@@ -67,6 +75,9 @@ function handleAppRequest(channel, handler) {
     const epoch = vaultStore.getOperationEpoch();
     const protectedRequest = !lockedRequests.has(channel);
     const check = () => {
+      if ((channel === "vault:unlock" || channel === "vault:create") && (systemSessionLocked || systemSuspended)) {
+        throw createPublicError("Unlock Windows and resume the computer before opening the vault.");
+      }
       if (!trusted() || (protectedRequest && (!vaultStore.isUnlocked() || epoch !== vaultStore.getOperationEpoch()))) {
         throw createPublicError("Vault is locked or its session changed. Try again after unlocking.");
       }
@@ -1080,6 +1091,11 @@ app.whenReady().then(async () => {
   if (!ownsDesktopInstance) return;
   applySessionPermissions(session.defaultSession, { getMainWindow: () => mainWindow, pageUrl: appPageUrl });
   vaultStore = createVaultStore(app.getPath("userData"));
+  // Register before asynchronous service initialization. These boundaries bypass
+  // inactivity settings and native-dialog grace periods. Resume also locks as a
+  // fallback if the platform did not deliver a suspend notification.
+  systemSessionLocked = powerMonitor.getSystemIdleState(1) === "locked";
+  for (const [event, handler] of Object.entries(systemLockHandlers)) powerMonitor.on(event, handler);
   backupVerification = createBackupVerification({ directory: path.join(app.getPath("userData"), "backup-checks") });
   try { await backupVerification.prepare(); }
   catch {
@@ -1173,6 +1189,7 @@ function disposeDesktopServices() {
   backupVerification?.cancel();
   if (servicesDisposed) return;
   servicesDisposed = true;
+  for (const [event, handler] of Object.entries(systemLockHandlers)) powerMonitor.removeListener(event, handler);
   pathGrants.clear(); saveApprovalAbort?.abort();
   desktopIntegration?.dispose();
   automaticBackups?.stop();

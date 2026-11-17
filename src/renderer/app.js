@@ -3230,7 +3230,7 @@ async function openSettingsModal() {
           <div class="settings-row">
             <div class="settings-row-label">
               <span class="settings-row-name">Auto-Lock</span>
-              <span class="settings-row-hint">Lock the vault after a period of inactivity.</span>
+              <span class="settings-row-hint">Lock the vault after a period of inactivity. Windows lock and system sleep always lock SLV, even when these timers are disabled.</span>
             </div>
             <div class="settings-row-control">
               <select class="settings-select" id="auto-lock-select">
