@@ -40,6 +40,7 @@ let authenticator;
 let sensitiveClipboard;
 let desktopIntegration;
 let compactUnlock = false;
+let unlockPresentation = null;
 let dashboardBounds;
 let dashboardWasMaximized = false;
 let servicesDisposed = false;
@@ -139,6 +140,9 @@ function showMainWindow() {
 }
 
 function applyWindowState(state) {
+  if (state.isUnlocked && unlockPresentation?.epoch === vaultStore.getOperationEpoch()) {
+    return { ...state, compactUnlock, unlockPresentationToken: unlockPresentation.token };
+  }
   const compact = Boolean(state.hasVault && !state.isUnlocked && desktopIntegration?.hasTray());
   if (mainWindow && !mainWindow.isDestroyed() && compact !== compactUnlock) {
     if (compact) {
@@ -162,6 +166,7 @@ function applyWindowState(state) {
 }
 
 function lockDesktopVault(reason, notify = true) {
+  unlockPresentation = null;
   extensionBridge?.closeConnections();
   sensitiveClipboard?.clear();
   backupVerification?.cancel();
@@ -281,12 +286,27 @@ function registerAuthHandlers() {
     const response = await handleVaultOperation(() => vaultStore.unlockVault(payload));
     if (response.ok) {
       lockManager.setUnlocked(true);
-      applyWindowState({ hasVault: true, isUnlocked: true });
+      if (payload?.deferPresentation === true) {
+        unlockPresentation = { token: require("crypto").randomBytes(24).toString("hex"), epoch: vaultStore.getOperationEpoch() };
+      } else {
+        unlockPresentation = null;
+        applyWindowState({ hasVault: true, isUnlocked: true });
+      }
       vaultStore.purgeDeletedCredentials().catch(() => {});
       vaultStore.purgeActivityHistory().catch(() => {});
       automaticBackups.run().catch(() => {});
     }
     return response;
+  });
+
+  handleAppRequest("vault:present-dashboard", (_event, { token, backgroundColor } = {}) => {
+    if (!unlockPresentation || typeof token !== "string" || token !== unlockPresentation.token ||
+        unlockPresentation.epoch !== vaultStore.getOperationEpoch()) throw createPublicError("This unlock view expired. Unlock the vault again.");
+    if (typeof backgroundColor !== "string" || !/^#[0-9a-f]{6}$/i.test(backgroundColor)) throw createPublicError("The window theme could not be applied.");
+    mainWindow.setBackgroundColor(backgroundColor);
+    unlockPresentation = null;
+    applyWindowState({ hasVault: true, isUnlocked: true });
+    return { ok: true };
   });
 
   handleAppRequest("vault:lock", async () => {
@@ -299,7 +319,11 @@ function registerAuthHandlers() {
     catch (error) { return { ok: false, message: error instanceof DesktopIntegrationError ? error.message : "Could not apply startup and tray settings. Try again." }; }
   });
   handleAppRequest("app:hide-locked-window", () => {
-    if (vaultStore.isUnlocked()) return { ok: false, message: "Lock the vault before returning to the tray." };
+    // Cancel is still available while an authenticated dashboard is preparing.
+    // hideLocked locks the vault and invalidates the presentation token first.
+    if (vaultStore.isUnlocked() && unlockPresentation?.epoch !== vaultStore.getOperationEpoch()) {
+      return { ok: false, message: "Lock the vault before returning to the tray." };
+    }
     return { ok: desktopIntegration.hideLocked() };
   });
 

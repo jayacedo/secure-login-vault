@@ -11,6 +11,7 @@ for (const name of ['sessionData', 'temp', 'logs']) {
  const directory = path.join(root, name); syncFs.mkdirSync(directory); app.setPath(name, directory);
 }
 app.setPath('appData', root); process.env.APPDATA=root; process.env.LOCALAPPDATA=root;
+process.env.TEMP=root; process.env.TMP=root;
 clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
 dialog.showOpenDialog=async()=>({canceled:true});dialog.showSaveDialog=async()=>({canceled:true});
 require('../src/services/browserSetup').createBrowserSetup=()=>({status:async()=>({supported:false,ready:false})}); process.env.SLV_PIPE_USER = `hardening-app-${process.pid}`;

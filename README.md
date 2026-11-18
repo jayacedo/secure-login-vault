@@ -1,5 +1,7 @@
 # Secure Login Vault
 
+**Source 1.0.70:** [Unlock transition](docs/unlock-transition.md) now prepares the dashboard before resizing the compact window. A brief theme-matched opening state covers the resize; rows and counts are ready at first reveal. Cancel, lock and failed loads return safely to the locked view. Unpacked build only; the latest installer remains 1.0.69.
+
 **Desktop 1.0.69:** Decoded QRs with unrecognized extra fields now offer an explicit **Try standard TOTP** choice after validating the standard settings. No code is generated or copied before confirmation. Known unsupported formats and conflicting settings remain rejected. The 1.0.69 installer is packaged and verified for local testing only. See [QR compatibility](docs/qr-compatibility.md).
 
 **Desktop 1.0.68:** [QR scanning and setup compatibility](docs/qr-compatibility.md) adds bounded contrast, scale and screenshot-crop retries. Harmless display metadata and equivalent repeated settings are accepted; conflicting settings remain rejected. The 1.0.68 installer is packaged and verified for local testing only.

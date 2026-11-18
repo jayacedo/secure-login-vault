@@ -200,13 +200,15 @@ async function initAuth() {
     const state = await window.secureLoginVault.auth.getState();
     // Tray close/cancel can happen before this process has ever shown a dashboard.
     if (!_unsubscribeAutoLocked) _unsubscribeAutoLocked = window.secureLoginVault.auth.onAutoLocked(handleAutoLocked);
-    renderFromState(state);
+    await renderFromState(state);
   } catch {
     renderError("Vault status could not be loaded.");
   }
 }
 
-function renderFromState(state) {
+function renderFromState(state, preparedDashboard) {
+  if (state.isUnlocked && state.unlockPresentationToken && !preparedDashboard) return presentUnlockedDashboard(state);
+  if (!state.isUnlocked) cancelUnlockPresentation();
   if (!state.isUnlocked) { resetNotesWorkspace(); dismissGroupManagementOnLock(); }
   if (!state.isUnlocked) document.body.classList.remove("has-credential-list");
   if (!state.isUnlocked) credentialQuickFilter = "all";
@@ -216,7 +218,7 @@ function renderFromState(state) {
   document.body.classList.toggle("compact-unlock", Boolean(state.compactUnlock && !state.isUnlocked));
 
   if (state.isUnlocked) {
-    renderDashboard(state);
+    renderDashboard(state, preparedDashboard);
   } else if (state.hasVault) {
     renderUnlockForm(state);
   } else {
@@ -300,7 +302,9 @@ function renderUnlockForm(state) {
   setupPasswordToggles(form);
   form.querySelector("#unlock-cancel-btn")?.addEventListener("click", async () => {
     form.querySelector("#master-password").value = "";
-    await window.secureLoginVault.settings.hideLockedWindow();
+    cancelUnlockPresentation(true);
+    const response = await window.secureLoginVault.settings.hideLockedWindow();
+    if (!response.ok) await initAuth();
   });
 
   const forgotButton = form.querySelector("#forgot-password-btn");
@@ -339,7 +343,7 @@ function renderPasswordInput({ id, label, autocomplete }) {
 
 let _lastAuthState = null;
 
-function renderDashboard(state) {
+function renderDashboard(state, preparedDashboard) {
   resetNotesWorkspace();
   closeCredentialDetails(false);
   resetBulkSelection();
@@ -348,7 +352,7 @@ function renderDashboard(state) {
   document.body.classList.add("has-credential-list");
   appShell.className = "dashboard-shell";
   appShell.setAttribute("aria-labelledby", "dashboard-title");
-  const dashboardData = createEmptyDashboardData();
+  const dashboardData = preparedDashboard || createEmptyDashboardData();
   appShell.innerHTML = `
     <aside class="dashboard-sidebar" aria-label="Vault navigation">
       <div class="sidebar-brand">
@@ -511,7 +515,10 @@ function renderDashboard(state) {
   setupBulkSelection();
   setupCredentialSorting();
   setupCredentialQuickFilters();
-  loadDashboardData();
+  if (preparedDashboard) {
+    setActiveGroupBanner(dashboardData.activeGroup);
+    bindCredentialActions();
+  } else loadDashboardData();
 }
 
 function renderCategoryButtons(categories) {
@@ -1124,6 +1131,7 @@ function renderRecoveryResetForm(state) {
 }
 
 async function handleUnlockVault(event) {
+  const request = ++unlockPresentationRequest;
   event.preventDefault();
   const form = event.currentTarget;
 
@@ -1138,8 +1146,10 @@ async function handleUnlockVault(event) {
   setBusy(button, message, "Unlocking vault...");
 
   const response = await window.secureLoginVault.auth.unlockVault({
-    masterPassword: passwordInput.value
+    masterPassword: passwordInput.value,
+    deferPresentation: true
   });
+  if (request !== unlockPresentationRequest) return;
 
   if (!response.ok) {
     setIdle(button);
@@ -1148,11 +1158,72 @@ async function handleUnlockVault(event) {
     return;
   }
 
+  passwordInput.value = "";
   const state = await window.secureLoginVault.auth.getState();
-  renderFromState(state);
+  if (request !== unlockPresentationRequest) return;
+  await renderFromState(state);
+}
+
+let unlockPresentationRequest = 0;
+function cancelUnlockPresentation(hideUntilLocked = false) {
+  unlockPresentationRequest++;
+  if (hideUntilLocked) {
+    document.body.classList.remove("app-ready");
+    const status = document.querySelector("#unlock-transition-status");
+    if (status) status.textContent = "Locking vault…";
+    return;
+  }
+  document.body.classList.remove("unlock-presenting");
+  document.querySelector("#unlock-transition-status")?.remove();
+}
+
+async function presentUnlockedDashboard(state) {
+  const request = ++unlockPresentationRequest;
+  const form = document.querySelector("#unlock-vault-form");
+  if (form) {
+    form.querySelector("#master-password").value = "";
+    for (const control of form.querySelectorAll("input, button")) {
+      if (control.id !== "unlock-cancel-btn") control.disabled = true;
+    }
+    form.querySelector("button[type=submit]").textContent = "Opening vault…";
+  }
+  let timeout;
+  try {
+    const responses = await Promise.race([
+      Promise.all([
+        window.secureLoginVault.vault.getDashboardData(),
+        window.secureLoginVault.credentials.search({ query: searchState.query, onlyFavorites: searchState.onlyFavorites, category: searchState.category })
+      ]),
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Dashboard load timeout")), 30000); })
+    ]);
+    if (request !== unlockPresentationRequest) return;
+    if (responses.some(response => !response.ok)) throw new Error("Dashboard could not be prepared");
+    const current = await window.secureLoginVault.auth.getState();
+    if (request !== unlockPresentationRequest) return;
+    if (!current.isUnlocked || current.unlockPresentationToken !== state.unlockPresentationToken) throw new Error("Unlock session changed");
+    const status = document.createElement("div");
+    status.id = "unlock-transition-status"; status.setAttribute("role", "status"); status.textContent = "Opening vault…";
+    document.body.append(status); document.body.classList.add("unlock-presenting");
+    renderFromState(current, { ...responses[0].result, credentials: responses[1].result });
+    const backgroundColor = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    const presented = await window.secureLoginVault.auth.presentDashboard({ token: state.unlockPresentationToken, backgroundColor });
+    if (request !== unlockPresentationRequest) return;
+    if (!presented.ok) throw new Error("Dashboard presentation cancelled");
+    // Let the resized viewport lay out and paint behind the themed cover.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (request !== unlockPresentationRequest) return;
+    document.body.classList.remove("unlock-presenting"); status.remove();
+    document.querySelector("#credential-search")?.focus();
+  } catch {
+    if (request !== unlockPresentationRequest) return;
+    await handleLockVault();
+    const message = document.querySelector("#form-message");
+    if (message) showMessage(message, "The dashboard could not be opened. Please unlock again.", true);
+  } finally { clearTimeout(timeout); }
 }
 
 async function handleLockVault() {
+  cancelUnlockPresentation(true);
   resetNotesWorkspace();
   credentialQuickFilter = "all";
   closeCredentialDetails(false);
@@ -2945,6 +3016,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  cancelUnlockPresentation(true);
   resetNotesWorkspace();
   credentialQuickFilter = "all";
   closeCredentialDetails(false);

@@ -8,6 +8,8 @@ for (const name of ['userData', 'sessionData', 'temp', 'logs']) {
  const directory = path.join(root, name); fs.mkdirSync(directory); app.setPath(name, directory);
 }
 app.setPath('appData', root); process.env.APPDATA = root; process.env.LOCALAPPDATA = root;
+process.env.TEMP = root; process.env.TMP = root;
+require('electron').powerMonitor.getSystemIdleState = () => 'active';
 process.env.SLV_PIPE_USER = `unlock-layout-${process.pid}`;
 clipboard.readText = clipboard.writeText = clipboard.clear = () => { throw Error('Real clipboard forbidden'); };
 let selectedSyntheticFile = null;

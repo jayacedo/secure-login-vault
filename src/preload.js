@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
     getState:     ()        => ipcRenderer.invoke("vault:get-state"),
     createVault:  (payload) => ipcRenderer.invoke("vault:create", payload),
     unlockVault:  (payload) => ipcRenderer.invoke("vault:unlock", payload),
+    presentDashboard: payload => ipcRenderer.invoke("vault:present-dashboard", payload),
     lockVault:    ()        => ipcRenderer.invoke("vault:lock"),
     // Fired by the main process after it has already locked the vault
     // (inactivity or window backgrounded); the renderer only updates its UI.

@@ -87,6 +87,16 @@ body:not(.app-ready) #app-shell {
   visibility: hidden;
 }
 
+/* No stretched unlock form or partially loaded rows during native resize. */
+body.unlock-presenting { min-width: 0; overflow: hidden; background: var(--bg); }
+body.unlock-presenting #app-shell { visibility: hidden; }
+#unlock-transition-status {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: var(--bg); color: var(--text);
+  font-weight: 600;
+}
+
 .vault-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
