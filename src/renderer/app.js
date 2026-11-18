@@ -1863,18 +1863,12 @@ async function openCredentialModal(editId) {
         </button>
       </div>
       <div class="modal-body">
-        <div class="modal-form-row">
           <label class="modal-label" for="m-website-name">
             <span class="modal-label-text">Website Name <span class="required-mark">*</span></span>
             <input id="m-website-name" type="text" class="modal-input"
                    placeholder="My WordPress Site"
                    value="${cred ? escapeHtml(cred.websiteName) : ""}" required />
           </label>
-          <label class="modal-label" for="m-category">
-            <span class="modal-label-text">Category</span>
-            <select id="m-category" class="modal-input">${categoryOptions}</select>
-          </label>
-        </div>
 
         <label class="modal-label" for="m-website-url">
           <span class="modal-label-text">Login URL</span>
@@ -1898,8 +1892,13 @@ async function openCredentialModal(editId) {
           </label>
         </div>
 
-        <label class="modal-label" for="m-password">
-          <span class="modal-label-text">Password <span class="required-mark">*</span></span>
+        <div class="modal-label">
+          <div class="credential-password-heading">
+            <label class="modal-label-text" for="m-password">Password <span class="required-mark">*</span></label>
+            <button class="gen-toggle-btn" type="button" id="gen-toggle-btn" aria-expanded="false" aria-controls="gen-panel">
+              ${renderDiceIcon()}<span>Generate</span>
+            </button>
+          </div>
           <span class="password-control">
             <input id="m-password" type="password" class="modal-input" autocomplete="new-password"
                    placeholder="Password"
@@ -1910,23 +1909,10 @@ async function openCredentialModal(editId) {
               ${renderEyeIcon()}
             </button>
           </span>
-        </label>
+        </div>
 
-        ${isEdit ? `<details class="password-history" id="password-history">
-          <summary>Password history</summary>
-          <p class="modal-hint">Latest 10 previous passwords, saved from changes made after this update. Use puts a password in this form; Update Credential saves it in SLV. It does not change the website password.</p>
-          <div id="password-history-list" aria-live="polite"></div>
-        </details>` : ""}
-
-        <div class="gen-panel" id="gen-panel">
-          <div class="gen-header">
-            <button class="gen-toggle-btn is-open" type="button" id="gen-toggle-btn">
-              ${renderDiceIcon()}
-              <span>Password Generator</span>
-              ${renderChevronIcon()}
-            </button>
-          </div>
-          <div class="gen-body is-open" id="gen-body">
+        <div class="gen-panel" id="gen-panel" hidden>
+          <div class="gen-body" id="gen-body">
             <div class="gen-preview-row">
               <span class="gen-preview" id="gen-preview" title="Generated password">Click Generate</span>
               <button class="gen-action-btn" type="button" id="gen-copy-btn" title="Copy">
@@ -1963,26 +1949,42 @@ async function openCredentialModal(editId) {
           </div>
         </div>
 
-        <label class="modal-label" for="m-tags">
-          <span class="modal-label-text">Tags <span class="modal-hint">(comma-separated)</span></span>
-          <input id="m-tags" type="text" class="modal-input"
-                 placeholder="client, important, 2fa"
-                 value="${cred ? escapeHtml(cred.tags) : ""}" />
-        </label>
+        ${isEdit ? `<details class="password-history" id="password-history">
+          <summary>Password history</summary>
+          <p class="modal-hint">Latest 10 previous passwords, saved from changes made after this update. Use puts a password in this form; Update Credential saves it in SLV. It does not change the website password.</p>
+          <div id="password-history-list" aria-live="polite"></div>
+        </details>` : ""}
 
-        <label class="modal-label" for="m-group">
-          <span class="modal-label-text">Group <span class="modal-hint">(who this belongs to)</span></span>
-          <select id="m-group" class="modal-input">${groupOptions}</select>
-        </label>
+        <div class="modal-form-row">
+          <label class="modal-label" for="m-group">
+            <span class="modal-label-text">Group</span>
+            <select id="m-group" class="modal-input">${groupOptions}</select>
+          </label>
+          <label class="modal-label" for="m-category">
+            <span class="modal-label-text">Category</span>
+            <select id="m-category" class="modal-input">${categoryOptions}</select>
+          </label>
+        </div>
 
-        <label class="modal-label" for="m-notes">
-          <span class="modal-label-text">Notes</span>
-          <textarea id="m-notes" class="modal-input modal-textarea"
-                    rows="2"
-                    placeholder="Additional notes...">${cred ? escapeHtml(cred.notes) : ""}</textarea>
-        </label>
-
-        ${renderQrUploadField("m-qr", cred ? cred.qrCode : "")}
+        <div class="credential-optional-sections">
+          <details class="credential-optional" id="credential-2fa-section" ${cred?.qrCode ? "open" : ""}>
+            <summary>${renderShieldIcon()}<span>Two-factor authentication</span><span class="modal-hint">Optional</span>${renderChevronIcon()}</summary>
+            <div class="credential-optional-body">${renderQrUploadField("m-qr", cred ? cred.qrCode : "")}</div>
+          </details>
+          <details class="credential-optional" id="credential-notes-section" ${cred?.notes || cred?.tags ? "open" : ""}>
+            <summary>${renderNotesIcon()}<span>Notes &amp; tags</span><span class="modal-hint">Optional</span>${renderChevronIcon()}</summary>
+            <div class="credential-optional-body">
+              <label class="modal-label" for="m-notes">
+                <span class="modal-label-text">Notes</span>
+                <textarea id="m-notes" class="modal-input modal-textarea" rows="2" placeholder="Additional notes...">${cred ? escapeHtml(cred.notes) : ""}</textarea>
+              </label>
+              <label class="modal-label" for="m-tags">
+                <span class="modal-label-text">Tags <span class="modal-hint">(comma-separated)</span></span>
+                <input id="m-tags" type="text" class="modal-input" placeholder="client, important, 2fa" value="${cred ? escapeHtml(cred.tags) : ""}" />
+              </label>
+            </div>
+          </details>
+        </div>
 
         <label class="modal-checkbox-label" for="m-favorite">
           <input id="m-favorite" type="checkbox" ${cred && cred.favorite ? "checked" : ""} />
@@ -2087,7 +2089,12 @@ function setupPasswordHistory(overlay, credentialId, {readOnly = false} = {}) {
 }
 
 async function submitCredentialModal(editId) {
-  if (hasPendingAuthenticator(document.querySelector("#credential-modal-overlay"))) { showToast("Use or cancel the pending 2FA setup first.", "error"); return; }
+  if (hasPendingAuthenticator(document.querySelector("#credential-modal-overlay"))) {
+    const section = document.querySelector("#credential-2fa-section");
+    section.open = true;
+    section.scrollIntoView({ block: "nearest" });
+    showToast("Use or cancel the pending 2FA setup first.", "error"); return;
+  }
   const websiteName = document.querySelector("#m-website-name").value.trim();
   const password = document.querySelector("#m-password").value;
   const errorEl = document.querySelector("#modal-error");
@@ -5898,21 +5905,20 @@ function setupPasswordGenerator(container) {
     return;
   }
 
-  // Toggle open/close
+  function setOpen(open) {
+    isOpen = open;
+    genBody.classList.toggle("is-open", open);
+    container.querySelector("#gen-panel").hidden = !open;
+    toggleBtn.classList.toggle("is-open", open);
+    toggleBtn.setAttribute("aria-expanded", String(open));
+  }
+
+  // Generate only when requested; collapsing keeps the draft and options.
   toggleBtn.addEventListener("click", () => {
-    isOpen = !isOpen;
-    genBody.classList.toggle("is-open", isOpen);
-    toggleBtn.classList.toggle("is-open", isOpen);
+    setOpen(!isOpen);
     if (isOpen && !lastGenerated) generate();
   });
-
-  // Sync isOpen state with the HTML (gen-body starts open via class in template)
-  isOpen = true;
-
-  // Defer the first generate() so the modal is fully painted before
-  // we update strengthBar.style.width — otherwise the CSS transition
-  // fires on a not-yet-visible element and the bar stays at 0.
-  requestAnimationFrame(() => requestAnimationFrame(() => generate()));
+  setOpen(false);
 
   // Length slider
   lengthInput.addEventListener("input", () => {
@@ -5940,14 +5946,8 @@ function setupPasswordGenerator(container) {
   useBtn.addEventListener("click", () => {
     if (!lastGenerated) return;
     passwordInput.value = lastGenerated;
-    // Show the password so user can see what was inserted
-    passwordInput.type = "text";
-    const toggle = container.querySelector(".password-toggle");
-    if (toggle) {
-      toggle.dataset.visible = "true";
-      toggle.setAttribute("aria-label", "Hide Password");
-      toggle.innerHTML = renderEyeOffIcon();
-    }
+    setOpen(false);
+    passwordInput.focus();
     // Flash the field
     passwordInput.classList.add("is-filled");
     setTimeout(() => passwordInput.classList.remove("is-filled"), 600);

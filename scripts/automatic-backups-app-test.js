@@ -6,6 +6,13 @@ const { testTempRoot } = require("./testTemp");
 const root = fs.mkdtempSync(path.join(testTempRoot(), "auto-backup-app-"));
 const folder = path.join(root, "Chosen backups");fs.mkdirSync(folder);
 app.setPath("userData",root);
+for(const name of ['sessionData','temp','logs']){const dir=path.join(root,name);fs.mkdirSync(dir);app.setPath(name,dir);}
+app.setPath('appData',root);
+for(const name of ['APPDATA','LOCALAPPDATA','TEMP','TMP'])process.env[name]=root;
+require('electron').clipboard.readText=require('electron').clipboard.writeText=require('electron').clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
+require('electron').powerMonitor.getSystemIdleState=()=> 'active';
+dialog.showSaveDialog=async()=>({canceled:true});
+require('../src/services/browserSetup').createBrowserSetup=()=>({status:async()=>({supported:false,ready:false})});
 process.env.SLV_PIPE_USER=`auto-backup-app-${process.pid}`;
 dialog.showOpenDialog=async()=>({canceled:false,filePaths:[folder]});
 require("../src/main");

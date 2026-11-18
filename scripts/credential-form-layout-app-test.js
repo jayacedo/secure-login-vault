@@ -1,0 +1,81 @@
+const assert = require('assert/strict');
+const fs = require('fs');
+const path = require('path');
+const {app,BrowserWindow,clipboard,dialog,powerMonitor} = require('electron');
+const {testTempRoot} = require('./testTemp');
+const root=fs.mkdtempSync(path.join(testTempRoot(),'credential-form-layout-'));
+for(const name of ['userData','sessionData','temp','logs']){const dir=path.join(root,name);fs.mkdirSync(dir);app.setPath(name,dir);}
+app.setPath('appData',root);
+for(const name of ['APPDATA','LOCALAPPDATA','TEMP','TMP'])process.env[name]=root;
+process.env.SLV_PIPE_USER='credential-form-layout-'+process.pid;
+clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
+dialog.showOpenDialog=dialog.showSaveDialog=async()=>({canceled:true});
+powerMonitor.getSystemIdleState=()=> 'active';
+require('../src/services/browserSetup').createBrowserSetup=()=>({status:async()=>({supported:false,ready:false})});
+require('../src/main');
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(fn){for(let i=0;i<150;i++){if(await fn())return;await sleep(40);}throw Error('Credential form test timeout');}
+async function main(){
+ await app.whenReady();await until(()=>BrowserWindow.getAllWindows().length);
+ const win=BrowserWindow.getAllWindows()[0];win.webContents.setBackgroundThrottling(false);
+ if(win.webContents.isLoading())await new Promise(resolve=>win.webContents.once('did-finish-load',resolve));
+ const run=code=>win.webContents.executeJavaScript(code),api=code=>run('window.secureLoginVault.'+code);
+ const password='Synthetic layout master password!';
+ assert.equal((await api('auth.createVault('+JSON.stringify({masterPassword:password,confirmPassword:password})+')')).ok,true);
+ await run('initAuth();setPref(PREF_BACKGROUND_LOCK,"off");startAutoLockWatcher();applyTheme("dark")');
+ await run('openCredentialModal(null)');
+ assert.equal(await run('document.querySelector("#gen-panel").hidden'),true);
+ assert.equal(await run('document.querySelector("#gen-preview").textContent'),'Click Generate');
+ assert.equal(await run('document.querySelector("#credential-2fa-section").open'),false);
+ assert.equal(await run('document.querySelector("#credential-notes-section").open'),false);
+ assert.equal(await run('document.querySelector("#m-group").parentElement.parentElement===document.querySelector("#m-category").parentElement.parentElement'),true);
+ await run('document.querySelector("#gen-toggle-btn").click()');
+ const generated=await run('document.querySelector("#gen-preview").textContent');
+ assert.equal(generated.length,20);
+ await run('document.querySelector("#gen-toggle-btn").click();document.querySelector("#gen-toggle-btn").click()');
+ assert.equal(await run('document.querySelector("#gen-preview").textContent'),generated,'collapse preserves generated draft');
+ await run('document.querySelector("#gen-use-btn").click()');
+ assert.equal(await run('document.querySelector("#m-password").value'),generated);
+ assert.equal(await run('document.querySelector("#m-password").type'),'password');
+ assert.equal(await run('document.querySelector("#gen-panel").hidden'),true);
+ await run('document.querySelector("#m-website-name").value="Synthetic form demo";document.querySelector("#m-website-url").value="https://example.test/login";document.querySelector("#m-username").value="dummy-user";document.querySelector("#m-email").value="dummy@example.test";document.querySelector("#m-category").value="Other";document.querySelector("#m-favorite").checked=true;document.querySelector("#credential-notes-section").open=true;document.querySelector("#m-notes").value="Synthetic note";document.querySelector("#m-tags").value="synthetic, demo";document.querySelector("#credential-notes-section").open=false;');
+ win.show();win.setSize(1180,820);await sleep(100);
+ fs.writeFileSync(path.join(root,'add-dark.png'),(await win.webContents.capturePage()).toPNG());
+ await run('submitCredentialModal(null)');
+ await until(()=>run('!document.querySelector("#credential-modal-overlay.is-open")'));
+ const all=(await api('credentials.getAll()')).result;assert.equal(all.length,1);
+ const id=all[0].id;
+ let saved=(await api('credentials.getOne('+id+')')).result;
+ assert.equal(saved.password,generated);assert.equal(saved.notes,'Synthetic note');assert.equal(saved.tags,'synthetic,demo');assert.equal(saved.favorite,true);
+ await run('openCredentialModal('+id+')');
+ assert.equal(await run('document.querySelector("#credential-notes-section").open'),true);
+ assert.equal(await run('document.querySelector("#credential-2fa-section").open'),false);
+ assert.equal(await run('!!document.querySelector("#password-history")'),true);
+ // A hidden, pending setup must block Save and reopen the section.
+ await run('document.querySelector("#credential-2fa-section").open=true;document.querySelector("#m-qr-manual-toggle").click();document.querySelector("#m-qr-secret").value="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";document.querySelector("#m-qr-secret").dispatchEvent(new Event("input"));document.querySelector("#credential-2fa-section").open=false;submitCredentialModal('+id+')');
+ assert.equal(await run('document.querySelector("#credential-2fa-section").open'),true);
+ assert.equal((await api('credentials.getOne('+id+')')).result.qrCode,'');
+ await run('document.querySelector("#m-qr-manual-use").click()');
+ await until(()=>run('!!document.querySelector("#m-qr").value'));
+ await run('document.querySelector("#credential-2fa-section").open=false;submitCredentialModal('+id+')');
+ await until(()=>run('!document.querySelector("#credential-modal-overlay.is-open")'));
+ await run('openCredentialModal('+id+')');
+ assert.equal(await run('document.querySelector("#credential-2fa-section").open'),true);
+ assert.equal(await run('document.querySelector("#credential-notes-section").open'),true);
+ await run('document.querySelector("#credential-2fa-section").open=false;document.querySelector("#credential-notes-section").open=false;document.querySelector("#m-notes").value="Cancelled draft";closeCredentialModal()');
+ assert.equal((await api('credentials.getOne('+id+')')).result.notes,'Synthetic note');
+ await run('openCredentialModal(null)');
+ for(const theme of ['light','dark','coffee','breeze','forest']){
+  await run('applyTheme('+JSON.stringify(theme)+');applyTextSize("large")');
+  win.setSize(980,640);await sleep(40);
+  assert.equal(await run('(()=>{const m=document.querySelector("#credential-modal-overlay .modal-container");const f=m.querySelector(".modal-footer").getBoundingClientRect();return m.scrollWidth<=m.clientWidth+1 && f.bottom<=innerHeight && f.top>=0;})()'),true,'form and footer fit '+theme);
+ }
+ await run('applyTextSize("default");applyTheme("forest")');win.setSize(1180,820);await sleep(80);
+ fs.writeFileSync(path.join(root,'add-forest.png'),(await win.webContents.capturePage()).toPNG());
+ await run('handleLockVault()');
+ assert.equal(await run('!!document.querySelector("#m-password")'),false,'lock removes draft fields');
+ console.log('PASS credential form: collapsed defaults, generator use/preservation, complete synthetic save, edit expansion, 2FA pending guard, cancel/lock cleanup and themed size checks. Synthetic fixture: '+root);
+ app.exit(0);
+}
+setTimeout(()=>{console.error('Credential form test timeout');app.exit(1);},60000).unref();
+main().catch(error=>{console.error(error);app.exit(1);});

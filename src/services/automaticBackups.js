@@ -6,6 +6,15 @@ const { writeJsonAtomic } = require("./fsUtils");
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION = [7, 14, 30];
 
+// Windows-safe local wall time with milliseconds and an explicit UTC offset.
+function backupTimestamp(time) {
+  const date = new Date(time);
+  const pad = (value, size = 2) => String(value).padStart(size, "0");
+  const offset = -date.getTimezoneOffset();
+  const zone = `${offset < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(offset) / 60))}${pad(Math.abs(offset) % 60)}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}_UTC${zone}`;
+}
+
 function createAutomaticBackups({ configPath, vault, now = Date.now }) {
   let state = { version: 1, id: crypto.randomUUID(), enabled: false, folder: "", keep: 7, lastSuccess: 0, files: [] };
   let error = "";
@@ -18,11 +27,21 @@ function createAutomaticBackups({ configPath, vault, now = Date.now }) {
     queue = result.catch(() => {});
     return result;
   };
-  const owns = name => typeof name === "string" && new RegExp(`^slv-auto-${state.id}-[0-9]{13}-[a-f0-9]{12}\\.slvbackup$`).test(name);
+  function backupTime(name) {
+    if (typeof name !== "string") return null;
+    const legacy = name.match(new RegExp(`^slv-auto-${state.id}-([0-9]{13})-[a-f0-9]{12}\\.slvbackup$`));
+    if (legacy) return Number(legacy[1]);
+    const readable = name.match(new RegExp(`^slv-auto-([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{2})-([0-9]{2})-([0-9]{2})\\.([0-9]{3})_UTC([+-][0-9]{2})([0-9]{2})-${state.id}-[a-f0-9]{12}\\.slvbackup$`));
+    if (!readable) return null;
+    const [, date, hour, minute, second, millis, zoneHours, zoneMinutes] = readable;
+    const time = Date.parse(`${date}T${hour}:${minute}:${second}.${millis}${zoneHours}:${zoneMinutes}`);
+    return Number.isFinite(time) ? time : null;
+  }
+  const owns = name => backupTime(name) !== null;
   const status = () => ({ enabled: state.enabled, folder: state.folder, keep: state.keep,
     lastSuccess: state.lastSuccess, nextDue: state.lastSuccess ? state.lastSuccess + DAY_MS : 0,
     running, error,
-    latestBackup: state.files[0] ? { fileName: state.files[0], createdAt: Number(state.files[0].split("-").at(-2)) } : null });
+    latestBackup: state.files[0] ? { fileName: state.files[0], createdAt: backupTime(state.files[0]) } : null });
   async function load() {
     try {
       const saved = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -111,7 +130,7 @@ function createAutomaticBackups({ configPath, vault, now = Date.now }) {
     running = true;
     try {
       await verifiedFolder();
-      const name = `slv-auto-${state.id}-${String(now()).padStart(13, "0")}-${crypto.randomBytes(6).toString("hex")}.slvbackup`;
+      const name = `slv-auto-${backupTimestamp(now())}-${state.id}-${crypto.randomBytes(6).toString("hex")}.slvbackup`;
       const target = path.join(state.folder, name);
       // Even a collision must not overwrite a pre-existing file.
       const existing = await fs.lstat(target).catch(e => { if (e.code === "ENOENT") return null; throw e; });

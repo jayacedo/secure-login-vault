@@ -6,6 +6,7 @@ const { testTempRoot } = require('./testTemp');
 const root = fs.mkdtempSync(path.join(testTempRoot(), 'manual-authenticator-app-'));
 for(const name of ['userData','sessionData','temp','logs']) { const dir=path.join(root,name);fs.mkdirSync(dir);app.setPath(name,dir); }
 app.setPath('appData',root);process.env.APPDATA=root;process.env.LOCALAPPDATA=root;process.env.SLV_PIPE_USER='manual-authenticator-'+process.pid;
+process.env.TEMP=root;process.env.TMP=root;
 clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
 dialog.showOpenDialog=async()=>({canceled:true});dialog.showSaveDialog=async()=>({canceled:true});
 powerMonitor.getSystemIdleState=()=> 'active';
@@ -27,7 +28,7 @@ async function main(){
  await run('initAuth();setPref(PREF_BACKGROUND_LOCK,"off");startAutoLockWatcher();applyTheme("coffee")');
  const row={websiteName:'Synthetic manual setup',password:'Dummy only',username:'dummy'};
  const id=(await api('credentials.add('+JSON.stringify(row)+')')).result.id;
- const open=()=>run('openCredentialModal('+id+')');
+ const open=async()=>{await run('openCredentialModal('+id+')');await run('document.querySelector("#credential-2fa-section").open=true');};
  const enter=async value=>{await run('document.querySelector("#m-qr-manual-toggle").click();document.querySelector("#m-qr-secret").value='+JSON.stringify(value)+';document.querySelector("#m-qr-secret").dispatchEvent(new Event("input"))');};
  await open();await enter('123456');
  assert.equal(await run('document.querySelector("#m-qr-secret").type'),'password');

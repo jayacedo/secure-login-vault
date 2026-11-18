@@ -22,6 +22,7 @@ async function main() {
   await service.configure({enabled:true,keep:7});
   await service.run();
   const first = (await fs.readdir(folder))[0];
+  assert.match(first, /^slv-auto-2026-11-\d{2}_\d{2}-\d{2}-\d{2}\.\d{3}_UTC[+-]\d{4}-/);
   assert.deepEqual(service.status().latestBackup, { fileName: first, createdAt: clock });
   assert.equal(await service.latestForVerification(), path.join(folder, first));
   assert.ok(first.endsWith(".slvbackup"));
@@ -89,5 +90,6 @@ async function main() {
   assert.equal((await fs.readdir(folder)).some(name=>name.endsWith(".tmp")),false);
   vault.lockVault();
   console.log("PASS corrupt snapshots are refused without replacing an existing backup");
+  console.log("Synthetic fixture: " + root);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
