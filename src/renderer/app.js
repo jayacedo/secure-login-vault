@@ -2514,6 +2514,11 @@ async function openClientModal(editId) {
     if (res.ok) client = res.result;
   }
   const c = client || {};
+  const sectionStart = (id, title, fields, icon = renderFolderIcon()) => `
+    <details class="client-optional" id="client-${id}-section" ${fields.some(field => Boolean(c[field])) ? "open" : ""}>
+      <summary>${icon}<span>${title}</span><span class="modal-hint">Optional</span>${renderChevronIcon()}</summary>
+      <div class="client-optional-body">`;
+  const sectionEnd = '</div></details>';
 
   overlay.innerHTML = `
     <div class="modal-container client-modal-container" role="dialog" aria-modal="true" aria-labelledby="client-modal-heading">
@@ -2524,26 +2529,26 @@ async function openClientModal(editId) {
         </button>
       </div>
       <div class="modal-body">
+        <label class="modal-label" for="cm-name">
+          <span class="modal-label-text">Client / Business Name <span class="required-mark">*</span></span>
+          <input id="cm-name" type="text" class="modal-input" placeholder="e.g. Pearl Farm Resort"
+                 value="${escapeHtml(c.name || "")}" required />
+        </label>
         <div class="modal-form-row">
-          <label class="modal-label" for="cm-name">
-            <span class="modal-label-text">Client / Business Name <span class="required-mark">*</span></span>
-            <input id="cm-name" type="text" class="modal-input" placeholder="e.g. Pearl Farm Resort"
-                   value="${escapeHtml(c.name || "")}" required />
-          </label>
           <label class="modal-label" for="cm-domain">
             <span class="modal-label-text">Domain</span>
             <input id="cm-domain" type="text" class="modal-input" placeholder="example.com"
                    value="${escapeHtml(c.domain || "")}" />
           </label>
+          <label class="modal-label" for="cm-category">
+            <span class="modal-label-text">Category <span class="modal-hint">(optional)</span></span>
+            <input id="cm-category" type="text" class="modal-input" placeholder="e.g. WordPress Maintenance"
+                   value="${escapeHtml(c.category || "")}" />
+          </label>
         </div>
 
-        <label class="modal-label" for="cm-category">
-          <span class="modal-label-text">Category <span class="modal-hint">(optional)</span></span>
-          <input id="cm-category" type="text" class="modal-input" placeholder="e.g. WordPress Maintenance"
-                 value="${escapeHtml(c.category || "")}" />
-        </label>
-
-        <h3 class="settings-section-title client-modal-section">WordPress Admin</h3>
+        <div class="client-optional-sections">
+        ${sectionStart("admin", "WordPress Admin", ["adminUrl", "adminUsername", "adminPassword"])}
         <label class="modal-label" for="cm-admin-url">
           <span class="modal-label-text">Admin URL</span>
           <input id="cm-admin-url" type="text" class="modal-input" placeholder="https://example.com/wp-admin"
@@ -2558,7 +2563,8 @@ async function openClientModal(editId) {
           ${renderClientPasswordField("cm-admin-password", "Password", c.adminPassword)}
         </div>
 
-        <h3 class="settings-section-title client-modal-section">Hosting</h3>
+        ${sectionEnd}
+        ${sectionStart("hosting", "Hosting", ["hostingProvider", "hostingUrl", "hostingUsername", "hostingPassword"])}
         <div class="modal-form-row">
           <label class="modal-label" for="cm-hosting-provider">
             <span class="modal-label-text">Hosting Provider</span>
@@ -2580,7 +2586,8 @@ async function openClientModal(editId) {
           ${renderClientPasswordField("cm-hosting-password", "Password", c.hostingPassword)}
         </div>
 
-        <h3 class="settings-section-title client-modal-section">FTP / SFTP</h3>
+        ${sectionEnd}
+        ${sectionStart("ftp", "FTP / SFTP", ["ftpHost", "ftpPort", "ftpUsername", "ftpPassword"])}
         <div class="modal-form-row">
           <label class="modal-label" for="cm-ftp-host">
             <span class="modal-label-text">Host</span>
@@ -2602,7 +2609,8 @@ async function openClientModal(editId) {
           ${renderClientPasswordField("cm-ftp-password", "Password", c.ftpPassword)}
         </div>
 
-        <h3 class="settings-section-title client-modal-section">Database</h3>
+        ${sectionEnd}
+        ${sectionStart("database", "Database", ["dbHost", "dbName", "dbUsername", "dbPassword", "phpMyAdminUrl"])}
         <div class="modal-form-row">
           <label class="modal-label" for="cm-db-host">
             <span class="modal-label-text">DB Host</span>
@@ -2629,7 +2637,8 @@ async function openClientModal(editId) {
                  value="${escapeHtml(c.phpMyAdminUrl || "")}" />
         </label>
 
-        <h3 class="settings-section-title client-modal-section">Domain &amp; SSL</h3>
+        ${sectionEnd}
+        ${sectionStart("domain", "Domain &amp; SSL", ["registrar", "domainExpiry", "sslExpiry"], renderShieldIcon())}
         <div class="modal-form-row">
           <label class="modal-label" for="cm-registrar">
             <span class="modal-label-text">Registrar</span>
@@ -2648,15 +2657,20 @@ async function openClientModal(editId) {
                  value="${escapeHtml(c.sslExpiry || "")}" />
         </label>
 
+        ${sectionEnd}
+        ${sectionStart("2fa", "Two-factor authentication", ["qrCode"], renderShieldIcon())}
+        ${renderQrUploadField("cm-qr", c.qrCode)}
+        ${sectionEnd}
+        ${sectionStart("notes", "Notes", ["notes"], renderNotesIcon())}
         <label class="modal-label" for="cm-notes">
           <span class="modal-label-text">Notes</span>
           <textarea id="cm-notes" class="modal-input modal-textarea" rows="2"
                     placeholder="Anything else worth remembering...">${escapeHtml(c.notes || "")}</textarea>
         </label>
+        ${sectionEnd}
+        </div>
 
         <div class="quick-links-preview" id="cm-quick-links-preview"></div>
-
-        ${renderQrUploadField("cm-qr", c.qrCode)}
 
         <label class="modal-checkbox-label" for="cm-favorite">
           <input id="cm-favorite" type="checkbox" ${c.favorite ? "checked" : ""} />
@@ -2704,6 +2718,7 @@ function updateQuickLinksPreview() {
     { label: "Hosting", url: hostingUrl },
     { label: "phpMyAdmin", url: pmaUrl }
   ].filter((l) => l.url);
+  preview.hidden = links.length === 0;
 
   preview.innerHTML = `
     <span class="modal-label-text">Quick Links <span class="modal-hint">(generated from the URLs above)</span></span>
@@ -2724,7 +2739,12 @@ function closeClientModal() {
 }
 
 async function submitClientModal(editId) {
-  if (hasPendingAuthenticator(document.querySelector("#client-modal-overlay"))) { showToast("Use or cancel the pending 2FA setup first.", "error"); return; }
+  if (hasPendingAuthenticator(document.querySelector("#client-modal-overlay"))) {
+    const section = document.querySelector("#client-2fa-section");
+    if (section) { section.open = true; section.scrollIntoView({ block: "nearest" }); }
+    showToast("Use or cancel the pending 2FA setup first.", "error");
+    return;
+  }
   const name = document.querySelector("#cm-name").value.trim();
   const errorEl = document.querySelector("#client-modal-error");
 

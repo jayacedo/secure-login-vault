@@ -72,9 +72,44 @@ async function main(){
  }
  await run('applyTextSize("default");applyTheme("forest")');win.setSize(1180,820);await sleep(80);
  fs.writeFileSync(path.join(root,'add-forest.png'),(await win.webContents.capturePage()).toPNG());
+ await run('closeCredentialModal();renderClientVault(_lastAuthState)');
+ await run('openClientModal(null)');
+ assert.equal(await run('document.querySelectorAll(".client-optional[open]").length'),0);
+ assert.equal(await run('document.querySelector("#cm-quick-links-preview").hidden'),true);
+ await run('applyTheme("dark")');await sleep(3100); // Let transitions and the earlier guard toast finish before capture.
+ fs.writeFileSync(path.join(root,'add-client.png'),(await win.webContents.capturePage()).toPNG());
+ const clientFields={name:['cm-name','Synthetic Client'],domain:['cm-domain','example.test'],category:['cm-category','Synthetic category'],
+  adminUrl:['cm-admin-url','https://example.test/wp-admin'],adminUsername:['cm-admin-username','dummy-admin'],adminPassword:['cm-admin-password','  Dummy admin only!  '],
+  hostingProvider:['cm-hosting-provider','Synthetic host'],hostingUrl:['cm-hosting-url','https://host.example.test'],hostingUsername:['cm-hosting-username','dummy-host'],hostingPassword:['cm-hosting-password','Dummy host only!'],
+  ftpHost:['cm-ftp-host','ftp.example.test'],ftpPort:['cm-ftp-port','22'],ftpUsername:['cm-ftp-username','dummy-ftp'],ftpPassword:['cm-ftp-password','Dummy ftp only!'],
+  dbHost:['cm-db-host','db.example.test'],dbName:['cm-db-name','synthetic_db'],dbUsername:['cm-db-username','dummy-db'],dbPassword:['cm-db-password','Dummy db only!'],phpMyAdminUrl:['cm-pma-url','https://db.example.test'],
+  registrar:['cm-registrar','Synthetic registrar'],domainExpiry:['cm-domain-expiry','2030-06-15'],sslExpiry:['cm-ssl-expiry','2030-01-10'],notes:['cm-notes','Synthetic client notes'],qrCode:['cm-qr',(await api('credentials.getOne('+id+')')).result.qrCode]};
+ await run('for(const [id,value] of '+JSON.stringify(Object.values(clientFields))+'){document.getElementById(id).value=value;}document.querySelector("#cm-favorite").checked=true;updateQuickLinksPreview();');
+ assert.equal(await run('document.querySelector("#cm-quick-links-preview").hidden'),false);
+ // All sections stay collapsed during Save: hidden fields must still round-trip.
+ await run('submitClientModal(null)');
+ const clients=(await api('clients.getAll()')).result;assert.equal(clients.length,1);
+ const clientId=clients[0].id;
+ const checkClient=async()=>{const entry=(await api('clients.getOne('+clientId+')')).result;for(const [key,[,value]] of Object.entries(clientFields))assert.equal(entry[key],value,'client preserves '+key);assert.equal(entry.favorite,true);};
+ await checkClient();await run('openClientModal('+clientId+')');
+ assert.equal(await run('document.querySelectorAll(".client-optional[open]").length'),7);
+ await run('document.querySelectorAll(".client-optional").forEach(s=>s.open=false);submitClientModal('+clientId+')');
+ await checkClient();await run('openClientModal('+clientId+')');
+ await run('document.querySelector("#cm-qr-manual-toggle").click();document.querySelector("#cm-qr-secret").value="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";document.querySelector("#cm-qr-secret").dispatchEvent(new Event("input"));document.querySelector("#client-2fa-section").open=false;submitClientModal('+clientId+')');
+ assert.equal(await run('document.querySelector("#client-2fa-section").open'),true,'pending client 2FA is visible');
+ await run('document.querySelector("#cm-notes").value="Cancelled client draft";closeClientModal()');await checkClient();
+ await run('openClientModal(null)');
+ for(const theme of ['light','dark','coffee','breeze','forest']){
+  await run('applyTheme('+JSON.stringify(theme)+');applyTextSize("large")');win.setSize(980,640);await sleep(40);
+  for(const expanded of [false,true]){
+   await run('document.querySelectorAll(".client-optional").forEach(s=>s.open='+expanded+')');
+   assert.equal(await run('(()=>{const m=document.querySelector("#client-modal-overlay .modal-container");const f=m.querySelector(".modal-footer").getBoundingClientRect();return m.scrollWidth<=m.clientWidth+1 && f.bottom<=innerHeight && f.top>=0;})()'),true,'client form and fixed footer fit '+theme);
+  }
+ }
  await run('handleLockVault()');
  assert.equal(await run('!!document.querySelector("#m-password")'),false,'lock removes draft fields');
- console.log('PASS credential form: collapsed defaults, generator use/preservation, complete synthetic save, edit expansion, 2FA pending guard, cancel/lock cleanup and themed size checks. Synthetic fixture: '+root);
+ assert.equal(await run('!!document.querySelector("#cm-admin-password")'),false,'lock removes client draft fields');
+ console.log('PASS login/client forms: collapsed defaults, generator use/preservation, complete synthetic save/edit round trips, edit expansion, 2FA pending guards, cancel/lock cleanup and themed size checks. Synthetic fixture: '+root);
  app.exit(0);
 }
 setTimeout(()=>{console.error('Credential form test timeout');app.exit(1);},60000).unref();

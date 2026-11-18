@@ -1,5 +1,8 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Client Details", items: [
+    { q: "Where are the optional fields in Add Client?", a: "Enter the Client / Business Name, Domain and Category at the top. Expand WordPress Admin, Hosting, FTP / SFTP, Database, Domain & SSL, Two-factor authentication or Notes as needed. Sections with saved details open automatically in Edit Client. Collapsing a section keeps its values; Save Client or Update Client saves them. Cancel discards edits. Quick Links appear when URLs are entered." }
+  ] },
   { title: "General Notes", items: [
     { q: "Where can I keep notes that do not belong to a login?", a: "Open Workspaces > Notes. Add a title and plain text, then Save note. Search titles and text, filter Favorites, or sort by title and update time. Notes are available across the vault, regardless of login group filters." },
     { q: "Are notes backed up, and what happens when I lock or delete?", a: "Saved notes are encrypted in your vault and included in full encrypted backups and restore, but not login CSV/JSON exports. Locking discards unsaved edits immediately. Switching notes or workspaces asks before discarding changed text. Delete note permanently removes the note after confirmation; it does not go to Recently Deleted." }
