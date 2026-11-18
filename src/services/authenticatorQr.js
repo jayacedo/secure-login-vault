@@ -1,5 +1,5 @@
 const { PNG } = require("pngjs");
-const jsQR = require("jsqr");
+const { scanQr } = require("./qrScan");
 const { parseSetupUri, fail } = require("./totp");
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024, MAX_DIMENSION = 1600;
 function validateImage(image) {
@@ -19,15 +19,14 @@ function decodeQr(image) {
       for (let c = 0; c < 3; c++) pixels[i + c] = Math.round(pixels[i + c] * alpha + 255 * (1 - alpha));
       pixels[i + 3] = 255;
     }
-    const rgba = new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.byteLength);
-    found = jsQR(rgba, width, height, { inversionAttempts: "attemptBoth" });
-    if (!found) fail("No readable QR code found. Upload a clear image cropped around the setup QR.");
+    found = scanQr(pixels, width, height);
+    if (!found) fail("No readable QR code found after scan retries. Crop to one sharp setup QR, or enter the setup key manually.");
     // Reject a sheet containing several QR codes instead of silently choosing one.
     const corners = [found.location.topLeftCorner, found.location.topRightCorner, found.location.bottomLeftCorner, found.location.bottomRightCorner];
     const left = Math.max(0, Math.floor(Math.min(...corners.map(p => p.x))) - 6), right = Math.min(width, Math.ceil(Math.max(...corners.map(p => p.x))) + 6);
     const top = Math.max(0, Math.floor(Math.min(...corners.map(p => p.y))) - 6), bottom = Math.min(height, Math.ceil(Math.max(...corners.map(p => p.y))) + 6);
     for (let y = top; y < bottom; y++) pixels.fill(255, (y * width + left) * 4, (y * width + right) * 4);
-    const another = jsQR(rgba, width, height, { inversionAttempts: "attemptBoth" });
+    const another = scanQr(pixels, width, height);
     if (another) { another.binaryData?.fill(0); fail("More than one QR code found. Crop to a single authenticator setup QR."); }
     return parseSetupUri(found.data);
   } catch (error) {

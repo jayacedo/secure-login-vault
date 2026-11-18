@@ -49,6 +49,7 @@
     "src/services/activityHistory.js",
     "src/services/authenticator.js",
     "src/services/authenticatorQr.js",
+    "src/services/qrScan.js",
     "src/services/authenticatorWorker.js",
     "src/services/automaticBackups.js",
     "src/services/backupVerification.js",

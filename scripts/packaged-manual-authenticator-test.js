@@ -8,9 +8,16 @@ async function main() {
     const {createSetupQr}=require(path.join(archive,'src/services/manualAuthenticator.js'));
     const {decodeQr}=require(path.join(archive,'src/services/authenticatorQr.js'));
     const {generateCode}=require(path.join(archive,'src/services/totp.js'));
-    const config=decodeQr((await createSetupQr({secret:'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'})).image);
+    const {decodeInWorker}=require(path.join(archive,'src/services/authenticator.js'));
+    const {PNG}=require(path.join(archive,'node_modules/pngjs'));
+    const image=(await createSetupQr({secret:'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'})).image;
+    const config=decodeQr(image);
     assert.equal(generateCode(config,59000).code,'287082');config.secret.fill(0);
-    console.log('PASS packaged manual authenticator runtime: local QR generation and RFC code using shipped dependencies.');
+    const png=PNG.sync.read(Buffer.from(image.split(',')[1],'base64'));
+    for(let i=0;i<png.data.length;i+=4)png.data[i]=png.data[i+1]=png.data[i+2]=png.data[i]<128?120:128;
+    const faint=await decodeInWorker('data:image/png;base64,'+PNG.sync.write(png).toString('base64'),new AbortController().signal);
+    assert.equal(generateCode(faint,59000).code,'287082');faint.secret.fill(0);png.data.fill(0);
+    console.log('PASS packaged authenticator runtime: local QR generation, faint-image worker retries and RFC code using shipped dependencies.');
     return;
   }
   const root=fs.mkdtempSync(path.join(require('./testTemp').testTempRoot(),'manual-authenticator-package-'));

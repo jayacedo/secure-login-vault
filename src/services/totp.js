@@ -23,14 +23,30 @@ function parseSetupUri(text) {
   let uri; try { uri = new URL(text); } catch { fail("This QR is not an authenticator setup code."); }
   if (uri.protocol !== "otpauth:" || uri.host !== "totp" || uri.username || uri.password || uri.hash) fail("Use a single TOTP authenticator setup QR. Sign-in links, HOTP and migration QR codes are not supported.");
   const allowed = new Set(["secret", "issuer", "algorithm", "digits", "period"]);
-  for (const key of uri.searchParams.keys()) if (!allowed.has(key) || uri.searchParams.getAll(key).length !== 1) fail("This authenticator QR uses unsupported or repeated settings.");
+  // Display-only extensions never affect TOTP and are never fetched or rendered.
+  const metadata = new Set(["image", "icon", "logo", "color", "background"]);
+  const settings = new Map();
+  if ([...uri.searchParams].length > 32) fail("This authenticator setup contains too many settings.");
+  for (const [rawKey, rawValue] of uri.searchParams) {
+    const key = rawKey.toLowerCase();
+    if (metadata.has(key)) continue;
+    if (!allowed.has(key)) fail("The QR was read, but it uses an unsupported authenticator setting. Try the site's manual setup key.");
+    let value = rawValue;
+    if (key === "secret") {
+      value = value.replace(/[ \t\r\n]/g, "").toUpperCase();
+      const checked = decodeSecret(value); checked.fill(0);
+      value = value.replace(/=+$/, "");
+    } else if (key === "algorithm") value = value.toUpperCase().replace(/^SHA-(1|256|512)$/, "SHA$1");
+    if (settings.has(key) && settings.get(key) !== value) fail("The QR was read, but it contains conflicting repeated settings. Use a fresh setup QR or enter the setup key manually.");
+    settings.set(key, value);
+  }
   let account; try { account = decodeURIComponent(uri.pathname.slice(1)); } catch { fail("The authenticator account label is not valid."); }
-  const issuer = uri.searchParams.get("issuer") || "";
+  const issuer = settings.get("issuer") || "";
   if (!account || account.length > 256 || issuer.length > 128 || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(account + issuer)) fail("The authenticator account label is not supported.");
-  const algorithm = (uri.searchParams.get("algorithm") ?? "SHA1").toUpperCase();
-  const digitsText = uri.searchParams.get("digits") ?? "6", periodText = uri.searchParams.get("period") ?? "30";
+  const algorithm = (settings.get("algorithm") ?? "SHA1").toUpperCase();
+  const digitsText = settings.get("digits") ?? "6", periodText = settings.get("period") ?? "30";
   if (!["SHA1", "SHA256", "SHA512"].includes(algorithm) || !["6", "8"].includes(digitsText) || !/^[1-9]\d{1,2}$/.test(periodText) || Number(periodText) < 15 || Number(periodText) > 120) fail("Supported setups use SHA1/SHA256/SHA512, 6 or 8 digits, and a 15–120 second period.");
-  return { secret: decodeSecret(uri.searchParams.get("secret")), account, issuer, algorithm, digits: Number(digitsText), period: Number(periodText) };
+  return { secret: decodeSecret(settings.get("secret")), account, issuer, algorithm, digits: Number(digitsText), period: Number(periodText) };
 }
 function generateCode(config, now = Date.now()) {
   if (!Number.isSafeInteger(now) || now < 0) fail("Check your computer's date and time.");
