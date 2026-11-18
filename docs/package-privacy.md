@@ -57,6 +57,31 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.70 installer
+
+Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.70.exe` (116,893,296 bytes).
+- SHA-256: `5f04c476f0451168b0be30a4d859cf6ed0194d23e2cf7565fa4a0e699d726972`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 368 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Before packaging, synthetic unlock transition, unlock layout and trusted-renderer
+  hardening tests passed, along with syntax checks. See [unlock transition validation](unlock-transition.md#validation).
+- Portable: `release/Secure Login Vault 1.0.70.exe` (116,658,720 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer prepares the populated dashboard before expanding the unlock
+window. Extension 0.6.6 is unchanged; no extension update is required.
+Superseded 1.0.69 package files were removed after verification. Installer
+extraction files were cleaned automatically.
+
 ## Local 1.0.69 installer
 
 Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.

@@ -10,4 +10,4 @@ The native presentation request is restricted to the trusted main renderer, the 
 
 `npm run test:unlock-layouts` checks the existing unlock variants. `npm run test:hardening-app` checks sender isolation for every exposed desktop request, including the presentation request.
 
-Frame checks inspect rendered DOM visibility and layout. They cannot prove the absence of every compositor or graphics-driver artifact on another computer. The 1.0.70 change is built unpacked; no new installer is created until requested.
+Frame checks inspect rendered DOM visibility and layout. They cannot prove the absence of every compositor or graphics-driver artifact on another computer. The 1.0.70 installer is packaged and verified for local testing only; see the [package record](package-privacy.md#local-1070-installer).
