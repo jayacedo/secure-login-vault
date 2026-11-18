@@ -47,4 +47,5 @@ No existing backup directory is inspected or modified during development/testing
 - `test:auto-backups-app`: isolated Settings folder selection, enabling,
   Backup now, persistence and locked guards.
 
-1.0.71 is built unpacked; no installer is produced until requested.
+The 1.0.71 installer is packaged and verified for local testing only; see the
+[package record](package-privacy.md#local-1071-installer).
