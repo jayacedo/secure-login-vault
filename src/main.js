@@ -350,6 +350,7 @@ function registerAuthHandlers() {
   });
 
   for (const [channel, operation] of [
+    ["vault:authenticator-setup-key", options => require("./services/manualAuthenticator").createSetupQr(options)],
     ["vault:authenticator-start", image => authenticator.start(image)],
     ["vault:authenticator-credential", id => {
       if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Choose a saved login.");

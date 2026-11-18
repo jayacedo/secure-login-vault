@@ -1,0 +1,78 @@
+const assert = require('assert/strict');
+const fs = require('fs');
+const path = require('path');
+const { app, BrowserWindow, clipboard, dialog, powerMonitor } = require('electron');
+const { testTempRoot } = require('./testTemp');
+const root = fs.mkdtempSync(path.join(testTempRoot(), 'manual-authenticator-app-'));
+for(const name of ['userData','sessionData','temp','logs']) { const dir=path.join(root,name);fs.mkdirSync(dir);app.setPath(name,dir); }
+app.setPath('appData',root);process.env.APPDATA=root;process.env.LOCALAPPDATA=root;process.env.SLV_PIPE_USER='manual-authenticator-'+process.pid;
+clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
+dialog.showOpenDialog=async()=>({canceled:true});dialog.showSaveDialog=async()=>({canceled:true});
+powerMonitor.getSystemIdleState=()=> 'active';
+require('../src/services/browserSetup').createBrowserSetup=()=>({status:async()=>({supported:false,ready:false})});
+const manual=require('../src/services/manualAuthenticator');
+const originalCreate=manual.createSetupQr;let release;
+manual.createSetupQr=async options=>{if(release===null)await new Promise(resolve=>{release=resolve;});return originalCreate(options);};
+require('../src/main');
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(fn){for(let i=0;i<150;i++){if(await fn())return;await sleep(60);}throw Error('Manual 2FA UI timeout');}
+async function main(){
+ await app.whenReady();await until(()=>BrowserWindow.getAllWindows().length);
+ const win=BrowserWindow.getAllWindows()[0];win.webContents.setBackgroundThrottling(false);
+ if(win.webContents.isLoading())await new Promise(resolve=>win.webContents.once('did-finish-load',resolve));
+ const run=code=>win.webContents.executeJavaScript(code),api=code=>run('window.secureLoginVault.'+code);
+ const secret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',pw='Synthetic manual UI master password';
+ assert.equal((await api('authenticator.createSetupQr('+JSON.stringify({secret})+')')).ok,false,'locked calls rejected');
+ const created=await api('auth.createVault('+JSON.stringify({masterPassword:pw,confirmPassword:pw})+')');assert.equal(created.ok,true,created.message);
+ await run('initAuth();setPref(PREF_BACKGROUND_LOCK,"off");startAutoLockWatcher();applyTheme("coffee")');
+ const row={websiteName:'Synthetic manual setup',password:'Dummy only',username:'dummy'};
+ const id=(await api('credentials.add('+JSON.stringify(row)+')')).result.id;
+ const open=()=>run('openCredentialModal('+id+')');
+ const enter=async value=>{await run('document.querySelector("#m-qr-manual-toggle").click();document.querySelector("#m-qr-secret").value='+JSON.stringify(value)+';document.querySelector("#m-qr-secret").dispatchEvent(new Event("input"))');};
+ await open();await enter('123456');
+ assert.equal(await run('document.querySelector("#m-qr-secret").type'),'password');
+ await run('document.querySelector("#m-qr-secret-show").click()');assert.equal(await run('document.querySelector("#m-qr-secret").type'),'text');
+ await run('document.querySelector("#m-qr-manual-use").click()');
+ await until(()=>run('!document.querySelector("#m-qr-error").hidden'));
+ assert.equal(await run('document.querySelector("#m-qr").value'),'');
+ assert.equal(await run('document.querySelector("#m-qr-secret").value'),'');
+ assert.equal(await run('document.querySelector("#m-qr-secret").type'),'password');
+ await run('document.querySelector("#m-qr-secret").value='+JSON.stringify(secret)+';document.querySelector("#m-qr-secret").dispatchEvent(new Event("input"))');
+ await run('submitCredentialModal('+id+')');assert.equal((await api('credentials.getOne('+id+')')).result.qrCode,'','unapplied key cannot save silently');
+ win.show();win.setSize(1000,900);await run('document.querySelector("#m-qr-manual").scrollIntoView({block:"center"});document.querySelector("#m-qr-manual details").open=true');await sleep(100);
+ fs.writeFileSync(path.join(root,'manual-setup.png'),(await win.webContents.capturePage()).toPNG());
+ await run('document.querySelector("#m-qr-manual-use").click()');await until(()=>run('!!document.querySelector("#m-qr").value'));
+ assert.equal(await run('document.querySelector("#m-qr-secret").value'),'');
+ await run('submitCredentialModal('+id+')');await until(()=>run('!document.querySelector("#credential-modal-overlay.is-open")'));
+ const saved=(await api('credentials.getOne('+id+')')).result.qrCode;assert.match(saved,/^data:image\/png;base64,/);
+ assert.equal((await api('credentials.getAll()')).result[0].hasQrCode,true);
+ const code=await api('authenticator.startCredential('+id+')');assert.equal(code.ok,true,code.message);assert.match(code.result.code,/^\d{6}$/);await api('authenticator.stop()');
+  await open();
+  await run(`(()=>{const image=${JSON.stringify(saved)};const bytes=Uint8Array.from(atob(image.split(',')[1]),c=>c.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([bytes],'synthetic.png',{type:'image/png'}));const field=document.querySelector('#m-qr-file');field.files=transfer.files;field.dispatchEvent(new Event('change'));})()`);
+  await until(()=>run('!document.querySelector("#m-qr-replace-confirm").hidden'));
+  assert.equal(await run('document.querySelector("#m-qr").value'),saved,'image upload also requires replacement approval');
+  await run('document.querySelector("#m-qr-replace-no").click();closeCredentialModal()');
+ // Replacing a setup requires an explicit choice and is saved only with the entry.
+ await open();await enter('JBSWY3DPEHPK3PXP');await run('document.querySelector("#m-qr-manual-use").click()');
+ await until(()=>run('!document.querySelector("#m-qr-replace-confirm").hidden'));
+ assert.equal(await run('document.querySelector("#m-qr").value'),saved);
+ await run('document.querySelector("#m-qr-replace-no").click()');assert.equal(await run('document.querySelector("#m-qr").value'),saved);
+ await enter('JBSWY3DPEHPK3PXP');await run('document.querySelector("#m-qr-manual-use").click()');await until(()=>run('!document.querySelector("#m-qr-replace-confirm").hidden'));
+ await run('document.querySelector("#m-qr-replace-yes").click()');assert.notEqual(await run('document.querySelector("#m-qr").value'),saved);
+ await run('closeCredentialModal()');assert.equal((await api('credentials.getOne('+id+')')).result.qrCode,saved,'cancel keeps saved setup');
+ // Cancelling a pending conversion cannot overwrite a newly opened editor.
+ await open();await enter(secret);release=null;await run('document.querySelector("#m-qr-manual-use").click()');await until(()=>typeof release==='function');
+ await run('closeCredentialModal()');await open();release();release=undefined;await sleep(150);
+ assert.equal(await run('document.querySelector("#m-qr").value'),saved);
+ await run('closeCredentialModal();openClientModal()');
+ assert.equal(await run('!!document.querySelector("#cm-qr-manual-toggle")'),true);
+ await run('document.querySelector("#cm-qr-manual-toggle").click();document.querySelector("#cm-qr-secret").value="dummy";closeClientModal()');
+ assert.equal(await run('!!document.querySelector("#cm-qr-secret")'),false);
+ await open();await enter(secret);release=null;await run('document.querySelector("#m-qr-manual-use").click()');await until(()=>typeof release==='function');
+ await run('handleLockVault()');release();release=undefined;await sleep(100);
+ assert.equal(await run('!!document.querySelector("#m-qr-secret")'),false);
+ console.log('PASS manual 2FA UI: masked entry, invalid input, explicit apply/save, replacement/cancel, Generate/list integration, client cleanup and late-response/lock guards. Fixture: '+root);
+ app.exit(0);
+}
+setTimeout(()=>{console.error('Manual authenticator test timeout');app.exit(1);},90000).unref();
+main().catch(error=>{console.error(error);app.exit(1);});

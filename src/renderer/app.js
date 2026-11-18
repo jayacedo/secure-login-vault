@@ -112,6 +112,7 @@ document.addEventListener("keydown", (e) => {
         if (selector === "#authenticator-overlay") closeAuthenticator();
         if (selector === "#qr-lightbox-overlay") closeQrLightbox();
         if (selector === "#credential-modal-overlay") closeCredentialModal();
+        if (selector === "#client-modal-overlay") closeClientModal();
         if (selector === "#vault-health-overlay") closeVaultHealth();
         if (selector === "#credential-trash-overlay") closeCredentialTrash();
         if (selector === "#duplicate-review-overlay") closeDuplicateReview();
@@ -1164,7 +1165,7 @@ async function handleLockVault() {
   closeSettingsModal();
   dismissGroupManagementOnLock();
   closeVaultHealth();
-  closeCredentialModal();
+  closeCredentialModal(); closeClientModal();
   await window.secureLoginVault.auth.lockVault();
 
   // Reset search state on lock
@@ -1347,12 +1348,13 @@ async function runSearch() {
 function renderQrUploadField(id, existingDataUri) {
   return `
     <div class="qr-field" data-qr-id="${id}">
-      <span class="modal-label-text">2FA QR Code <span class="modal-hint">(optional — authenticator setup QR)</span></span>
+      <span class="modal-label-text">2FA Authenticator <span class="modal-hint">(optional: QR image or setup key)</span></span>
       <input type="hidden" id="${id}" value="${escapeHtml(existingDataUri || "")}" />
       <input type="file" accept="image/*" id="${id}-file" class="qr-file-input" hidden />
       <div class="qr-upload-area" id="${id}-area">
         ${existingDataUri ? renderQrPreviewMarkup(id, existingDataUri) : renderQrEmptyMarkup(id)}
       </div>
+      ${renderManualAuthenticator(id)}
       <p class="form-message is-error" id="${id}-error" hidden></p>
     </div>
   `;
@@ -1420,14 +1422,20 @@ function setupQrUploadField(container, id) {
     if (errorEl) errorEl.hidden = true;
   };
 
+  const manual = setupManualAuthenticator(container, id, (image, bytes) => {
+    hiddenInput.value = image;
+    area.innerHTML = renderQrPreviewMarkup(id, image, bytes);
+    clearQrError();
+  }, showQrError, clearQrError);
+
   area.addEventListener("click", (e) => {
     const target = e.target.closest("[data-qr-action]");
     if (!target) return;
 
     if (target.dataset.qrAction === "upload") {
-      fileInput.click();
+      manual.reset(); fileInput.click();
     } else if (target.dataset.qrAction === "remove") {
-      hiddenInput.value = "";
+      manual.reset(); closeAuthenticator(); hiddenInput.value = "";
       area.innerHTML = renderQrEmptyMarkup(id);
       clearQrError();
     } else if (target.dataset.qrAction === "view") {
@@ -1451,13 +1459,13 @@ function setupQrUploadField(container, id) {
       return;
     }
 
+    const imageRequest = manual.beginUpload();
     try {
       const dataUri = await resizeImageToDataUri(file, QR_MAX_DIMENSION);
-      hiddenInput.value = dataUri;
-      area.innerHTML = renderQrPreviewMarkup(id, dataUri, file.size);
+      manual.offer(dataUri, file.size, imageRequest);
       clearQrError();
     } catch {
-      showQrError("Could not read that image. Try a different file.");
+      manual.failUpload(imageRequest, "Could not read that image. Try a different file.");
     }
   });
 }
@@ -2008,6 +2016,7 @@ function setupPasswordHistory(overlay, credentialId, {readOnly = false} = {}) {
 }
 
 async function submitCredentialModal(editId) {
+  if (hasPendingAuthenticator(document.querySelector("#credential-modal-overlay"))) { showToast("Use or cancel the pending 2FA setup first.", "error"); return; }
   const websiteName = document.querySelector("#m-website-name").value.trim();
   const password = document.querySelector("#m-password").value;
   const errorEl = document.querySelector("#modal-error");
@@ -2633,10 +2642,11 @@ function updateQuickLinksPreview() {
 function closeClientModal() {
   closeAuthenticator(); closeQrLightbox();
   const overlay = document.querySelector("#client-modal-overlay");
-  if (overlay) overlay.classList.remove("is-open");
+  if (overlay) { overlay.classList.remove("is-open"); overlay.replaceChildren(); }
 }
 
 async function submitClientModal(editId) {
+  if (hasPendingAuthenticator(document.querySelector("#client-modal-overlay"))) { showToast("Use or cancel the pending 2FA setup first.", "error"); return; }
   const name = document.querySelector("#cm-name").value.trim();
   const errorEl = document.querySelector("#client-modal-error");
 
@@ -2946,7 +2956,7 @@ function handleAutoLocked(payload) {
   closeCredentialTrash();
   closeSettingsModal();
   closeVaultHealth();
-  closeCredentialModal();
+  closeCredentialModal(); closeClientModal();
   if (payload && payload.reason === "inactivity") {
     showToast("Vault locked due to inactivity", "info");
   }

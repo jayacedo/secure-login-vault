@@ -1,0 +1,25 @@
+// Node mode only: do not launch the installed app or load any user profile.
+const assert = require('assert/strict');
+const fs = require('fs');
+const path = require('path');
+async function main() {
+  if (process.argv.includes('--synthetic-child')) {
+    const archive = path.resolve(__dirname,'../release/win-unpacked/resources/app.asar');
+    const {createSetupQr}=require(path.join(archive,'src/services/manualAuthenticator.js'));
+    const {decodeQr}=require(path.join(archive,'src/services/authenticatorQr.js'));
+    const {generateCode}=require(path.join(archive,'src/services/totp.js'));
+    const config=decodeQr((await createSetupQr({secret:'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'})).image);
+    assert.equal(generateCode(config,59000).code,'287082');config.secret.fill(0);
+    console.log('PASS packaged manual authenticator runtime: local QR generation and RFC code using shipped dependencies.');
+    return;
+  }
+  const root=fs.mkdtempSync(path.join(require('./testTemp').testTempRoot(),'manual-authenticator-package-'));
+  const result=require('child_process').spawnSync(path.resolve(__dirname,'../release/win-unpacked/Secure Login Vault.exe'),[__filename,'--synthetic-child'],{
+    windowsHide:true,encoding:'utf8',timeout:30000,
+    env:{...process.env,ELECTRON_RUN_AS_NODE:'1',APPDATA:root,LOCALAPPDATA:root,TEMP:root,TMP:root,SLV_PIPE_USER:'manual-package-'+process.pid}
+  });
+  if(result.error)throw result.error;
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  console.log(result.stdout.trim());console.log('Synthetic runtime directory: '+root);
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

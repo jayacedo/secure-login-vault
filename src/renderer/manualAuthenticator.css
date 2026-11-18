@@ -1,0 +1,9 @@
+.manual-authenticator { margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.manual-authenticator-key { display: flex; align-items: center; gap: 8px; }
+.manual-authenticator-key input { min-width: 0; flex: 1; }
+.manual-authenticator-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.manual-authenticator-options label { display: grid; gap: 6px; }
+.manual-authenticator-options :is(input, select) { min-height: 46px; width: 100%; }
+.manual-authenticator summary { cursor: pointer; }
+.manual-authenticator .qr-preview-actions { margin-top: 12px; flex-wrap: wrap; }
+@media (max-width: 600px) { .manual-authenticator-options { grid-template-columns: 1fr; } }

@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   authenticator: {
+    createSetupQr: options => ipcRenderer.invoke("vault:authenticator-setup-key", options),
     start: image => ipcRenderer.invoke("vault:authenticator-start", image),
     startCredential: id => ipcRenderer.invoke("vault:authenticator-credential", id),
     startClient: id => ipcRenderer.invoke("vault:authenticator-client", id),
