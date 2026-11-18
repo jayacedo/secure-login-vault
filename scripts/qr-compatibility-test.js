@@ -4,7 +4,7 @@ const QR = require('qrcode');
 const jsQR = require('jsqr');
 const { PNG } = require('pngjs');
 const { parseSetupUri, generateCode } = require('../src/services/totp');
-const { decodeInWorker: decode } = require('../src/services/authenticator');
+const { decodeInWorker: decode, createAuthenticator, SESSION_MS } = require('../src/services/authenticator');
 const decodeInWorker = image => decode(image, new AbortController().signal);
 const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
 const uri = `otpauth://totp/Synthetic:test?secret=${secret}&issuer=Synthetic`;
@@ -38,6 +38,44 @@ async function main() {
     '&algorithm=MD5', '&digits=7', '&period=0', '&secret=BAD', '&unknown=value',
     '&image=x'.repeat(33)
   ]) assert.throws(() => parseSetupUri(uri + suffix), error => error.isPublic && !error.message.includes(secret));
+  // Unknown fields may be tried only through an explicitly confirmed session.
+  const extraUri = uri + '&vendor_option=private-value&custom_account=private-account';
+  const extraImage = await QR.toDataURL(extraUri, { width: 420 });
+  const extraConfig = await decodeInWorker(extraImage);
+  assert.equal(extraConfig.extraSettings, 2);
+  assert.equal(JSON.stringify(extraConfig).includes('private-'), false);
+  extraConfig.secret.fill(0);
+  for (const suffix of ['&encoder=steam', '&counter=1', '&type=hotp', '&algorithm=MD5', '&digits=7', '&period=0', '&secret=BAD', '&digits=6&digits=8']) {
+    assert.throws(() => parseSetupUri(extraUri + suffix, { allowExtraSettings: true }), error => error.isPublic);
+  }
+  let unlocked = true, epoch = 1, now = 59000, writes = 0, decodedSecret;
+  const manager = createAuthenticator({
+    vault: { isUnlocked: () => unlocked, getOperationEpoch: () => epoch },
+    clipboard: { writeText: async () => { writes++; }, readText: async () => '', clear: async () => {} },
+    now: () => now,
+    decode: async () => { const config = parseSetupUri(extraUri, { allowExtraSettings: true }); decodedSecret = config.secret; return config; }
+  });
+  let pending = await manager.start(extraImage);
+  assert.equal(pending.requiresStandardConfirmation, true);
+  assert.equal('code' in pending, false); assert.equal('secret' in pending, false);
+  assert.equal(JSON.stringify(pending).includes('private-'), false);
+  assert.equal('code' in manager.read(pending.token), false);
+  await assert.rejects(manager.copy(pending.token), /Try standard TOTP/); assert.equal(writes, 0);
+  assert.throws(() => manager.confirmStandard('wrong-token'), /expired/);
+  pending = await manager.start(extraImage);
+  assert.equal(manager.confirmStandard(pending.token).code, '287082');
+  assert.equal(manager.read(pending.token).standardMode, true);
+  await manager.copy(pending.token); assert.equal(writes, 1);
+  manager.stop(); assert.ok(decodedSecret.every(byte => byte === 0));
+  pending = await manager.start(extraImage);
+  assert.equal(pending.requiresStandardConfirmation, true, 'confirmation is not persisted');
+  now += SESSION_MS; assert.throws(() => manager.confirmStandard(pending.token), /expired/);
+  pending = await manager.start(extraImage); epoch++;
+  assert.throws(() => manager.confirmStandard(pending.token), /expired/);
+  pending = await manager.start(extraImage); unlocked = false;
+  assert.throws(() => manager.confirmStandard(pending.token), /Unlock/);
+  assert.ok(decodedSecret.every(byte => byte === 0)); await manager.clear();
+  console.log('PASS standard-TOTP choice: no code/copy before confirmation, no extra-field disclosure, invalid formats rejected, close/expiry/epoch/lock guards');
   const standard = PNG.sync.read(await QR.toBuffer(uri, { width: 340, margin: 4 }));
   const low = PNG.sync.read(PNG.sync.write(standard));
   for (let i = 0; i < low.data.length; i += 4) low.data[i] = low.data[i+1] = low.data[i+2] = low.data[i] < 128 ? 120 : 128;

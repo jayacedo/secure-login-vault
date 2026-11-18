@@ -18,7 +18,7 @@ function decodeSecret(value) {
   if (accumulator !== 0 || bytes.length < 10 || bytes.length > 64) { bytes.fill(0); fail("The authenticator setup key has an unsupported length or encoding."); }
   const secret = Buffer.from(bytes); bytes.fill(0); return secret;
 }
-function parseSetupUri(text) {
+function parseSetupUri(text, { allowExtraSettings = false } = {}) {
   if (typeof text !== "string" || text.length > 4096) fail("This QR is not a supported authenticator setup code.");
   let uri; try { uri = new URL(text); } catch { fail("This QR is not an authenticator setup code."); }
   if (uri.protocol !== "otpauth:" || uri.host !== "totp" || uri.username || uri.password || uri.hash) fail("Use a single TOTP authenticator setup QR. Sign-in links, HOTP and migration QR codes are not supported.");
@@ -26,11 +26,18 @@ function parseSetupUri(text) {
   // Display-only extensions never affect TOTP and are never fetched or rendered.
   const metadata = new Set(["image", "icon", "logo", "color", "background"]);
   const settings = new Map();
+  let extraSettings = 0;
   if ([...uri.searchParams].length > 32) fail("This authenticator setup contains too many settings.");
   for (const [rawKey, rawValue] of uri.searchParams) {
     const key = rawKey.toLowerCase();
     if (metadata.has(key)) continue;
-    if (!allowed.has(key)) fail("The QR was read, but it uses an unsupported authenticator setting. Try the site's manual setup key.");
+    // Known code-generation extensions must never fall back to standard TOTP.
+    if (key === "encoder" || key === "counter" || key === "type") fail("This QR requests an unsupported authenticator format. Use a standard TOTP setup QR or the site's manual setup key.");
+    if (!allowed.has(key)) {
+      if (!allowExtraSettings) fail("The QR was read, but it uses an unsupported authenticator setting. Try the site's manual setup key.");
+      extraSettings++;
+      continue; // Never return, render or log unknown names or values.
+    }
     let value = rawValue;
     if (key === "secret") {
       value = value.replace(/[ \t\r\n]/g, "").toUpperCase();
@@ -46,7 +53,7 @@ function parseSetupUri(text) {
   const algorithm = (settings.get("algorithm") ?? "SHA1").toUpperCase();
   const digitsText = settings.get("digits") ?? "6", periodText = settings.get("period") ?? "30";
   if (!["SHA1", "SHA256", "SHA512"].includes(algorithm) || !["6", "8"].includes(digitsText) || !/^[1-9]\d{1,2}$/.test(periodText) || Number(periodText) < 15 || Number(periodText) > 120) fail("Supported setups use SHA1/SHA256/SHA512, 6 or 8 digits, and a 15–120 second period.");
-  return { secret: decodeSecret(settings.get("secret")), account, issuer, algorithm, digits: Number(digitsText), period: Number(periodText) };
+  return { secret: decodeSecret(settings.get("secret")), account, issuer, algorithm, digits: Number(digitsText), period: Number(periodText), extraSettings };
 }
 function generateCode(config, now = Date.now()) {
   if (!Number.isSafeInteger(now) || now < 0) fail("Check your computer's date and time.");

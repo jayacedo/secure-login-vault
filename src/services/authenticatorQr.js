@@ -28,7 +28,9 @@ function decodeQr(image) {
     for (let y = top; y < bottom; y++) pixels.fill(255, (y * width + left) * 4, (y * width + right) * 4);
     const another = scanQr(pixels, width, height);
     if (another) { another.binaryData?.fill(0); fail("More than one QR code found. Crop to a single authenticator setup QR."); }
-    return parseSetupUri(found.data);
+    // Extra fields require confirmation in the authenticator session before
+    // generating or copying a code. The standard settings are still validated.
+    return parseSetupUri(found.data, { allowExtraSettings: true });
   } catch (error) {
     if (error.isPublic) throw error;
     fail("Could not read this QR image. Try uploading a clear, cropped setup QR.");

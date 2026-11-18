@@ -361,6 +361,7 @@ function registerAuthHandlers() {
       });
     }],
     ["vault:authenticator-read", token => authenticator.read(token)],
+    ["vault:authenticator-confirm-standard", token => authenticator.confirmStandard(token)],
     ["vault:authenticator-client", id => {
       if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Choose a saved client.");
       return authenticator.start(async () => {

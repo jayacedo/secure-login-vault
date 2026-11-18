@@ -56,7 +56,15 @@ function createAuthenticator({ vault, clipboard, now = Date.now, decode = decode
     if (!session || typeof token !== "string" || token !== session.token || now() >= session.expires || vault.getOperationEpoch() !== session.epoch) {
       stop(); fail("This authenticator view expired. Open Generate code again.");
     }
-    return { ...generateCode(session.config, now()), account: session.config.account, issuer: session.config.issuer, algorithm: session.config.algorithm };
+    const { account, issuer, algorithm, digits, period, extraSettings } = session.config;
+    const details = { account, issuer, algorithm, digits, period, extraSettings: extraSettings || 0 };
+    if (extraSettings && !session.standardConfirmed) return { ...details, requiresStandardConfirmation: true };
+    return { ...generateCode(session.config, now()), ...details, standardMode: !!extraSettings };
+  }
+  function confirmStandard(token) {
+    read(token); // Enforce the same token, expiry, lock and epoch checks.
+    session.standardConfirmed = true;
+    return read(token);
   }
   async function start(image) {
     requireUnlocked(); stop();
@@ -77,12 +85,13 @@ function createAuthenticator({ vault, clipboard, now = Date.now, decode = decode
     } finally { config?.secret.fill(0); if (pending === controller) pending = null; }
   }
   async function copy(token) {
-    read(token);
+    if (read(token).requiresStandardConfirmation) fail("Choose Try standard TOTP before copying a code from this QR.");
     const request = generation;
     return queueClipboard(async () => {
       await clearCopied();
       if (request !== generation) fail("Authenticator request cancelled.");
       const result = read(token);
+      if (result.requiresStandardConfirmation) fail("Choose Try standard TOTP before copying a code from this QR.");
       await clipboard.writeText(result.code); copied = result.code;
       // A lock, close or rollover during the write must not leave a stale code.
       if (request !== generation || !vault.isUnlocked() || session?.epoch !== vault.getOperationEpoch() || now() >= result.validUntil) {
@@ -93,6 +102,6 @@ function createAuthenticator({ vault, clipboard, now = Date.now, decode = decode
       return result;
     });
   }
-  return { start, read, copy, stop, clear };
+  return { start, read, confirmStandard, copy, stop, clear };
 }
 module.exports = { createAuthenticator, decodeInWorker, SESSION_MS };

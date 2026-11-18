@@ -8,7 +8,7 @@ async function main() {
     const {createSetupQr}=require(path.join(archive,'src/services/manualAuthenticator.js'));
     const {decodeQr}=require(path.join(archive,'src/services/authenticatorQr.js'));
     const {generateCode}=require(path.join(archive,'src/services/totp.js'));
-    const {decodeInWorker}=require(path.join(archive,'src/services/authenticator.js'));
+    const {decodeInWorker,createAuthenticator}=require(path.join(archive,'src/services/authenticator.js'));
     const {PNG}=require(path.join(archive,'node_modules/pngjs'));
     const image=(await createSetupQr({secret:'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'})).image;
     const config=decodeQr(image);
@@ -17,7 +17,14 @@ async function main() {
     for(let i=0;i<png.data.length;i+=4)png.data[i]=png.data[i+1]=png.data[i+2]=png.data[i]<128?120:128;
     const faint=await decodeInWorker('data:image/png;base64,'+PNG.sync.write(png).toString('base64'),new AbortController().signal);
     assert.equal(generateCode(faint,59000).code,'287082');faint.secret.fill(0);png.data.fill(0);
-    console.log('PASS packaged authenticator runtime: local QR generation, faint-image worker retries and RFC code using shipped dependencies.');
+    const QR=require(path.join(archive,'node_modules/qrcode'));
+    const extra=await QR.toDataURL('otpauth://totp/Synthetic?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&vendor_option=dummy',{width:420});
+    const manager=createAuthenticator({vault:{isUnlocked:()=>true,getOperationEpoch:()=>1},clipboard:{readText:async()=>'',clear:async()=>{},writeText:async()=>{throw Error('Copy not expected');}},now:()=>59000});
+    const pending=await manager.start(extra);
+    assert.equal(pending.requiresStandardConfirmation,true);assert.equal('code' in pending,false);
+    await assert.rejects(manager.copy(pending.token),/Try standard TOTP/);
+    assert.equal(manager.confirmStandard(pending.token).code,'287082');await manager.clear();
+    console.log('PASS packaged authenticator runtime: local QR generation, faint-image retries, explicit standard-TOTP confirmation and RFC code using shipped dependencies.');
     return;
   }
   const root=fs.mkdtempSync(path.join(require('./testTemp').testTempRoot(),'manual-authenticator-package-'));

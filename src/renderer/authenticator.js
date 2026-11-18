@@ -27,6 +27,8 @@ async function openAuthenticator(image, trigger, entryKind = "credential") {
       <div class="authenticator-code" id="authenticator-code" aria-label="Current authenticator code">—</div>
       <progress id="authenticator-progress" max="30" value="0" aria-label="Time remaining for this code"></progress>
       <p id="authenticator-countdown" class="modal-hint"></p><p id="authenticator-status" class="modal-hint" role="status">Reading the setup QR locally…</p>
+      <p id="authenticator-compatibility" class="modal-hint" hidden></p>
+      <button id="authenticator-standard" class="secondary-button" type="button" hidden>Try standard TOTP</button>
       <p class="modal-hint">Use this code for the account shown above. Your computer's date and time must be correct.</p>
       <p class="modal-hint">The QR is kept with the entry when you save it. Closing this view clears the temporary setup key. Codes stop after five minutes; reopen Generate code to continue.</p>
     </div><div class="modal-footer"><button id="authenticator-done" class="secondary-button" type="button">Close</button><button id="authenticator-copy" class="primary-button" type="button" disabled>Copy code</button></div>
@@ -35,6 +37,19 @@ async function openAuthenticator(image, trigger, entryKind = "credential") {
   const find = selector => overlay.querySelector(selector);
   function paint(result) {
     find("#authenticator-account").textContent = result.account;
+    const extra = result.extraSettings > 0;
+    find("#authenticator-compatibility").hidden = !extra;
+    find("#authenticator-standard").hidden = !result.requiresStandardConfirmation;
+    if (extra) find("#authenticator-compatibility").textContent = result.requiresStandardConfirmation
+      ? `This QR has ${result.extraSettings} extra ${result.extraSettings === 1 ? "setting" : "settings"} SLV does not understand. Standard TOTP would use ${result.algorithm}, ${result.digits} digits and a ${result.period}-second interval. Try it only if the site uses standard authenticator codes; verify the result with the site or your existing authenticator.`
+      : "Standard TOTP mode: extra QR settings are ignored for this view only. Verify the code with the site or your existing authenticator. The saved QR is unchanged.";
+    if (result.requiresStandardConfirmation) {
+      find("#authenticator-code").textContent = "—";
+      find("#authenticator-copy").disabled = true;
+      find("#authenticator-progress").value = 0;
+      find("#authenticator-countdown").textContent = "";
+      return;
+    }
     find("#authenticator-code").textContent = result.code;
     find("#authenticator-progress").max = result.period; find("#authenticator-progress").value = result.remaining;
     find("#authenticator-countdown").textContent = `New code in ${result.remaining}s · ${result.period}-second codes`;
@@ -44,8 +59,21 @@ async function openAuthenticator(image, trigger, entryKind = "credential") {
     clearTimeout(authenticatorTimer); find("#authenticator-code").textContent = "—";
     find("#authenticator-copy").disabled = true; find("#authenticator-progress").value = 0;
     find("#authenticator-countdown").textContent = ""; find("#authenticator-status").setAttribute("role", "alert");
+    find("#authenticator-standard").hidden = true;
+    find("#authenticator-compatibility").hidden = true;
     find("#authenticator-status").textContent = message;
   }
+  find("#authenticator-standard").addEventListener("click", async () => {
+    const button = find("#authenticator-standard"); button.disabled = true;
+    try {
+      const response = await window.secureLoginVault.authenticator.confirmStandard(authenticatorToken);
+      if (request !== authenticatorRequest) return;
+      if (!response.ok) return failed(response.message || "Could not try standard TOTP. Reopen this view.");
+      paint(response.result);
+      find("#authenticator-status").textContent = "Generated locally using standard TOTP.";
+      authenticatorTimer = setTimeout(refresh, 500);
+    } catch { if (request === authenticatorRequest) failed("Could not try standard TOTP. Reopen this view."); }
+  });
   async function refresh() {
     try {
       const response = await window.secureLoginVault.authenticator.read(authenticatorToken);
@@ -75,6 +103,10 @@ async function openAuthenticator(image, trigger, entryKind = "credential") {
     if (request !== authenticatorRequest) { if (response.ok) window.secureLoginVault.authenticator.stop(response.result.token).catch(() => {}); return; }
     if (!response.ok) return failed(response.message || "Could not read this authenticator QR.");
     authenticatorToken = response.result.token; paint(response.result);
+    if (response.result.requiresStandardConfirmation) {
+      find("#authenticator-status").textContent = "QR decoded. Review the compatibility choice below.";
+      return;
+    }
     find("#authenticator-status").textContent = "Generated locally. No setup key or code is sent to the browser extension.";
     authenticatorTimer = setTimeout(refresh, 500);
   } catch { if (request === authenticatorRequest) failed("Could not read this authenticator QR."); }

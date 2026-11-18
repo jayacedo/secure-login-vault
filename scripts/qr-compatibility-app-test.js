@@ -1,0 +1,80 @@
+// New synthetic profile only. Never launch the installed app or read real data.
+const assert = require('assert/strict');
+const fs = require('fs');
+const path = require('path');
+const QR = require('qrcode');
+const { app, BrowserWindow, clipboard, dialog, powerMonitor } = require('electron');
+const root = fs.mkdtempSync(path.join(require('./testTemp').testTempRoot(), 'qr-compatibility-app-'));
+for (const name of ['userData', 'sessionData', 'temp', 'logs']) {
+  const dir = path.join(root, name); fs.mkdirSync(dir); app.setPath(name, dir);
+}
+app.setPath('appData', root);
+process.env.APPDATA = process.env.LOCALAPPDATA = process.env.TEMP = process.env.TMP = root;
+process.env.SLV_PIPE_USER = 'qr-compatibility-' + process.pid;
+let copied = '';
+clipboard.readText = async () => copied;
+clipboard.writeText = async value => { copied = value; };
+clipboard.clear = async () => { copied = ''; };
+dialog.showOpenDialog = dialog.showSaveDialog = async () => ({ canceled: true });
+powerMonitor.getSystemIdleState = () => 'active';
+require('../src/services/browserSetup').createBrowserSetup = () => ({ status: async () => ({ supported: false, ready: false }) });
+require('../src/main');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(fn) { for (let i = 0; i < 150; i++) { if (await fn()) return; await sleep(60); } throw Error('QR compatibility UI timeout'); }
+async function main() {
+  await app.whenReady(); await until(() => BrowserWindow.getAllWindows().length);
+  const win = BrowserWindow.getAllWindows()[0]; win.webContents.setBackgroundThrottling(false);
+  if (win.webContents.isLoading()) await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
+  const run = code => win.webContents.executeJavaScript(code), api = code => run('window.secureLoginVault.' + code);
+  assert.equal((await api('authenticator.confirmStandard("invalid")')).ok, false);
+  const pw = 'Synthetic QR compatibility master password';
+  assert.equal((await api('auth.createVault(' + JSON.stringify({ masterPassword: pw, confirmPassword: pw }) + ')')).ok, true);
+  await run('initAuth();setPref(PREF_BACKGROUND_LOCK,"off");startAutoLockWatcher();applyTheme("forest")');
+  const image = await QR.toDataURL('otpauth://totp/Synthetic?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&vendor_option=private-extra', { width: 420 });
+  const open = () => run('openAuthenticator(' + JSON.stringify(image) + ')');
+  await open();
+  assert.equal(await run('document.querySelector("#authenticator-standard").hidden'), false);
+  assert.equal(await run('document.querySelector("#authenticator-copy").disabled'), true);
+  assert.equal(await run('document.querySelector("#authenticator-code").textContent'), '—');
+  assert.equal(await run('document.querySelector("#authenticator-overlay").textContent.includes("private-extra")'), false);
+  assert.equal(await run('document.querySelector("#authenticator-overlay").textContent.includes("GEZDGNBV")'), false);
+  assert.match(await run('document.querySelector("#authenticator-compatibility").textContent'), /SHA1, 6 digits.*30-second/);
+  let token = await run('authenticatorToken');
+  assert.equal((await api('authenticator.copy(' + JSON.stringify(token) + ')')).ok, false);
+  assert.equal(copied, '');
+  win.show(); win.setMinimumSize(400, 500); win.setSize(520, 760);
+  assert.equal(await run('(()=>{const b=document.querySelector("#authenticator-overlay .modal-body");return b.scrollWidth<=b.clientWidth+1})()'), true);
+  fs.writeFileSync(path.join(root, 'compatibility-prompt.png'), (await win.webContents.capturePage()).toPNG());
+  await run('document.querySelector("#authenticator-standard").click()');
+  await until(() => run('!document.querySelector("#authenticator-copy").disabled'));
+  assert.match(await run('document.querySelector("#authenticator-code").textContent'), /^\d{6}$/);
+  assert.equal(await run('document.querySelector("#authenticator-standard").hidden'), true);
+  assert.match(await run('document.querySelector("#authenticator-compatibility").textContent'), /extra QR settings are ignored/);
+  await run('document.querySelector("#authenticator-copy").click()'); await until(() => copied.length === 6);
+  await run('closeAuthenticator()');
+  assert.equal((await api('authenticator.confirmStandard(' + JSON.stringify(token) + ')')).ok, false);
+  await open();
+  assert.equal(await run('document.querySelector("#authenticator-standard").hidden'), false, 'reopening requires fresh choice');
+  token = await run('authenticatorToken');
+  await run('handleLockVault()');
+  assert.equal(await run('document.querySelector("#authenticator-overlay").childElementCount'), 0);
+  assert.equal((await api('authenticator.confirmStandard(' + JSON.stringify(token) + ')')).ok, false);
+  assert.equal((await api('auth.unlockVault({masterPassword:' + JSON.stringify(pw) + '})')).ok, true);
+  await run('initAuth()');
+  // The new confirmation channel is trusted-main-window only.
+  const probe = path.join(root, 'probe.js');
+  fs.writeFileSync(probe, 'const {contextBridge,ipcRenderer}=require("electron");contextBridge.exposeInMainWorld("probe",()=>ipcRenderer.invoke("vault:authenticator-confirm-standard","invalid"));');
+  const child = new BrowserWindow({ show: false, webPreferences: { preload: probe, contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  await child.loadURL('about:blank');
+  const rejected = await child.webContents.executeJavaScript('window.probe()');
+  assert.equal(rejected.ok, false); assert.match(rejected.message, /Open this action/); child.destroy();
+  const bad = await QR.toDataURL('otpauth://totp/Synthetic?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&encoder=steam', { width: 420 });
+  await run('openAuthenticator(' + JSON.stringify(bad) + ')');
+  assert.equal(await run('document.querySelector("#authenticator-standard").hidden'), true);
+  assert.equal(await run('document.querySelector("#authenticator-copy").disabled'), true);
+  assert.match(await run('document.querySelector("#authenticator-status").textContent'), /unsupported authenticator format/);
+  console.log('PASS isolated QR compatibility UI/IPC: explicit choice, hidden code/disabled copy, safe text, narrow layout, repeat/close/lock guards, untrusted-window rejection and unsupported-format rejection. Fixture: ' + root);
+  app.exit(0);
+}
+setTimeout(() => { console.error('QR compatibility UI timeout'); app.exit(1); }, 60000).unref();
+main().catch(error => { console.error(error); app.exit(1); });
