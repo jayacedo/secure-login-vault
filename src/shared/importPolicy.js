@@ -9,16 +9,16 @@ const ImportPolicy = (() => {
     if (typeof content !== 'string' || content.length > MAX_BYTES || new TextEncoder().encode(content).length > MAX_BYTES) fail('Import files must be 16 MB or smaller. Split the file and try again.');
   }
   function row(data) {
-    if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Each imported credential must be an object.');
-    if (Object.keys(data).some(key => !Object.hasOwn(limits, key) && key !== 'favorite')) fail('Imported credentials contain an unsupported field.');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Each imported login must be an object.');
+    if (Object.keys(data).some(key => !Object.hasOwn(limits, key) && key !== 'favorite')) fail('Imported logins contain an unsupported field.');
     for (const [key, limit] of Object.entries(limits)) {
       if (data[key] !== undefined && data[key] !== null && (typeof data[key] !== 'string' || data[key].length > limit)) fail(`Imported ${key} must be text up to ${limit} characters.`);
     }
-    if (typeof data.websiteName !== 'string' || !data.websiteName.trim() || typeof data.password !== 'string' || !data.password) fail('Every imported credential needs a Website Name and Password.');
+    if (typeof data.websiteName !== 'string' || !data.websiteName.trim() || typeof data.password !== 'string' || !data.password) fail('Every imported login needs a Website Name and Password.');
     if (data.favorite !== undefined && typeof data.favorite !== 'boolean') fail('Imported favorite must be true or false.');
   }
   function rows(values) {
-    if (!Array.isArray(values) || !values.length || values.length > MAX_ROWS) fail('Import between 1 and 5,000 credentials at a time.');
+    if (!Array.isArray(values) || !values.length || values.length > MAX_ROWS) fail('Import between 1 and 5,000 logins at a time.');
     let size = 0;
     for (const value of values) {
       row(value);

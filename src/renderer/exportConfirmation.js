@@ -64,7 +64,7 @@ function openPlaintextExport(format, trigger) {
       if (!written.ok) throw Error(written.message);
       const { count, filePath } = written.result;
       closePlaintextExport();
-      setSettingsStatus(`Exported ${count} credential${count === 1 ? "" : "s"} to ${filePath}.`);
+      setSettingsStatus(`Exported ${count} login${count === 1 ? "" : "s"} to ${filePath}.`);
       showToast("Export complete", "info");
     } catch (error) {
       if (plaintextExportState !== state) return;

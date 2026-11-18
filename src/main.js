@@ -346,7 +346,7 @@ function registerAuthHandlers() {
 
   handleAppRequest("vault:get-password-history", (event, id) => handleVaultOperation(() => {
     if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
-      throw createPublicError("Open the credential in SLV.");
+      throw createPublicError("Open the login in SLV.");
     }
     return vaultStore.getPasswordHistory(id);
   }));

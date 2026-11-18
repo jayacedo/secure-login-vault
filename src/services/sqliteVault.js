@@ -231,10 +231,10 @@ async function getCredentialsForExport(filePath, key) {
 async function getCredentialById(filePath, key, id) {
   return withDecryptedDatabase(filePath, key, (db) => {
     const row = queryOne(db, `SELECT * FROM credentials WHERE id = ?`, [id]);
-    if (!row || !row.id) throw createPublicError("Credential not found.");
+    if (!row || !row.id) throw createPublicError("Login not found.");
     const activeGroup = getActiveGroupFilterValue(db);
     if (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase()) {
-      throw createPublicError("Credential not found.");
+      throw createPublicError("Login not found.");
     }
     return normalizeCredential(row);
   });
@@ -245,7 +245,7 @@ async function getCredentialPasswordHistory(filePath, key, id) {
     const row = queryOne(db, "SELECT id, group_name FROM credentials WHERE id = ?", [id]);
     const activeGroup = getActiveGroupFilterValue(db);
     if (!row.id || (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) {
-      throw createPublicError("Credential not found.");
+      throw createPublicError("Login not found.");
     }
     return queryAll(db,
       "SELECT id, password, replaced_at AS replacedAt FROM credential_password_history WHERE credential_id = ? ORDER BY id DESC LIMIT 10",
@@ -254,13 +254,13 @@ async function getCredentialPasswordHistory(filePath, key, id) {
 }
 
 async function getCredentialDetails(filePath, key, id) {
-  if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Credential not found.");
+  if (!Number.isSafeInteger(id) || id <= 0) throw createPublicError("Login not found.");
   return withDecryptedDatabase(filePath, key, db => {
     const row = queryOne(db, `SELECT id, website_name, website_url, category, username, email, notes, tags,
       favorite, group_name, created_at, updated_at,
       CASE WHEN COALESCE(qr_code, '') <> '' THEN 1 ELSE 0 END AS has_qr_code FROM credentials WHERE id = ?`, [id]);
     const activeGroup = getActiveGroupFilterValue(db);
-    if (!row.id || (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) throw createPublicError("Credential not found.");
+    if (!row.id || (activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) throw createPublicError("Login not found.");
     const {password, qrCode, ...details} = normalizeCredential(row);
     return details;
   });
@@ -387,7 +387,7 @@ async function updateCredential(filePath, key, id, data) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
     validateCredentialData(data);
     const existing = queryOne(db, "SELECT id FROM credentials WHERE id = ?", [id]);
-    if (!existing || !existing.id) throw createPublicError("Credential not found.");
+    if (!existing || !existing.id) throw createPublicError("Login not found.");
     const now = new Date().toISOString();
     ensureGroupExists(db, normalizeGroupValue(data.groupName));
     const stmt = db.prepare(
@@ -423,7 +423,7 @@ function credentialMoveSnapshot(db, key, choice, sessionId, kind = "group") {
   const ids = choice?.ids;
   if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => !Number.isSafeInteger(id) || id <= 0)
     || new Set(ids).size !== ids.length || (favorite ? typeof destination !== "boolean" : typeof destination !== "string" || destination.length > 200 || (category && !destination.trim()))) {
-    throw createPublicError(`Select between 1 and 500 credentials and choose a destination ${kind}.`);
+    throw createPublicError(`Select between 1 and 500 logins and choose a destination ${kind}.`);
   }
   const targetName = favorite ? "" : destination.trim();
   const target = favorite ? { favorite: destination } : targetName ? queryOne(db, category
@@ -433,7 +433,7 @@ function credentialMoveSnapshot(db, key, choice, sessionId, kind = "group") {
   const activeGroup = getActiveGroupFilterValue(db);
   const rows = queryAll(db, `SELECT * FROM credentials WHERE id IN (${ids.map(() => "?").join(",")}) ORDER BY id`, ids);
   if (rows.length !== ids.length || rows.some(row => activeGroup && (row.group_name || "").toLowerCase() !== activeGroup.toLowerCase())) {
-    throw createPublicError("Some selected credentials are unavailable in the active group. Refresh the list and select again.");
+    throw createPublicError("Some selected logins are unavailable in the active group. Refresh the list and select again.");
   }
   // Bind the review to the selected records, destination, scope and unlock session.
   const revision = crypto.createHmac("sha256", key).update(JSON.stringify([kind, sessionId, activeGroup, target, rows])).digest("hex");
@@ -453,10 +453,10 @@ async function previewCredentialMove(filePath, key, choice, sessionId) {
 async function moveCredentialsToGroup(filePath, key, choice, sessionId, captureUndo = () => {}) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
-      throw createPublicError("Review and confirm the selected credentials before moving them.");
+      throw createPublicError("Review and confirm the selected logins before moving them.");
     }
     const snapshot = credentialMoveSnapshot(db, key, choice, sessionId);
-    if (snapshot.revision !== choice.revision) throw createPublicError("The selected credentials, group or vault session changed. Review the move again.");
+    if (snapshot.revision !== choice.revision) throw createPublicError("The selected logins, group or vault session changed. Review the move again.");
     const now = new Date().toISOString();
     let moved = 0;
     for (const row of snapshot.rows) {
@@ -482,10 +482,10 @@ async function previewCredentialCategory(filePath, key, choice, sessionId) {
 async function changeCredentialCategory(filePath, key, choice, sessionId, captureUndo = () => {}) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
-      throw createPublicError("Review and confirm the selected credentials before changing their category.");
+      throw createPublicError("Review and confirm the selected logins before changing their category.");
     }
     const snapshot = credentialMoveSnapshot(db, key, choice, sessionId, "category");
-    if (snapshot.revision !== choice.revision) throw createPublicError("The selected credentials, category or vault session changed. Review again.");
+    if (snapshot.revision !== choice.revision) throw createPublicError("The selected logins, category or vault session changed. Review again.");
     const now = new Date().toISOString();
     let changed = 0;
     for (const row of snapshot.rows) {
@@ -511,10 +511,10 @@ async function previewCredentialFavorites(filePath, key, choice, sessionId) {
 async function changeCredentialFavorites(filePath, key, choice, sessionId, captureUndo = () => {}) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     if (choice?.confirmed !== true || typeof choice.revision !== "string" || !/^[a-f0-9]{64}$/.test(choice.revision)) {
-      throw createPublicError("Review and confirm the selected credentials before changing Favorites.");
+      throw createPublicError("Review and confirm the selected logins before changing Favorites.");
     }
     const snapshot = credentialMoveSnapshot(db, key, choice, sessionId, "favorite");
-    if (snapshot.revision !== choice.revision) throw createPublicError("The selected credentials, Favorites choice or vault session changed. Review again.");
+    if (snapshot.revision !== choice.revision) throw createPublicError("The selected logins, Favorites choice or vault session changed. Review again.");
     const now = new Date().toISOString();
     let changed = 0;
     for (const row of snapshot.rows) {
@@ -554,7 +554,7 @@ async function undoBulkCredentialChange(filePath, key, receipt) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     const ids = receipt.entries.map(entry => entry.id);
     if (bulkUndoFingerprint(db, key, ids) !== receipt.fingerprint) {
-      throw createPublicError("Cannot undo: one or more affected credentials changed or were deleted after this action. Nothing was changed.");
+      throw createPublicError("Cannot undo: one or more affected logins changed or were deleted after this action. Nothing was changed.");
     }
     for (const entry of receipt.entries) {
       if (JSON.stringify(bulkUndoReference(db, receipt.kind, entry.value)) !== JSON.stringify(entry.reference)) {
@@ -572,9 +572,9 @@ async function undoBulkCredentialChange(filePath, key, receipt) {
 async function deleteCredential(filePath, key, id) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
     const existing = queryOne(db, "SELECT * FROM credentials WHERE id = ?", [id]);
-    if (!existing || !existing.id) throw createPublicError("Credential not found.");
+    if (!existing || !existing.id) throw createPublicError("Login not found.");
     const activeGroup = getActiveGroupFilterValue(db);
-    if (activeGroup && (existing.group_name || "").toLowerCase() !== activeGroup.toLowerCase()) throw createPublicError("Credential not found.");
+    if (activeGroup && (existing.group_name || "").toLowerCase() !== activeGroup.toLowerCase()) throw createPublicError("Login not found.");
     return { ...trash.moveToTrash(db, [existing]), deleted: true };
   });
 }
@@ -583,7 +583,7 @@ async function updateBrowserPassword(filePath, key, id, password) {
   return withDecryptedDatabaseWrite(filePath, key, db => {
     const entry = queryOne(db, "SELECT * FROM credentials WHERE id = ?", [id]);
     const group = getActiveGroupFilterValue(db);
-    if (!entry.id || (group && (entry.group_name || "").toLowerCase() !== group.toLowerCase())) throw createPublicError("Credential not found.");
+    if (!entry.id || (group && (entry.group_name || "").toLowerCase() !== group.toLowerCase())) throw createPublicError("Login not found.");
     validateCredentialData({ websiteName: entry.website_name, password });
     activity.setContext(db, "browser");
     db.run("UPDATE credentials SET password = ?, updated_at = ? WHERE id = ?", [password, new Date().toISOString(), id]);
@@ -654,7 +654,7 @@ async function deleteCredentialsByGroups(filePath, key, groupNames) {
 async function toggleFavorite(filePath, key, id) {
   return withDecryptedDatabaseWrite(filePath, key, (db) => {
     const row = queryOne(db, "SELECT favorite FROM credentials WHERE id = ?", [id]);
-    if (!row || row.favorite === undefined) throw createPublicError("Credential not found.");
+    if (!row || row.favorite === undefined) throw createPublicError("Login not found.");
     const newValue = row.favorite === 1 ? 0 : 1;
     const stmt = db.prepare("UPDATE credentials SET favorite = ?, updated_at = ? WHERE id = ?");
     stmt.run([newValue, new Date().toISOString(), id]);
@@ -1192,7 +1192,7 @@ async function deleteGroup(filePath, key, name, reassignToName, expectedCount) {
 
     const count = Number(usage.total || 0);
     if (expectedCount !== undefined && (!Number.isInteger(expectedCount) || expectedCount !== count)) {
-      throw createPublicError("This group's credential count changed. Close this dialog and review it again.");
+      throw createPublicError("This group's login count changed. Close this dialog and review it again.");
     }
     if ((count > 0 || reassignToName !== undefined) && typeof reassignToName !== "string") {
       throw createPublicError("Choose a destination group or Unassigned before deleting.");

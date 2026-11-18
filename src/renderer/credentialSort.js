@@ -12,7 +12,7 @@ try {
 const credentialSortCollator = new Intl.Collator(undefined, {numeric:true, sensitivity:"base"});
 
 function renderCredentialSortControl() {
-  return `<select id="credential-sort" class="settings-input credential-sort" aria-label="Sort credentials">
+  return `<select id="credential-sort" class="settings-input credential-sort" aria-label="Sort logins">
     ${CREDENTIAL_SORT_OPTIONS.map(([value,label]) => `<option value="${value}">${label}</option>`).join("")}
   </select>`;
 }

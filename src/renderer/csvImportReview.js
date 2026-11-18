@@ -30,7 +30,7 @@ async function openCsvImportReview(content) {
     <div class="modal-header"><h2 id="csv-import-title">Review CSV import</h2><button type="button" class="modal-close-btn" id="csv-import-close" aria-label="Cancel CSV import">${renderCloseIcon()}</button></div>
     <div class="modal-body">
       <details><summary>Column mapping</summary><ul>${parsed.mapping.map(field => `<li>${escapeHtml(field.source)} → ${escapeHtml(field.label)}</li>`).join('')}</ul></details>
-      <p class="modal-hint">One row becomes one credential. Existing entries stay unchanged. Passwords are hidden in this preview.</p>
+      <p class="modal-hint">One row becomes one login. Existing entries stay unchanged. Passwords are hidden in this preview.</p>
       <div class="modal-form-row">
         <label class="modal-label">Group for blank cells<input id="csv-default-group" class="modal-input" value="${escapeHtml(activeGroup)}" placeholder="${activeGroup ? escapeHtml(activeGroup) : 'Unassigned'}" /></label>
         <label class="modal-label">Category for blank cells<input id="csv-default-category" class="modal-input" placeholder="Other" /></label>
@@ -83,7 +83,7 @@ function renderCsvImportReview() {
   document.querySelector('#csv-prev').disabled = state.page === 0;
   document.querySelector('#csv-next').disabled = (state.page + 1) * 25 >= rows.length;
   const confirm = document.querySelector('#csv-import-confirm');
-  confirm.textContent = `Import ${count} credential${count === 1 ? '' : 's'}`; confirm.disabled = !count;
+  confirm.textContent = `Import ${count} Login${count === 1 ? '' : 's'}`; confirm.disabled = !count;
 }
 
 async function commitCsvImportReview() {

@@ -365,7 +365,7 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
   async function getPasswordHistory(id) {
     ensureUnlocked();
     const credentialId = Number(id);
-    if (!Number.isSafeInteger(credentialId) || credentialId <= 0) throw createPublicError("Credential not found.");
+    if (!Number.isSafeInteger(credentialId) || credentialId <= 0) throw createPublicError("Login not found.");
     return getCredentialPasswordHistory(databaseFilePath, currentKey(), credentialId);
   }
 

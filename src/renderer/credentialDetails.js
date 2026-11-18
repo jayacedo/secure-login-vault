@@ -32,7 +32,7 @@ async function openCredentialDetails(id, trigger) {
   overlay.className = "modal-overlay credential-details-overlay is-open";
   overlay.tabIndex = -1;
   overlay.innerHTML = `<section class="modal-container credential-details-container" role="dialog" aria-modal="true" aria-labelledby="credential-details-title">
-    <div class="modal-header"><h2 id="credential-details-title">Credential details</h2><button class="modal-close-btn" type="button" aria-label="Close details" id="detail-close">${renderCloseIcon()}</button></div>
+    <div class="modal-header"><h2 id="credential-details-title">Login Details</h2><button class="modal-close-btn" type="button" aria-label="Close details" id="detail-close">${renderCloseIcon()}</button></div>
     <div class="modal-body">
       <p id="detail-status" role="status">Loading details…</p>
       <div id="detail-content" hidden>
@@ -111,7 +111,7 @@ async function openCredentialDetails(id, trigger) {
   try {
     const response=await window.secureLoginVault.credentials.getDetails(id);
     if(credentialDetailsState!==state)return;
-    if(!response.ok)throw Error(response.message || "Could not load credential details.");
+    if(!response.ok)throw Error(response.message || "Could not load login details.");
     const entry=response.result;
     find("#detail-name").textContent=entry.websiteName;
     field(find("#detail-fields"),"Login URL",entry.websiteUrl,"URL copied!");

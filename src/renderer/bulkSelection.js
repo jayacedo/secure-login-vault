@@ -35,7 +35,7 @@ function showBulkUndo(result, message) {
       if (document.querySelector("#credential-list-body")) await refreshCredentials();
       if (version !== bulkSessionVersion) return;
       document.querySelector("#bulk-select-toggle")?.focus();
-      showToast(`Restored previous ${response.result.kind === "favorite" ? "Favorites" : response.result.kind === "group" ? "groups" : "categories"} for ${response.result.restored} credentials.`, "info");
+      showToast(`Restored previous ${response.result.kind === "favorite" ? "Favorites" : response.result.kind === "group" ? "groups" : "categories"} for ${response.result.restored} logins.`, "info");
     } catch { if (bulkUndoToast === toast) showToast("Could not undo. Try again.", "error"); }
     finally { if (bulkUndoToast === toast) button.disabled = false; }
   });
@@ -252,7 +252,7 @@ async function openBulkMove(kind = "group") {
   overlay.tabIndex = -1;
   overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true"); overlay.setAttribute("aria-labelledby", "bulk-move-title");
   overlay.innerHTML = `<div class="modal-container bulk-move-container">
-    <div class="modal-header"><h2 id="bulk-move-title">${category ? "Change category for selected credentials" : "Move selected credentials"}</h2><button type="button" class="modal-close-btn" aria-label="Close">${renderCloseIcon()}</button></div>
+    <div class="modal-header"><h2 id="bulk-move-title">${category ? "Change category for selected logins" : "Move selected logins"}</h2><button type="button" class="modal-close-btn" aria-label="Close">${renderCloseIcon()}</button></div>
     <div class="modal-body">
       <p>${state.ids.length} selected. Choose an existing ${category ? "category" : "group"}, then review the entries before applying.</p>
       <label for="bulk-move-target" class="field-label">${category ? "New category" : "Destination group"}</label>

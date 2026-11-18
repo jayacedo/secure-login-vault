@@ -55,7 +55,7 @@ function initBackToTop() {
 
 // ─── Phase 11: Global Keyboard Shortcuts ─────────────────────────────────────
 //
-//  Ctrl+N          → Add Credential (dashboard only)
+//  Ctrl+N          → Add Login (dashboard only)
 //  Ctrl+F          → Focus search bar (dashboard only)
 //  Ctrl+L          → Lock vault (dashboard only)
 //  Ctrl+,          → Open Settings (dashboard only)
@@ -160,7 +160,7 @@ document.addEventListener("keydown", (e) => {
 
   switch (e.key.toLowerCase()) {
     case "n": {
-      // Ctrl+N → Add Credential
+      // Ctrl+N → Add Login
       if (isDashboard && !anyModalOpen) {
         e.preventDefault();
         openCredentialModal(null);
@@ -410,7 +410,7 @@ function renderDashboard(state, preparedDashboard) {
     <section class="dashboard-main" aria-labelledby="dashboard-title">
       <header class="dashboard-header">
         <div>
-          <p class="eyebrow">Credential workspace</p>
+          <p class="eyebrow">Login workspace</p>
           <h1 id="dashboard-title">Vault</h1>
         </div>
         <div class="dashboard-actions dashboard-icon-actions">
@@ -422,16 +422,16 @@ function renderDashboard(state, preparedDashboard) {
             ${renderSettingsIcon()}
             <span class="dashboard-action-tooltip" aria-hidden="true">Settings</span>
           </button>
-          <button class="primary-button add-button dashboard-icon-button" type="button" id="add-credential-btn" aria-label="Add credential">
+          <button class="primary-button add-button dashboard-icon-button" type="button" id="add-credential-btn" aria-label="Add Login">
             ${renderPlusIcon()}
-            <span class="dashboard-action-tooltip" aria-hidden="true">Add credential</span>
+            <span class="dashboard-action-tooltip" aria-hidden="true">Add Login</span>
           </button>
         </div>
       </header>
 
       <div class="active-group-banner" id="active-group-banner" hidden>
         ${renderShieldIcon()}
-        <span>Locked to <strong id="active-group-banner-name"></strong> — other groups' credentials are hidden.</span>
+        <span>Locked to <strong id="active-group-banner-name"></strong> — other groups' logins are hidden.</span>
         <button class="link-button" type="button" id="active-group-banner-clear">Show all</button>
       </div>
 
@@ -440,7 +440,7 @@ function renderDashboard(state, preparedDashboard) {
           ${renderSearchIcon()}
           <input id="credential-search" type="search" placeholder="Search website, URL, username, email, notes, tags, category" autocomplete="off" />
         </label>
-        <div class="segmented-control" aria-label="Credential filter">
+        <div class="segmented-control" aria-label="Login filter">
           <button class="is-active" type="button" data-filter="all">All</button>
           <button type="button" data-filter="favorites">Favorites</button>
         </div>
@@ -449,14 +449,14 @@ function renderDashboard(state, preparedDashboard) {
       <section class="credential-panel" aria-labelledby="credential-list-title">
         <div class="panel-header">
           <div class="credential-heading">
-            <h2 id="credential-list-title">Credentials</h2>
-            <span id="credential-count-label">${dashboardData.credentials.length} items</span>
+            <h2 id="credential-list-title">Saved Logins</h2>
+            <span id="credential-count-label">${dashboardData.credentials.length} login${dashboardData.credentials.length === 1 ? "" : "s"}</span>
           </div>
           <div class="health-dashboard-actions">
             ${renderCredentialSortControl()}
             ${renderCredentialQuickFilters()}
-            <div class="credential-tool-buttons" role="group" aria-label="Credential tools">
-              <button class="icon-text-button dashboard-icon-button" type="button" id="bulk-select-toggle" aria-label="Select credentials" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="dashboard-action-tooltip" aria-hidden="true">Select credentials</span></button>
+            <div class="credential-tool-buttons" role="group" aria-label="Login tools">
+              <button class="icon-text-button dashboard-icon-button" type="button" id="bulk-select-toggle" aria-label="Select Logins" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="dashboard-action-tooltip" aria-hidden="true">Select Logins</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="check-vault-health-btn" aria-label="Check vault health">${renderShieldIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Check vault health</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="recently-deleted-btn" aria-label="Recently deleted">${renderTrashIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Recently deleted</span></button>
               <button class="icon-text-button dashboard-icon-button" type="button" id="review-duplicates-btn" aria-label="Review duplicates">${renderCopyIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Review duplicates</span></button>
@@ -468,7 +468,7 @@ function renderDashboard(state, preparedDashboard) {
           <strong id="bulk-selection-count" role="status">0 selected</strong>
           <div class="bulk-actions">
             <button class="primary-button" id="bulk-actions-toggle" type="button" aria-expanded="false" aria-controls="bulk-actions-menu" disabled>Actions <span aria-hidden="true">▾</span></button>
-            <div id="bulk-actions-menu" class="bulk-actions-menu" role="group" aria-label="Selected credential actions" hidden>
+            <div id="bulk-actions-menu" class="bulk-actions-menu" role="group" aria-label="Selected login actions" hidden>
               <button id="bulk-move-btn" type="button" disabled>Move to group</button>
               <button id="bulk-category-btn" type="button" disabled>Change category</button>
               <button id="bulk-favorite-add" type="button" disabled>Add to Favorites</button>
@@ -481,9 +481,9 @@ function renderDashboard(state, preparedDashboard) {
           <span id="bulk-selection-results" class="bulk-selection-results" role="status"></span>
           <small>Select up to 500. Find logins keeps your selections; refreshing or changing dashboard filters clears them.</small>
         </div>
-        <div class="credential-table" role="table" aria-label="Credential list" tabindex="0">
+        <div class="credential-table" role="table" aria-label="Login list" tabindex="0">
           <div class="credential-row credential-row-head" role="row">
-            <span role="columnheader" class="bulk-select-cell"><input type="checkbox" id="bulk-select-all" aria-label="Select all shown credentials" title="Select all shown credentials"></span>
+            <span role="columnheader" class="bulk-select-cell"><input type="checkbox" id="bulk-select-all" aria-label="Select all shown logins" title="Select all shown logins"></span>
             <span role="columnheader"><button type="button" class="credential-sort-heading" data-credential-sort="website">Website <span class="sort-indicator" aria-hidden="true">↕</span></button></span>
             <span role="columnheader"><button type="button" class="credential-sort-heading" data-credential-sort="username">Username <span class="sort-indicator" aria-hidden="true">↕</span></button></span>
             <span role="columnheader">Password</span>
@@ -546,7 +546,7 @@ function renderCredentialRows(credentials, query = "") {
       <div class="empty-state" role="row">
         <div role="cell">
           ${renderVaultIcon()}
-          <strong>${isSearching ? `No results for "${escapeHtml(query)}"` : "No credentials saved"}</strong>
+          <strong>${isSearching ? `No results for "${escapeHtml(query)}"` : "No logins saved"}</strong>
         </div>
       </div>
     `;
@@ -744,7 +744,7 @@ function updateCredentialList(credentials) {
   const listBody = document.querySelector("#credential-list-body");
   const countLabel = document.querySelector("#credential-count-label");
   if (listBody) listBody.innerHTML = renderCredentialRows(credentials);
-  if (countLabel) countLabel.textContent = `${credentials.length} items`;
+  if (countLabel) countLabel.textContent = `${credentials.length} login${credentials.length === 1 ? "" : "s"}`;
   bindCredentialActions();
 }
 
@@ -1077,7 +1077,7 @@ function renderRecoveryResetForm(state) {
       <div>
         <p class="eyebrow">Forgot password</p>
         <h2>Reset with Recovery Key</h2>
-        <p class="form-note">Enter the recovery key you saved when you set up this vault, then choose a new master password. Your credentials are kept.</p>
+        <p class="form-note">Enter the recovery key you saved when you set up this vault, then choose a new master password. Your logins are kept.</p>
       </div>
 
       <label class="hint-label" for="reset-recovery-key">
@@ -1253,10 +1253,10 @@ async function handleLockVault() {
       <div class="intro-column">
         ${renderBrandMark()}
         <div class="intro-copy">
-          <p class="eyebrow">Offline credential vault</p>
+          <p class="eyebrow">Offline login vault</p>
           <h1 id="app-title">${escapeHtml(getBrandName())}</h1>
           <p>
-            Protect local credentials behind a master password before the vault workspace opens.
+            Protect local logins behind a master password before the vault workspace opens.
           </p>
         </div>
 
@@ -1402,7 +1402,7 @@ async function runSearch() {
   if (countLabel) {
     const label = searchState.query
       ? `${credentials.length} result${credentials.length !== 1 ? "s" : ""} for "${searchState.query}"`
-      : `${credentials.length} items`;
+      : `${credentials.length} login${credentials.length === 1 ? "" : "s"}`;
     countLabel.textContent = label;
   }
 
@@ -1682,7 +1682,7 @@ async function openCredentialTrash() {
     if (request !== trashRequest) return;
     if (!response.ok) throw new Error(response.message || "Could not load Recently Deleted.");
     const report = response.result;
-    overlay.querySelector("#trash-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All credential groups. Client Vault is excluded.";
+    overlay.querySelector("#trash-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All login groups. Client Vault is excluded.";
     results.replaceChildren();
     const count = document.createElement("p"); count.textContent = report.entries.length ? `${report.entries.length} deleted ${report.entries.length === 1 ? "login" : "logins"}` : "No recently deleted logins.";
     results.append(count);
@@ -1757,7 +1757,7 @@ async function openVaultHealth() {
     if (request !== vaultHealthRequest || !overlay.classList.contains("is-open")) return;
     if (!response.ok) throw new Error(response.message || "Could not check vault health. Try again.");
     const report = response.result;
-    overlay.querySelector("#health-scope").textContent = (report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All credential groups.") + " Current passwords only; password history and Client Vault are excluded.";
+    overlay.querySelector("#health-scope").textContent = (report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All login groups.") + " Current passwords only; password history and Client Vault are excluded.";
     results.innerHTML = `<div class="health-summary" aria-label="Check summary">
       <div><strong>${report.total}</strong><span>Checked</span></div>
       <div><strong>${report.weak}</strong><span>Weak</span></div>
@@ -1832,7 +1832,7 @@ async function openCredentialModal(editId) {
   ]);
 
   if (request !== credentialModalRequest) return;
-  if (isEdit && !credRes?.ok) { showToast(credRes?.message || "Could not open this credential.", "error"); closeCredentialModal(); return; }
+  if (isEdit && !credRes?.ok) { showToast(credRes?.message || "Could not open this login.", "error"); closeCredentialModal(); return; }
 
   if (catRes.ok) categories = catRes.result;
   if (groupRes.ok) groups = groupRes.result;
@@ -1857,7 +1857,7 @@ async function openCredentialModal(editId) {
   overlay.innerHTML = `
     <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
       <div class="modal-header">
-        <h2 id="modal-heading">${isEdit ? "Edit Credential" : "Add Credential"}</h2>
+        <h2 id="modal-heading">${isEdit ? "Edit Login" : "Add Login"}</h2>
         <button class="modal-close-btn" type="button" id="modal-close-btn" title="Close">
           ${renderCloseIcon()}
         </button>
@@ -1951,7 +1951,7 @@ async function openCredentialModal(editId) {
 
         ${isEdit ? `<details class="password-history" id="password-history">
           <summary>Password history</summary>
-          <p class="modal-hint">Latest 10 previous passwords, saved from changes made after this update. Use puts a password in this form; Update Credential saves it in SLV. It does not change the website password.</p>
+          <p class="modal-hint">Latest 10 previous passwords, saved from changes made after this update. Use puts a password in this form; Save Changes saves it in SLV. It does not change the website password.</p>
           <div id="password-history-list" aria-live="polite"></div>
         </details>` : ""}
 
@@ -1996,7 +1996,7 @@ async function openCredentialModal(editId) {
       <div class="modal-footer">
         <button class="secondary-button" type="button" id="modal-cancel-btn">Cancel</button>
         <button class="primary-button" type="button" id="modal-save-btn">
-          ${isEdit ? "Update Credential" : "Save Credential"}
+          ${isEdit ? "Save Changes" : "Save Login"}
         </button>
       </div>
     </div>
@@ -2076,7 +2076,7 @@ function setupPasswordHistory(overlay, credentialId, {readOnly = false} = {}) {
           if (readOnly) { copyToClipboard(input.value, "Previous password copied!", use, true); return; }
           overlay.querySelector("#m-password").value = input.value;
           overlay.querySelector("#m-password").focus();
-          showToast("Previous password selected. Click Update Credential to save it in SLV.", "info");
+          showToast("Previous password selected. Click Save Changes to save it in SLV.", "info");
         });
         controls.append(input, show, use);
         row.append(date, controls);
@@ -2136,7 +2136,7 @@ async function submitCredentialModal(editId) {
     errorEl.textContent = res.message;
     errorEl.hidden = false;
     saveBtn.disabled = false;
-    saveBtn.textContent = editId !== null ? "Update Credential" : "Save Credential";
+    saveBtn.textContent = editId !== null ? "Save Changes" : "Save Login";
     return;
   }
 
@@ -2207,7 +2207,7 @@ async function renderClientVault(state) {
       <nav class="workspace-nav" aria-label="Categories">
         <button type="button" id="client-vault-back-to-credentials">
           ${renderFolderIcon()}
-          <span>Credentials</span>
+          <span>Saved Logins</span>
         </button>
       </nav>
 
@@ -3522,11 +3522,11 @@ async function openSettingsModal() {
         <div class="settings-browser-remove"><button class="settings-unpair-all" type="button" id="extension-unpair-btn" hidden>Unpair all</button></div>
         </div>
         <div class="settings-panel" role="tabpanel" id="settings-panel-organization" aria-labelledby="settings-tab-organization" tabindex="0" hidden>
-          <div class="settings-panel-heading"><h3>Organization</h3><p>Keep your credentials easy to find.</p></div>
+          <div class="settings-panel-heading"><h3>Organization</h3><p>Keep your logins easy to find.</p></div>
         <section class="settings-section">
           <h3 class="settings-section-title">Categories</h3>
           <p class="settings-section-hint">
-            Add, rename, or delete the categories used to organize your credentials.
+            Add, rename, or delete the categories used to organize your logins.
           </p>
           <div class="settings-action-row">
             <button class="secondary-button settings-action-btn" type="button" id="settings-manage-categories-btn">
@@ -3537,8 +3537,8 @@ async function openSettingsModal() {
         <section class="settings-section">
           <h3 class="settings-section-title">Groups</h3>
           <p class="settings-section-hint">
-            Group credentials however is useful to you. Lock the vault to one group
-            and credentials for every other group are hidden from the list entirely
+            Group logins however is useful to you. Lock the vault to one group
+            and logins for every other group are hidden from the list entirely
             — useful if a time tracker or screenshot tool might capture your screen.
           </p>
           <div class="settings-row">
@@ -3589,7 +3589,7 @@ async function openSettingsModal() {
         <section class="settings-section">
           <h3 class="settings-section-title">Import &amp; Export</h3>
           <p class="settings-section-hint">
-            Import credentials from a CSV, JSON, or KeePass CSV export. Export your
+            Import logins from a CSV, JSON, or KeePass CSV export. Export your
             vault as CSV, JSON, or a fully encrypted backup file.
           </p>
 
@@ -4112,8 +4112,8 @@ async function loadActiveGroupControl() {
 
   if (hint) {
     hint.textContent = active
-      ? `Locked to "${active}" — credentials outside this group are hidden.`
-      : "Not locked — all credentials are visible.";
+      ? `Locked to "${active}" — logins outside this group are hidden.`
+      : "Not locked — all logins are visible.";
   }
 }
 
@@ -4132,11 +4132,11 @@ async function runApplyActiveGroup() {
 
   if (hint) {
     hint.textContent = value
-      ? `Locked to "${value}" — credentials outside this group are hidden.`
-      : "Not locked — all credentials are visible.";
+      ? `Locked to "${value}" — logins outside this group are hidden.`
+      : "Not locked — all logins are visible.";
   }
 
-  showToast(value ? `Locked to "${value}"` : "Lock cleared — showing all credentials", "info");
+  showToast(value ? `Locked to "${value}"` : "Lock cleared — showing all logins", "info");
   setActiveGroupBanner(value, { forceShow: true });
   await refreshCredentials();
 }
@@ -4262,7 +4262,7 @@ async function loadCategoryManageList() {
 
 function renderCategoryManageRow(category) {
   const safeName = escapeHtml(category.name);
-  const countLabel = `${category.credentialCount} credential${category.credentialCount === 1 ? "" : "s"}`;
+  const countLabel = `${category.credentialCount} login${category.credentialCount === 1 ? "" : "s"}`;
 
   return `
     <div class="category-manage-row" data-name="${safeName}">
@@ -4440,7 +4440,7 @@ function openDeleteCategoryModal(category, knownCategories) {
   const reassignSection = inUse
     ? `
       <p class="modal-confirm-text">
-        "${safeName}" is used by ${category.credentialCount} credential${category.credentialCount === 1 ? "" : "s"}.
+        "${safeName}" is used by ${category.credentialCount} login${category.credentialCount === 1 ? "" : "s"}.
         Choose a category to move ${category.credentialCount === 1 ? "it" : "them"} to before deleting:
       </p>
       <label class="modal-label" for="delete-category-reassign-select">
@@ -4519,7 +4519,7 @@ async function confirmDeleteCategory(category) {
   closeDeleteCategoryModal();
   setCategoriesStatus(
     inUse
-      ? `Deleted "${category.name}" and moved its credentials to "${reassignTo}".`
+      ? `Deleted "${category.name}" and moved its logins to "${reassignTo}".`
       : `Deleted "${category.name}".`
   );
   await loadCategoryManageList();
@@ -4644,7 +4644,7 @@ async function loadGroupManageList() {
 
 function renderGroupManageRow(group) {
   const safeName = escapeHtml(group.name);
-  const countLabel = `${group.credentialCount} credential${group.credentialCount === 1 ? "" : "s"}`;
+  const countLabel = `${group.credentialCount} login${group.credentialCount === 1 ? "" : "s"}`;
 
   return `
     <div class="category-manage-row" data-name="${safeName}">
@@ -4809,8 +4809,8 @@ function openDeleteGroupModal(group, knownGroups = []) {
   const safeName = escapeHtml(group.name);
 
   const bodyText = inUse
-    ? `<p class="modal-confirm-text">"${safeName}" contains ${group.credentialCount} credential${group.credentialCount === 1 ? "" : "s"}. Choose where to move them. The credentials stay saved; only this group is deleted.</p>
-      <label class="modal-label" for="delete-group-reassign-select"><span class="modal-label-text">Move credentials to</span>
+    ? `<p class="modal-confirm-text">"${safeName}" contains ${group.credentialCount} login${group.credentialCount === 1 ? "" : "s"}. Choose where to move them. The logins stay saved; only this group is deleted.</p>
+      <label class="modal-label" for="delete-group-reassign-select"><span class="modal-label-text">Move logins to</span>
         <select class="modal-input" id="delete-group-reassign-select">
           <option value="" disabled selected>Choose a destination</option>
           ${knownGroups.filter(item => item.name.toLowerCase() !== group.name.toLowerCase()).map(item => `<option value="group:${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`).join("")}
@@ -4849,8 +4849,8 @@ function openDeleteGroupModal(group, knownGroups = []) {
   destinationSelect?.addEventListener("change", () => {
     overlay.querySelector("#delete-group-confirm-btn").disabled = !destinationSelect.value;
     overlay.querySelector("#delete-group-destination-note").textContent = destinationSelect.value === "unassigned"
-      ? "Credentials will have no group. Choose All (no lock) to see them." + (group.isActive ? " The active group filter will be cleared." : "")
-      : "Credentials will move to the selected group." + (group.isActive ? " That group will become active." : "");
+      ? "Logins will have no group. Choose All (no lock) to see them." + (group.isActive ? " The active group filter will be cleared." : "")
+      : "Logins will move to the selected group." + (group.isActive ? " That group will become active." : "");
   });
   overlay.querySelector("#delete-group-confirm-btn").addEventListener("click", () => confirmDeleteGroup(group));
 }
@@ -4886,7 +4886,7 @@ async function confirmDeleteGroup(group) {
     if (!res.ok) { setDeleteGroupStatus(res.message || "Could not delete group.", true); return; }
     closeDeleteGroupModal();
     const moved = res.result.reassignedCount + res.result.unassignedCount;
-    setGroupsStatus(`Deleted "${group.name}".` + (moved ? ` Moved ${moved} credential${moved === 1 ? "" : "s"} to ${res.result.destination || "Unassigned"}.` : ""));
+    setGroupsStatus(`Deleted "${group.name}".` + (moved ? ` Moved ${moved} login${moved === 1 ? "" : "s"} to ${res.result.destination || "Unassigned"}.` : ""));
     await loadGroupManageList();
     await loadActiveGroupControl();
     await refreshCredentials();
@@ -5333,7 +5333,7 @@ async function runImportFlow(formatKind, triggerBtn) {
 
 // Lets the user choose how the parsed rows should land: Merge (add alongside
 // whatever already exists — safe, but re-importing the same file repeatedly
-// piles up duplicates) or Replace (clear out existing credentials in the
+// piles up duplicates) or Replace (clear out existing logins in the
 // group(s) this file contains first, then insert — for the "re-sync this
 // group from another device" case). Replace never touches any group that
 // isn't actually present in the file.
@@ -5357,7 +5357,7 @@ async function openImportModeModal(rows, triggerBtn) {
   overlay.innerHTML = `
     <div class="modal-container import-mode-container" role="dialog" aria-modal="true" aria-labelledby="import-mode-heading">
       <div class="modal-header">
-        <h2 id="import-mode-heading">Import ${rows.length} Credential${rows.length === 1 ? "" : "s"}</h2>
+        <h2 id="import-mode-heading">Import ${rows.length} Login${rows.length === 1 ? "" : "s"}</h2>
         <button class="modal-close-btn" type="button" id="import-mode-close-btn" title="Close">
           ${renderCloseIcon()}
         </button>
@@ -5366,8 +5366,8 @@ async function openImportModeModal(rows, triggerBtn) {
         <p class="modal-hint">
           This file contains: <strong>${groupLabels.map(escapeHtml).join(", ")}</strong>.
           ${existingCount > 0
-            ? `You already have <strong>${existingCount}</strong> credential${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"}.`
-            : `You don't have any existing credentials in ${groupLabels.length === 1 ? "that group" : "those groups"} yet.`}
+            ? `You already have <strong>${existingCount}</strong> login${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"}.`
+            : `You don't have any existing logins in ${groupLabels.length === 1 ? "that group" : "those groups"} yet.`}
         </p>
         <div class="import-mode-options">
           <button type="button" class="secondary-button import-mode-btn" id="import-mode-merge-btn">
@@ -5376,7 +5376,7 @@ async function openImportModeModal(rows, triggerBtn) {
           </button>
           <button type="button" class="danger-button import-mode-btn" id="import-mode-replace-btn" ${existingCount === 0 ? "disabled" : ""}>
             <strong>Replace</strong>
-            <span>Move the ${existingCount} existing credential${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"} to Recently Deleted, then import. Recover displaced logins within 30 days.</span>
+            <span>Move the ${existingCount} existing login${existingCount === 1 ? "" : "s"} in ${groupLabels.length === 1 ? "that group" : "those groups"} to Recently Deleted, then import. Recover displaced logins within 30 days.</span>
           </button>
         </div>
       </div>
@@ -5424,7 +5424,7 @@ async function performImport(rows, triggerBtn, { replace, expectedActiveGroup })
     if (request !== csvReviewRequest) return;
     if (!response.ok) throw Error(response.message || "Import failed. No partial import was saved.");
     const { imported, deleted } = response.result;
-    setSettingsStatus((replace ? `Replaced ${deleted} existing. ` : "") + `Imported ${imported} credentials successfully.`);
+    setSettingsStatus((replace ? `Replaced ${deleted} existing. ` : "") + `Imported ${imported} logins successfully.`);
     showToast("Import complete", "info");
     refreshCredentials();
   } catch (error) {
@@ -5452,13 +5452,13 @@ function parseJsonImport(content) {
   }
 
   const list = Array.isArray(data) ? data : Array.isArray(data?.credentials) ? data.credentials : null;
-  if (!list) throw new Error("JSON file must contain an array of credentials.");
+  if (!list) throw new Error("JSON file must contain an array of logins.");
 
-  if (list.length > ImportPolicy.MAX_ROWS) throw Error("Import at most 5,000 credentials at a time.");
+  if (list.length > ImportPolicy.MAX_ROWS) throw Error("Import at most 5,000 logins at a time.");
   const rows = list
     .map((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("Each JSON credential must be an object.");
-      for (const value of Object.values(item)) if (value !== null && typeof value === "object") throw Error("JSON credential fields must contain plain values.");
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("Each JSON login must be an object.");
+      for (const value of Object.values(item)) if (value !== null && typeof value === "object") throw Error("JSON login fields must contain plain values.");
       return ({
       websiteName: String(item.websiteName || item.website_name || item.name || "").trim(),
       websiteUrl: String(item.websiteUrl || item.website_url || item.url || "").trim(),
@@ -5645,7 +5645,7 @@ async function runBackupCheck(mode = "choose") {
       if (!response.ok) throw new Error(response.message);
       const { counts, backupCreatedAt } = response.result;
       const countLabel = (value, label) => `${value} ${label}${value === 1 ? "" : "s"}`;
-      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "credential")} · ${countLabel(counts.clients, "client")} · ${countLabel(counts.notes || 0, "note")}\n${counts.deletedCredentials} recently deleted · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
+      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "login")} · ${countLabel(counts.clients, "client")} · ${countLabel(counts.notes || 0, "note")}\n${counts.deletedCredentials} recently deleted · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
       overlay.querySelector("#backup-check-password").hidden = true;
       confirm.remove(); cancel.textContent = "Close"; cancel.focus();
     } catch (error) {

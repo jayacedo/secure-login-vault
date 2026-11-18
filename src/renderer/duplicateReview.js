@@ -39,7 +39,7 @@ async function openDuplicateReview() {
     if (request !== duplicateRequest) return;
     if (!response.ok) throw new Error(response.message || "Could not check duplicate logins.");
     const report = response.result;
-    overlay.querySelector("#duplicate-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All credential groups. Recently Deleted and Client Vault are excluded.";
+    overlay.querySelector("#duplicate-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}. Other groups are excluded.` : "All login groups. Recently Deleted and Client Vault are excluded.";
     results.replaceChildren();
     const summary = document.createElement("p"); summary.textContent = report.groups.length ? `${report.groups.length} matching ${report.groups.length === 1 ? "set" : "sets"} to review across ${report.total} saved logins.` : "No matching duplicate logins found in this scope. Entries without a valid website or username/email are skipped.";
     results.append(summary);

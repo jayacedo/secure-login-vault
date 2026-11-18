@@ -6,7 +6,7 @@ let credentialQuickFilter = "all";
 
 function renderCredentialQuickFilters() {
   return `<div class="credential-quick-filters">
-    <select id="credential-quick-filter" class="settings-input" aria-label="Quick filter credentials"
+    <select id="credential-quick-filter" class="settings-input" aria-label="Quick filter logins"
       title="Has 2FA: saved QR image. Uncategorized: Other or no category.">
       ${CREDENTIAL_QUICK_FILTERS.map(([value,label]) => `<option value="${value}">${label}</option>`).join("")}
     </select>
@@ -38,7 +38,7 @@ function updateCredentialFilterSummary() {
   const selectionSearch = bulkSelectionEnabled && !selectedOnly && document.querySelector("#bulk-selection-search")?.value.trim();
   const filtering = credentialQuickFilter !== "all" || Boolean(selectionSearch) || selectedOnly;
   label.textContent = selectedOnly ? `${visible} selected shown` : filtering ? `${visible} of ${rows.length} matching` : searchState.query
-    ? `${rows.length} result${rows.length === 1 ? "" : "s"} for "${searchState.query}"` : `${rows.length} items`;
+    ? `${rows.length} result${rows.length === 1 ? "" : "s"} for "${searchState.query}"` : `${rows.length} login${rows.length === 1 ? "" : "s"}`;
   let empty = body.querySelector("#credential-filter-empty");
   if (!empty) {
     empty = document.createElement("p"); empty.id = "credential-filter-empty";

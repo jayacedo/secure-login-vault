@@ -30,7 +30,7 @@ async function openActivityHistory() {
       </div>
       <p id="activity-scope" class="modal-hint"></p><p id="activity-status" class="modal-hint" role="status" aria-live="polite"></p>
       <div id="activity-results" aria-busy="true"></div>
-      <p class="modal-hint activity-footnote">Groups reflect each event's saved group. Older encrypted backups keep their own snapshots. This covers credential changes, not Client Vault or website sign-ins.</p>
+      <p class="modal-hint activity-footnote">Groups reflect each event's saved group. Older encrypted backups keep their own snapshots. This covers login changes, not Client Vault or website sign-ins.</p>
     </div>
     <div class="modal-footer activity-footer"><button id="activity-refresh" class="secondary-button" type="button">Refresh</button><div class="activity-pages"><button id="activity-prev" class="secondary-button" type="button" disabled>Previous</button><button id="activity-next" class="secondary-button" type="button" disabled>Next</button></div><button id="activity-done" class="primary-button" type="button">Close</button></div>
   </div>`;
@@ -49,7 +49,7 @@ async function openActivityHistory() {
       if (!response.ok) throw new Error(response.message || "Could not load activity.");
       const report = response.result;
       if (report.total && offset >= report.total) { offset = 0; return load(); }
-      find("#activity-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}` : "All credential groups";
+      find("#activity-scope").textContent = report.activeGroup ? `Group: ${report.activeGroup}` : "All login groups";
       status.textContent = report.total ? `${offset + 1}–${offset + report.entries.length} of ${report.total} events · Newest first` : "No activity matches. New login changes will appear here.";
       for (const entry of report.entries) {
         const card = document.createElement("article"); card.className = "activity-entry";
