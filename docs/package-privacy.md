@@ -57,6 +57,32 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.73 installer
+
+Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.73.exe` (116,894,328 bytes).
+- SHA-256: `49ab1c18df15d3e1a2af5875cf2e4a9def1785c14b11db2ceb21a5e47d679237`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 368 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Before packaging, syntax and isolated synthetic Login/Client form checks passed:
+  collapsed-field save/edit preservation, populated-section expansion, pending 2FA
+  visibility, cancel/lock cleanup, and footer fit across themes and window sizes.
+- Portable: `release/Secure Login Vault 1.0.73.exe` (116,659,734 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer adds the streamlined Add/Edit Client layout with expandable optional
+sections. Extension 0.6.6 is unchanged; no extension update is required.
+Superseded 1.0.72 package files were removed after verification. Installer
+extraction files were cleaned automatically.
+
 ## Local 1.0.72 installer
 
 Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
