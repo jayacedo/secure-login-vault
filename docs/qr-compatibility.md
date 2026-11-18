@@ -55,4 +55,5 @@ The 1.0.68 unpacked build passed the source/resource privacy gate and packaged
 inventory checks (127 outer files, 368 ASAR files), Electron fuse checks, and a
 shipped-worker faint-QR regression check. Syntax checks, the compatibility
 suite, existing authenticator suite and manual setup/storage/backup suite passed.
-No installer was created for this change; the latest installer remains 1.0.67.
+The 1.0.68 installer is now packaged and verified for local testing only; see
+the [package verification record](package-privacy.md#local-1068-installer).

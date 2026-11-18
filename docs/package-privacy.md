@@ -57,6 +57,36 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.68 installer
+
+Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.68.exe` (116,891,771 bytes).
+- SHA-256: `76d79ed0fa6932e0656447ec5a09aca73490ad4358e23ecb5a75a0e00a58e62f`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 368 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Before packaging, synthetic QR compatibility, authenticator-vector and manual
+  setup/storage/backup tests passed. The packaged runtime generated a synthetic
+  QR and its worker decoded a faint version using shipped dependencies.
+  See [QR compatibility checks](qr-compatibility.md#validation).
+- Portable: `release/Secure Login Vault 1.0.68.exe` (116,657,146 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer improves QR scanning and compatible TOTP settings while retaining
+conflict rejection and bounded worker execution. Extension 0.6.6 is unchanged;
+no extension update is needed for this desktop QR change.
+
+Superseded 1.0.67 package files were removed after verification. Installer
+extraction files were cleaned automatically, and the newly generated synthetic
+runtime directory was removed.
+
 ## Local 1.0.67 installer
 
 Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
