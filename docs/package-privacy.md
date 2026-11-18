@@ -57,6 +57,37 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.69 installer
+
+Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.69.exe` (116,892,348 bytes).
+- SHA-256: `114dd2a42f02335020c776f058eff9d12070ddf19369b3cd906f348d5b31dd29`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 368 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Before packaging, synthetic QR compatibility, authenticator, manual setup and
+  isolated UI/IPC checks passed. The freshly packaged runtime passed generated
+  QR decoding, faint-image retries, withheld codes/copy before standard-TOTP
+  confirmation, and RFC code generation after confirmation. See
+  [QR compatibility checks](qr-compatibility.md#validation).
+- Portable: `release/Secure Login Vault 1.0.69.exe` (116,657,758 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer adds an explicit compatibility choice for decoded QRs with extra
+settings. Known unsupported formats, invalid parameters and conflicting settings
+remain rejected. Extension 0.6.6 is unchanged; no extension update is required.
+
+Superseded 1.0.68 package files were removed after verification. Installer
+extraction files were cleaned automatically, and the newly generated synthetic
+runtime directory was removed.
+
 ## Local 1.0.68 installer
 
 Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.

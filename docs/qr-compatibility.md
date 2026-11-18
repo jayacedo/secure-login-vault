@@ -1,4 +1,4 @@
-# QR compatibility (desktop source 1.0.69)
+# QR compatibility (desktop 1.0.69)
 
 ## Extra QR settings
 
@@ -95,4 +95,5 @@ The 1.0.69 unpacked build passed syntax, synthetic compatibility, authenticator
 and manual setup/storage/backup tests, plus the isolated UI/IPC checks above.
 Its shipped worker passed faint-image decoding and explicit standard-TOTP
 confirmation tests. Source/package privacy gates (127 outer files, 368 ASAR files)
-and Electron fuse checks passed. No 1.0.69 installer has been packaged yet.
+and Electron fuse checks passed. The 1.0.69 installer is now packaged and verified for local testing only; see the
+[verification record](package-privacy.md#local-1069-installer).
