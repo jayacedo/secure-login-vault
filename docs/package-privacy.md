@@ -57,6 +57,37 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.67 installer
+
+Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.67.exe` (116,890,522 bytes).
+- SHA-256: `6b9144e6812985e0afd804b40d1522fd8a607e6343fa7041a08f92919e3111e4`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 129 outer payload files and 367 files inside `app.asar`.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Before packaging, synthetic manual-key, authenticator-vector and isolated UI/IPC
+  tests passed, including encryption/backup restore, validation, replacement
+  confirmation, cancellation and lock handling. The unpacked runtime generated
+  and decoded a synthetic QR using its shipped dependencies. See the
+  [manual authenticator checks](manual-authenticator.md#checks).
+- Portable: `release/Secure Login Vault 1.0.67.exe` (116,655,901 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup.
+
+This installer adds manual authenticator setup-key entry alongside QR upload,
+using the existing encrypted QR storage and Generate flow. Extension 0.6.6 is
+unchanged. Desktop installation does not replace a signed Firefox add-on.
+
+Superseded 1.0.66 package files were removed after verification. Installer
+extraction files were cleaned automatically. Synthetic profiles from the
+implementation phase were already removed.
+
 ## Local 1.0.66 installer
 
 Built on 2026-11-18 with `npm.cmd run dist -- --publish never` for local testing only.

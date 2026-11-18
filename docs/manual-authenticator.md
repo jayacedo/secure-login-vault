@@ -15,7 +15,7 @@ No database schema change is needed. The generated image uses the existing encry
 
 Conversion runs in the main process through the existing trusted-window and unlocked-session IPC guard. Key input and parameters are bounded and validated with the same Base32 parser used by uploaded QR images. Invalid input produces a public error without echoing the secret. The temporary decoded key buffer is zeroed; JavaScript strings and runtime-managed copies cannot be guaranteed erased. Conversion does not contact the site or enable 2FA there; complete the site's verification step yourself.
 
-The existing `qrcode` 1.5.4 dependency is now included at runtime for local conversion. Its runtime dependency paths are explicitly included in the package allowlist. No installer is produced by this implementation step; 1.0.66 remains the latest local Setup package until packaging is requested.
+The existing `qrcode` 1.5.4 dependency is now included at runtime for local conversion. Its runtime dependency paths are explicitly included in the package allowlist. The 1.0.67 installer is packaged and verified for local testing only; see the [package record](package-privacy.md#local-1067-installer).
 
 ## Checks
 
