@@ -59,6 +59,33 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.81 installer
+
+Built on 2026-11-20 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.81.exe` (116,975,316 bytes).
+- SHA-256: `2255272863536b1e3b1fe9d0bd8bcdb98cb9ee1b7a9a5fd0d7a3cd62b5c0b49d`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 130 outer payload files and 370 files inside `app.asar`.
+- The bundled Firefox 0.6.6 XPI passed source comparison and pinned-hash checks,
+  including the copy extracted from the installer.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Syntax and synthetic Notes/UI layout checks passed before packaging. Coverage
+  includes Settings action spacing, aligned bulk controls, Vault Health and
+  Recently Deleted buttons, Notes, Activity History, and Login/Client forms
+  at multiple window sizes and large text.
+- Portable: `release/Secure Login Vault 1.0.81.exe` (116,740,693 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup. Use Setup for browser helper installation.
+
+This package standardizes desktop text-action sizing and spacing. Superseded
+1.0.80 package files were removed after verification.
+
 ## Local 1.0.80 installer
 
 Built on 2026-11-20 with `npm.cmd run dist -- --publish never` for local testing only.
@@ -82,7 +109,7 @@ read or copied.
   It shares the approved packaged app; final EXE extraction verification applies
   specifically to Setup. Use Setup for browser helper installation.
 
-Includes the Notes search, recovery and edit-history features from 1.0.77?1.0.79,
+Includes the Notes search, recovery and edit-history features from 1.0.77-1.0.79,
 with balanced footer controls and text action spacing. Superseded 1.0.79 package
 files were removed after verification.
 
