@@ -59,6 +59,35 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.79 installer
+
+Built on 2026-11-20 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.79.exe` (116,975,174 bytes).
+- SHA-256: `02563900ae537fd29a38672e9e50a32a0c055d679a9dd4470422eced57328ec1`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 130 outer payload files and 370 files inside `app.asar`.
+- The bundled Firefox 0.6.6 XPI passed source comparison and pinned-hash checks,
+  including the copy extracted from the installer.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Syntax, synthetic Notes service/UI and backup verification checks passed before
+  packaging. Coverage includes search highlighting, 30-day recovery, permanent
+  deletion, version limits, confirmed restore, stale-write/lock races, safe previews,
+  plain-text copying, encrypted backup round trips and history cleanup.
+- Portable: `release/Secure Login Vault 1.0.79.exe` (116,740,548 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup. Use Setup for browser helper installation.
+
+This package combines Notes search highlighting (1.0.77), Recently Deleted (1.0.78)
+and edit history (1.0.79). History begins with the next changed save; earlier edits
+cannot be recovered. Superseded 1.0.76 package files were removed after verification.
+Installer extraction files were cleaned automatically.
+
 ## Local 1.0.76 installer
 
 Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
