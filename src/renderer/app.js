@@ -5681,7 +5681,7 @@ async function runBackupCheck(mode = "choose") {
       if (!response.ok) throw new Error(response.message);
       const { counts, backupCreatedAt } = response.result;
       const countLabel = (value, label) => `${value} ${label}${value === 1 ? "" : "s"}`;
-      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "login")} · ${countLabel(counts.clients, "client")} · ${countLabel(counts.notes || 0, "note")}\n${counts.deletedCredentials} recently deleted · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
+      status.textContent = `Backup check passed\n\nTemporary restore: successful\nDatabase integrity: passed\nTemporary copy: removed\n\n${countLabel(counts.credentials, "login")} · ${countLabel(counts.clients, "client")} · ${countLabel(counts.notes || 0, "note")}\n${countLabel(counts.deletedCredentials, "deleted login")} · ${countLabel(counts.deletedNotes || 0, "deleted note")} · ${countLabel(counts.historyEntries, "activity event")}\n${backupCreatedAt ? `Backup created: ${new Date(backupCreatedAt).toLocaleString()}\n` : ""}\nYour current vault was not changed. This result applies to the selected backup at the time of this check.`;
       overlay.querySelector("#backup-check-password").hidden = true;
       confirm.remove(); cancel.textContent = "Close"; cancel.focus();
     } catch (error) {

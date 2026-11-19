@@ -18,22 +18,33 @@ Workspace buttons remain visible in compact windows.
   titles and visible previews, using the same theme-aware style as Vault search.
   Matching ignores case. Clearing search removes highlights; the reading pane
   and editor retain plain text.
-- **Delete note** asks for confirmation and permanently removes that note.
-  General notes do not use credential Recently Deleted or password history.
+- **Delete note** asks for confirmation and moves the note to **Recently Deleted**
+  for 30 days (since 1.0.78). Use the trash icon next to Add note to switch views;
+  use the back arrow to return to Notes. Search, favorites and pagination work there too.
+  Select a deleted note to read it, restore it, or permanently delete it after a
+  separate confirmation. Restore preserves its text, favorite and original dates.
+  Deleted notes cannot be edited and are excluded from normal search and counts.
+  Expired notes cannot be restored; cleanup runs after unlock, hourly while unlocked
+  and on vault writes. Closed or locked apps defer cleanup.
+  Notes deleted permanently in older versions cannot be recovered by this feature.
 - Locking clears the Notes view and discards unsaved edits without delaying the
   lock. Always save changes you want to keep.
 
 Notes are shared across this local vault's workspaces; credential group filters
 do not hide notes. Titles are limited to 120 characters, bodies to 100,000, and
-the vault to 10,000 notes. This first version has no attachments, rich text,
-note history, cloud sync, or sharing.
+the vault to 10,000 notes including Recently Deleted. Notes have no attachments,
+rich text, edit history, cloud sync, or sharing.
 
 ## Storage and backups
 
 Notes use the existing AES-256-GCM encrypted SQLite vault and its master
 password. They are included in full **Encrypted Backup**, automatic encrypted
-backups, and restore. **Verify & test backup** includes a note count. Older
-backups without notes remain supported. Credential CSV/JSON exports do not
+backups, and restore, including Recently Deleted notes and their original expiry
+dates. **Verify & test backup** reports active and deleted notes separately.
+Existing backups retain snapshots even after a note is permanently deleted.
+Avoid downgrading below 1.0.78 after using Notes recovery: older versions do not
+understand deleted-note status. Older backups without notes remain supported.
+Credential CSV/JSON exports do not
 include this workspace.
 
 No note content is written to renderer local/session storage or Activity
@@ -54,7 +65,9 @@ clipboard mocked in memory and browser registration replaced. It checks plain-te
 selection copying, partial selections, preserved line breaks, lock cleanup, editing,
 discard confirmation, safe text rendering, search highlighting (including literal
 punctuation and HTML-like text), deletion, pagination, responsive
-layouts, navigation and late responses after locking. It never opens an existing
-user vault or browser profile.
+layouts, navigation, recovery, permanent-delete confirmation and late responses
+after locking. Service checks also cover legacy schema upgrades, retention expiry,
+restore/delete races, stale revisions and deleted-note backup round trips.
+It never opens an existing user vault or browser profile.
 
 1.0.58 is packaged for local testing only. See the [verified installer record](package-privacy.md#local-1058-installer).

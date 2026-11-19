@@ -7,6 +7,7 @@ const { writeJsonAtomic, fileExists, readBoundedText, MAX_BACKUP_BYTES } = requi
 const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, beforeVaultCommit, trackVaultBuffer } = require("./vaultOperationContext");
 const {
   listNotes, getNote, addNote, updateNote, toggleNoteFavorite, deleteNote,
+  listDeletedNotes, getDeletedNote, restoreNote, permanentlyDeleteNote, purgeDeletedNotes,
   previewCredentialMove,
   moveCredentialsToGroup,
   previewCredentialCategory,
@@ -967,6 +968,11 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
   }
 
   const operations = {
+    listDeletedNotes: options => listDeletedNotes(databaseFilePath, currentKey(), options),
+    getDeletedNote: id => getDeletedNote(databaseFilePath, currentKey(), id),
+    restoreNote: (id, revision) => restoreNote(databaseFilePath, currentKey(), id, revision),
+    permanentlyDeleteNote: (id, revision, confirmed) => permanentlyDeleteNote(databaseFilePath, currentKey(), id, revision, confirmed),
+    purgeDeletedNotes: () => purgeDeletedNotes(databaseFilePath, currentKey()),
     listNotes: options => listNotes(databaseFilePath, currentKey(), options),
     getNote: id => getNote(databaseFilePath, currentKey(), id),
     addNote: data => addNote(databaseFilePath, currentKey(), data),

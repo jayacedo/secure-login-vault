@@ -293,6 +293,7 @@ function registerAuthHandlers() {
         applyWindowState({ hasVault: true, isUnlocked: true });
       }
       vaultStore.purgeDeletedCredentials().catch(() => {});
+      vaultStore.purgeDeletedNotes().catch(() => {});
       vaultStore.purgeActivityHistory().catch(() => {});
       automaticBackups.run().catch(() => {});
     }
@@ -484,7 +485,7 @@ function registerAuthHandlers() {
 
   // ─── Client Vault CRUD ──────────────────────────────────────────────────────
   // Notes use the trusted-main-window and unlocked-session guards.
-  for (const method of ["listNotes", "getNote", "addNote", "updateNote", "toggleNoteFavorite", "deleteNote"]) {
+  for (const method of ["listNotes", "getNote", "addNote", "updateNote", "toggleNoteFavorite", "deleteNote", "listDeletedNotes", "getDeletedNote", "restoreNote", "permanentlyDeleteNote"]) {
     handleAppRequest(`vault:notes:${method}`, async (_event, ...args) =>
       handleVaultOperation(() => vaultStore[method](...args)));
   }
@@ -1169,6 +1170,7 @@ app.whenReady().then(async () => {
   automaticBackups.start();
   trashMaintenance = setInterval(() => {
     vaultStore.purgeDeletedCredentials().catch(() => {});
+    vaultStore.purgeDeletedNotes().catch(() => {});
     vaultStore.purgeActivityHistory().catch(() => {});
   }, 60 * 60 * 1000);
   trashMaintenance.unref();

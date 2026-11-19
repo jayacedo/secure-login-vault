@@ -46,7 +46,7 @@ function renderNotesWorkspace(state) {
   closeCredentialDetails(false);
   resetBulkSelection();
   _lastAuthState = state;
-  const view = notesView = { note: null, items: [], editing: false, creating: false, busy: false, query: "", favorites: false, sort: "updated", offset: 0, listRequest: 0, detailRequest: 0 };
+  const view = notesView = { note: null, items: [], deleted: false, editing: false, creating: false, busy: false, query: "", favorites: false, sort: "updated", offset: 0, listRequest: 0, detailRequest: 0 };
   document.body.classList.remove("has-credential-list");
   document.body.classList.add("is-dashboard", "has-notes-workspace");
   appShell.className = "dashboard-shell";
@@ -65,7 +65,7 @@ function renderNotesWorkspace(state) {
     </aside>
     <section class="dashboard-main" id="notes-workspace" aria-labelledby="dashboard-title">
       <header class="dashboard-header"><div><p class="eyebrow">Private workspace</p><h1 id="dashboard-title">Notes</h1></div>
-        <button type="button" id="add-note-btn" class="primary-button add-button dashboard-icon-button" aria-label="Add note">${renderPlusIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Add note</span></button>
+        <div class="note-detail-actions">${noteIconButton("notes-trash", "Recently deleted notes", renderTrashIcon(), false)}<button type="button" id="add-note-btn" class="primary-button add-button dashboard-icon-button" aria-label="Add note">${renderPlusIcon()}<span class="dashboard-action-tooltip" aria-hidden="true">Add note</span></button></div>
       </header>
       <p class="notes-intro">General notes, encrypted in your vault. Included in full encrypted backups.</p>
       <div class="dashboard-toolbar notes-toolbar">
@@ -87,6 +87,32 @@ function renderNotesWorkspace(state) {
   document.querySelector("#notes-open-vault").onclick = () => { if (notesMayLeave()) renderDashboard(state); };
   document.querySelector("#notes-open-clients").onclick = () => { if (notesMayLeave()) renderClientVault(state); };
   document.querySelector("#add-note-btn").onclick = () => { if (notesMayLeave()) { view.detailRequest++; view.editing = true; view.creating = true; renderNoteDetail(); } };
+  document.querySelector("#notes-trash").onclick = () => {
+    if (!notesMayLeave()) return;
+    view.deleted = !view.deleted;
+    view.detailRequest++; view.listRequest++;
+    view.note = null; view.items = []; view.editing = false; view.creating = false;
+    view.query = ""; view.favorites = false; view.offset = 0; view.sort = "updated";
+    clearTimeout(view.timer);
+    document.querySelector("#notes-search").value = "";
+    document.querySelector("#notes-favorites").setAttribute("aria-pressed", "false");
+    const sort = document.querySelector("#notes-sort"); sort.value = "updated";
+    sort.querySelector('[value="updated"]').textContent = view.deleted ? "Recently deleted" : "Recently updated";
+    document.querySelector("#dashboard-title").textContent = view.deleted ? "Recently Deleted Notes" : "Notes";
+    document.querySelector(".notes-intro").textContent = view.deleted
+      ? "Restore notes within 30 days. Older notes expire; permanent deletion cannot be undone."
+      : "General notes, encrypted in your vault. Included in full encrypted backups.";
+    document.querySelector("#add-note-btn").hidden = view.deleted;
+    const toggle = document.querySelector("#notes-trash");
+    toggle.querySelector("svg").outerHTML = view.deleted
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14"/></svg>'
+      : renderTrashIcon();
+    toggle.setAttribute("aria-pressed", String(view.deleted));
+    toggle.setAttribute("aria-label", view.deleted ? "Back to notes" : "Recently deleted notes");
+    toggle.querySelector(".dashboard-action-tooltip").textContent = view.deleted ? "Back to notes" : "Recently deleted notes";
+    document.querySelector("#notes-list").replaceChildren();
+    notesMessage(""); renderNoteDetail(); loadNotesList(view);
+  };
   document.querySelector("#notes-search").oninput = event => {
     view.query = event.target.value; view.offset = 0;
     clearTimeout(view.timer); view.timer = setTimeout(() => loadNotesList(view), 180);
@@ -111,14 +137,15 @@ async function loadNotesList(view = notesView) {
   if (!view || view !== notesView) return;
   const request = ++view.listRequest;
   const query = view.query;
+  const deleted = view.deleted;
   document.querySelector("#notes-previous").disabled = true;
   document.querySelector("#notes-next").disabled = true;
   try {
-    const response = await window.secureLoginVault.notes.list({ query, favorites: view.favorites, sort: view.sort, offset: view.offset });
+    const response = await window.secureLoginVault.notes[deleted ? "listDeleted" : "list"]({ query, favorites: view.favorites, sort: view.sort, offset: view.offset });
     if (view !== notesView || request !== view.listRequest || query !== view.query) return;
     if (!response.ok) throw new Error(response.message);
     const data = response.result;
-    if (data.matched && view.offset >= data.matched) { view.offset = Math.floor((data.matched - 1) / data.pageSize) * data.pageSize; return loadNotesList(view); }
+    if (view.offset && view.offset >= data.matched) { view.offset = Math.max(0, Math.floor((data.matched - 1) / data.pageSize) * data.pageSize); return loadNotesList(view); }
     view.items = data.items;
     document.querySelector("#notes-total").textContent = data.total;
     document.querySelector("#notes-favorites-total").textContent = data.favorites;
@@ -126,8 +153,8 @@ async function loadNotesList(view = notesView) {
     document.querySelector("#notes-list").innerHTML = data.items.length ? data.items.map(note => `
       <button type="button" class="note-list-item" data-note-id="${note.id}" aria-pressed="${view.note?.id === note.id}">
         <strong>${note.favorite ? '<span aria-label="Favorite">★ </span>' : ""}${highlightMatch(note.title, query)}</strong>
-        <span class="note-snippet">${highlightMatch(note.snippet, query) || "Empty note"}</span><small>${escapeHtml(formatDateTime(note.updated_at))}</small>
-      </button>`).join("") : '<p class="notes-placeholder">No notes here yet. Add a note or change your filters.</p>';
+        <span class="note-snippet">${highlightMatch(note.snippet, query) || "Empty note"}</span><small>${deleted ? "Deleted " : ""}${escapeHtml(formatDateTime(deleted ? note.deleted_at : note.updated_at))}</small>
+      </button>`).join("") : `<p class="notes-placeholder">${deleted ? "No recently deleted notes match these filters." : "No notes here yet. Add a note or change your filters."}</p>`;
     document.querySelectorAll("[data-note-id]").forEach(button => { button.onclick = () => openNote(Number(button.dataset.noteId)); });
     document.querySelector("#notes-previous").disabled = view.busy || view.offset === 0;
     document.querySelector("#notes-next").disabled = view.busy || !data.hasMore;
@@ -141,7 +168,7 @@ async function openNote(id) {
   notesMessage("");
   document.querySelector("#note-detail").textContent = "Loading note…";
   try {
-    const response = await window.secureLoginVault.notes.getOne(id);
+    const response = await window.secureLoginVault.notes[view.deleted ? "getDeleted" : "getOne"](id);
     if (view !== notesView || request !== view.detailRequest) return;
     if (!response.ok) throw new Error(response.message);
     view.note = response.result;
@@ -174,10 +201,23 @@ function renderNoteDetail() {
     };
     return;
   }
-  if (!note) { detail.innerHTML = '<p class="notes-placeholder">Choose a note, or add a new one.</p>'; return; }
+  if (!note) { detail.innerHTML = `<p class="notes-placeholder">${view.deleted ? "Choose a deleted note to review or restore." : "Choose a note, or add a new one."}</p>`; return; }
+  if (view.deleted) {
+    detail.innerHTML = `<header class="note-detail-header"><div><h2 id="note-heading"></h2><small>Deleted ${escapeHtml(formatDateTime(note.deleted_at))}<br>Expires ${escapeHtml(formatDateTime(note.expires_at))}</small></div>
+      <div class="note-detail-actions"><button type="button" class="primary-button" id="note-restore">Restore note</button>${noteIconButton("note-delete", "Delete note permanently", renderTrashIcon())}</div></header>
+      <div id="note-delete-confirm" class="note-delete-confirm" hidden><p>Permanently delete this note? This cannot be undone. Existing backups keep their own copies.</p><button type="button" class="danger-button" id="note-delete-now">Delete permanently</button> <button type="button" class="secondary-button" id="note-delete-cancel">Cancel</button></div>
+      <div id="note-reading-body" class="note-reading-body"></div>`;
+    document.querySelector("#note-heading").textContent = note.title;
+    document.querySelector("#note-reading-body").textContent = note.body || "This note is empty.";
+    document.querySelector("#note-restore").onclick = () => mutateNote(() => window.secureLoginVault.notes.restore(note.id, note.revision), true, "Note restored. Find it in Notes.");
+    document.querySelector("#note-delete").onclick = () => { document.querySelector("#note-delete-confirm").hidden = false; document.querySelector("#note-delete-cancel").focus(); };
+    document.querySelector("#note-delete-cancel").onclick = () => { document.querySelector("#note-delete-confirm").hidden = true; document.querySelector("#note-delete").focus(); };
+    document.querySelector("#note-delete-now").onclick = () => mutateNote(() => window.secureLoginVault.notes.permanentlyDelete(note.id, note.revision, true), true, "Note permanently deleted.");
+    return;
+  }
   detail.innerHTML = `<header class="note-detail-header"><div><h2 id="note-heading"></h2><small>Updated ${escapeHtml(formatDateTime(note.updated_at))}</small></div>
       <div class="note-detail-actions">${noteIconButton("note-favorite", note.favorite ? "Remove favorite" : "Add favorite", renderStarIcon(), !!note.favorite)}${noteIconButton("note-edit", "Edit note", renderEditIcon())}${noteIconButton("note-delete", "Delete note", renderTrashIcon())}</div></header>
-    <div id="note-delete-confirm" class="note-delete-confirm" hidden><p>Permanently delete this note? It cannot be restored from Recently Deleted.</p><button type="button" class="danger-button" id="note-delete-now">Delete note</button> <button type="button" class="secondary-button" id="note-delete-cancel">Cancel</button></div>
+    <div id="note-delete-confirm" class="note-delete-confirm" hidden><p>Move this note to Recently Deleted? You can restore it for 30 days.</p><button type="button" class="danger-button" id="note-delete-now">Move to Recently Deleted</button> <button type="button" class="secondary-button" id="note-delete-cancel">Cancel</button></div>
     <div id="note-reading-body" class="note-reading-body"></div>`;
   document.querySelector("#note-heading").textContent = note.title;
   document.querySelector("#note-reading-body").textContent = note.body || "This note is empty.";
@@ -187,7 +227,7 @@ function renderNoteDetail() {
   document.querySelector("#note-delete-cancel").onclick = () => { document.querySelector("#note-delete-confirm").hidden = true; document.querySelector("#note-delete").focus(); };
   document.querySelector("#note-delete-now").onclick = () => mutateNote(() => window.secureLoginVault.notes.remove(note.id, note.revision, true), true);
 }
-async function mutateNote(operation, deleting = false) {
+async function mutateNote(operation, deleting = false, message = "") {
   const view = notesView;
   if (!view || view.busy) return;
   view.busy = true;
@@ -200,7 +240,7 @@ async function mutateNote(operation, deleting = false) {
     view.note = deleting ? null : response.result;
     view.editing = false; view.creating = false;
     renderNoteDetail();
-    notesMessage(deleting ? "Note deleted." : "Note saved.");
+    notesMessage(message || (deleting ? "Note moved to Recently Deleted for 30 days." : "Note saved."));
   } catch (error) { if (view === notesView) notesMessage(error.message || "Could not save note."); }
   finally {
     if (view === notesView) {

@@ -51,22 +51,76 @@ async function main() {
     assert.deepEqual(await restored.getNote(first.id), first, "encrypted full backup restores notes exactly");
     await store.deleteNote(second.id, second.revision, true);
     await assert.rejects(store.getNote(second.id), /no longer exists/i);
+    let deleted = await store.getDeletedNote(second.id);
+    assert.equal(deleted.body, second.body);
+    assert.equal(Date.parse(deleted.expires_at) - Date.parse(deleted.deleted_at), notes.RETENTION_MS);
+    assert.equal((await store.listDeletedNotes({ query: "Checklist" })).matched, 1);
+    assert.equal((await store.listNotes({ query: "Checklist" })).matched, 0);
+    await assert.rejects(store.updateNote(deleted.id, { ...deleted, body: "cannot edit trash" }), /no longer exists/i);
+    await assert.rejects(store.toggleNoteFavorite(deleted.id, deleted.revision), /no longer exists/i);
+    await assert.rejects(store.permanentlyDeleteNote(first.id, first.revision, true), /no longer exists/i);
+    await assert.rejects(store.restoreNote(deleted.id, second.revision), /changed/i);
+    await assert.rejects(store.permanentlyDeleteNote(deleted.id, deleted.revision, false), /confirm/i);
+    const trashBackup = path.join(root, "with-deleted-notes.slvbackup");
+    await store.createEncryptedBackup(trashBackup);
+    const checked = await verifier.verify(trashBackup, password);
+    assert.equal(checked.counts.notes, 1); assert.equal(checked.counts.deletedNotes, 1);
+    const cancelledRestore = store.restoreNote(deleted.id, deleted.revision);
+    store.lockVault(); await assert.rejects(cancelledRestore);
+    await store.unlockVault({ masterPassword: password });
+    assert.deepEqual(await store.getDeletedNote(second.id), deleted, "locking cancels queued restore without changing the deleted note");
+    restored.lockVault();
+    await restored.restoreEncryptedBackup(trashBackup, password);
+    await restored.unlockVault({ masterPassword: password });
+    assert.deepEqual(await restored.getDeletedNote(second.id), deleted, "backup retains deleted content and original expiry");
+    let recovered = await store.restoreNote(deleted.id, deleted.revision);
+    for (const field of ["id", "title", "body", "favorite", "created_at", "updated_at"]) assert.equal(recovered[field], second[field], `restore retains ${field}`);
+    assert.equal((await store.listDeletedNotes()).matched, 0);
+    await assert.rejects(store.restoreNote(deleted.id, deleted.revision), /no longer exists/i);
+    await store.deleteNote(recovered.id, recovered.revision, true);
+    deleted = await store.getDeletedNote(recovered.id);
+    const race = await Promise.allSettled([store.restoreNote(deleted.id, deleted.revision), store.permanentlyDeleteNote(deleted.id, deleted.revision, true)]);
+    assert.equal(race.filter(r => r.status === "fulfilled").length, 1, "restore/delete race cannot lose a restored note");
+    if (race[0].status === "fulfilled") {
+      recovered = await store.getNote(second.id);
+      await store.deleteNote(recovered.id, recovered.revision, true);
+      deleted = await store.getDeletedNote(second.id);
+      await store.permanentlyDeleteNote(deleted.id, deleted.revision, true);
+    }
+    assert.equal((await store.listDeletedNotes()).matched, 0);
+    await assert.rejects(store.getDeletedNote(second.id), /no longer exists/i);
     const pending = store.addNote({ title: "Must not save after lock", body: "Synthetic" });
     store.lockVault();
     await assert.rejects(pending);
     await assert.rejects(store.getNote(first.id), /locked/i);
+    for (const operation of [() => store.listDeletedNotes(), () => store.getDeletedNote(first.id), () => store.restoreNote(first.id, 1), () => store.permanentlyDeleteNote(first.id, 1, true), () => store.purgeDeletedNotes()]) await assert.rejects(operation, /locked/i);
     await store.unlockVault({ masterPassword: password });
     assert.equal((await store.listNotes()).total, 1);
     assert.deepEqual(await store.getNote(first.id), first);
     // Exercise pagination and schema upgrades using a new in-memory synthetic DB.
     const SQL = await initSqlJs(), db = new SQL.Database();
     try {
+      // Reproduce the schema shipped before Recently Deleted, using fake data.
+      db.run("CREATE TABLE general_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, favorite INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+      db.run("INSERT INTO general_notes (title, body, created_at, updated_at) VALUES ('Legacy synthetic', 'Old fake content', '2026-01-01', '2026-01-01')");
       notes.ensureSchema(db); notes.ensureSchema(db);
-      for (let i = 0; i < 55; i++) notes.add(db, { title: `Synthetic ${String(i).padStart(2, "0")}`, body: "Synthetic page test" });
+      assert.equal(notes.get(db, 1).body, "Old fake content");
+      assert.equal(notes.get(db, 1).deleted_at, null);
+      for (let i = 0; i < 54; i++) notes.add(db, { title: `Synthetic ${String(i).padStart(2, "0")}`, body: "Synthetic page test" });
       const one = notes.list(db, { sort: "title-asc" }), two = notes.list(db, { sort: "title-asc", offset: 50 });
       assert.equal(one.items.length, 50); assert(one.hasMore);
       assert.equal(two.items.length, 5); assert(!two.hasMore);
       assert.equal(new Set([...one.items, ...two.items].map(n => n.id)).size, 55);
+      for (const n of [...one.items, ...two.items]) notes.remove(db, n.id, n.revision, true);
+      assert.equal(notes.list(db).total, 0);
+      assert.equal(notes.list(db, {}, true).items.length, 50);
+      assert.equal(notes.list(db, { offset: 50 }, true).items.length, 5);
+      db.run("UPDATE general_notes SET expires_at = ? WHERE id = 1", [new Date(Date.now() - 1000).toISOString()]);
+      assert.equal(notes.list(db, {}, true).matched, 54);
+      assert.throws(() => notes.get(db, 1, true), /no longer exists/);
+      assert.throws(() => notes.restore(db, 1, 2), /no longer exists/);
+      assert(notes.hasExpired(db)); notes.purge(db); assert(!notes.hasExpired(db));
+      assert.equal(db.exec("SELECT count(*) FROM general_notes")[0].values[0][0], 54);
     } finally { db.close(); }
     console.log("Notes: CRUD, validation, search, paging, stale writes, lock cancellation, encryption and backup compatibility passed (synthetic only).");
   } finally {

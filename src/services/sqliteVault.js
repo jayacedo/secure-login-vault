@@ -94,7 +94,8 @@ async function inspectEncryptedVault(filePath, key) {
     db.exec("SELECT id, name, admin_password, hosting_password, ftp_password, db_password, qr_code FROM clients LIMIT 0;");
     db.exec("SELECT id, title, body, favorite, revision, created_at, updated_at FROM general_notes LIMIT 0;");
     const count = table => Number(queryOne(db, `SELECT COUNT(*) AS total FROM ${table}`).total);
-    return { credentials: count("credentials"), clients: count("clients"), notes: count("general_notes"),
+    return { credentials: count("credentials"), clients: count("clients"), notes: Number(queryOne(db, "SELECT count(*) AS total FROM general_notes WHERE deleted_at IS NULL").total),
+      deletedNotes: Number(queryOne(db, "SELECT count(*) AS total FROM general_notes WHERE deleted_at IS NOT NULL").total),
       deletedCredentials: count("credential_trash"), historyEntries: count("credential_activity") };
   });
 }
@@ -597,6 +598,12 @@ async function getActivityHistory(filePath, key, options) {
 
 async function purgeActivityHistory(filePath, key) {
   const expired = await withDecryptedDatabase(filePath, key, db => activity.hasExpired(db));
+  if (!expired) return { cleaned: false };
+  return withDecryptedDatabaseWrite(filePath, key, () => ({ cleaned: true }));
+}
+
+async function purgeDeletedNotes(filePath, key) {
+  const expired = await withDecryptedDatabase(filePath, key, db => notes.hasExpired(db));
   if (!expired) return { cleaned: false };
   return withDecryptedDatabaseWrite(filePath, key, () => ({ cleaned: true }));
 }
@@ -1459,6 +1466,7 @@ async function performDatabaseWrite(filePath, key, operation) {
     db = new SQL.Database(databaseBytes);
     ensureSchemaUpgrades(db);
     trash.purgeTrash(db);
+    notes.purge(db);
     activity.purge(db);
     const result = operation(db);
     updatedBytes = Buffer.from(db.export());
@@ -1758,6 +1766,11 @@ function createPublicError(message) {
 }
 
 module.exports = {
+  purgeDeletedNotes,
+  listDeletedNotes: (file, key, options) => withDecryptedDatabase(file, key, db => notes.list(db, options, true)),
+  getDeletedNote: (file, key, id) => withDecryptedDatabase(file, key, db => notes.get(db, id, true)),
+  restoreNote: (file, key, id, revision) => withDecryptedDatabaseWrite(file, key, db => notes.restore(db, id, revision)),
+  permanentlyDeleteNote: (file, key, id, revision, confirmed) => withDecryptedDatabaseWrite(file, key, db => notes.permanentlyDelete(db, id, revision, confirmed)),
   listNotes: (file, key, options) => withDecryptedDatabase(file, key, db => notes.list(db, options)),
   getNote: (file, key, id) => withDecryptedDatabase(file, key, db => notes.get(db, id)),
   addNote: (file, key, data) => withDecryptedDatabaseWrite(file, key, db => notes.add(db, data)),
