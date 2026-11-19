@@ -94,6 +94,9 @@ contextBridge.exposeInMainWorld("secureLoginVault", {
   },
 
   notes: {
+    history: id => ipcRenderer.invoke("vault:notes:listNoteHistory", id),
+    getVersion: (id, versionId, revision) => ipcRenderer.invoke("vault:notes:getNoteVersion", id, versionId, revision),
+    restoreVersion: (id, versionId, revision, confirmed) => ipcRenderer.invoke("vault:notes:restoreNoteVersion", id, versionId, revision, confirmed),
     listDeleted: options => ipcRenderer.invoke("vault:notes:listDeletedNotes", options),
     getDeleted: id => ipcRenderer.invoke("vault:notes:getDeletedNote", id),
     restore: (id, revision) => ipcRenderer.invoke("vault:notes:restoreNote", id, revision),

@@ -18,7 +18,11 @@
 .note-detail-header { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
 .note-detail h2 { font-size: 1.2rem; margin: 0 0 10px; overflow-wrap: anywhere; }
 .note-detail-header > div:first-child { flex: 1 1 180px; min-width: 0; }
-.note-detail-actions, .note-editor-actions { display: flex; gap: 8px; }
+.note-detail-actions, .note-editor-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.note-history-picker { display: flex; flex-direction: column; gap: 8px; margin: 20px 0; }
+.note-history-picker select { width: 100%; min-width: 0; max-width: 100%; }
+.note-version-header { margin-bottom: 16px; }
+.note-version-header h3 { overflow-wrap: anywhere; margin: 0 0 8px; }
 #note-favorite[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .note-reading-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; padding-top: 22px; }
 .note-editor { display: flex; flex-direction: column; gap: 12px; }

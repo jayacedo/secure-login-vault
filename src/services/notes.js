@@ -1,6 +1,7 @@
 // General notes live inside the encrypted vault. Never log titles or bodies.
 const PAGE_SIZE = 50;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const HISTORY_LIMIT = 10;
 function fail(message) { const error = new Error(message); error.isPublic = true; throw error; }
 function object(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("Invalid note request.");
@@ -28,6 +29,16 @@ function ensureSchema(db) {
     if (!columns.includes(name)) db.run(`ALTER TABLE general_notes ADD COLUMN ${name} TEXT`);
   }
   db.run("CREATE INDEX IF NOT EXISTS idx_general_notes_expiry ON general_notes(expires_at)");
+  db.run(`CREATE TABLE IF NOT EXISTS general_note_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL REFERENCES general_notes(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, body TEXT NOT NULL,
+    note_revision INTEGER NOT NULL, saved_at TEXT NOT NULL, archived_at TEXT NOT NULL
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS idx_general_note_history_note ON general_note_history(note_id, id)");
+  // Cleanup also works when SQLite foreign-key enforcement is not enabled.
+  db.run(`CREATE TRIGGER IF NOT EXISTS delete_general_note_history AFTER DELETE ON general_notes
+    BEGIN DELETE FROM general_note_history WHERE note_id = OLD.id; END`);
 }
 function fields(data) {
   object(data);
@@ -74,9 +85,35 @@ function add(db, data) {
 }
 function update(db, id, data) {
   const [title, body] = fields(data);
-  current(db, id, data.revision);
+  const note = current(db, id, data.revision);
+  if (note.title === title && note.body === body) return note;
+  archiveVersion(db, note);
   db.run("UPDATE general_notes SET title = ?, body = ?, revision = revision + 1, updated_at = ? WHERE id = ?", [title, body, new Date().toISOString(), id]);
   return get(db, id);
+}
+function archiveVersion(db, note) {
+  db.run("INSERT INTO general_note_history (note_id, title, body, note_revision, saved_at, archived_at) VALUES (?, ?, ?, ?, ?, ?)",
+    [note.id, note.title, note.body, note.revision, note.updated_at, new Date().toISOString()]);
+  db.run(`DELETE FROM general_note_history WHERE note_id = ? AND id NOT IN
+    (SELECT id FROM general_note_history WHERE note_id = ? ORDER BY id DESC LIMIT ?)`, [note.id, note.id, HISTORY_LIMIT]);
+}
+function listHistory(db, id) {
+  const note = get(db, id);
+  return { revision: note.revision, limit: HISTORY_LIMIT, items: rows(db,
+    "SELECT id, note_revision, saved_at, archived_at FROM general_note_history WHERE note_id = ? ORDER BY id DESC LIMIT ?", [id, HISTORY_LIMIT]) };
+}
+function getVersion(db, id, versionId, revision) {
+  current(db, id, revision);
+  integer(versionId, "note version ID");
+  const version = rows(db, "SELECT * FROM general_note_history WHERE note_id = ? AND id = ?", [id, versionId])[0];
+  if (!version) fail("This note version is no longer available. Reopen edit history.");
+  return version;
+}
+function restoreVersion(db, id, versionId, revision, confirmed) {
+  if (confirmed !== true) fail("Confirm restoring this note version first.");
+  const version = getVersion(db, id, versionId, revision);
+  // Load the selected version before archiving/pruning: it may be the oldest.
+  return update(db, id, { title: version.title, body: version.body, revision });
 }
 function toggleFavorite(db, id, revision) {
   const note = current(db, id, revision);
@@ -108,4 +145,4 @@ function hasExpired(db) {
 function purge(db) {
   db.run("DELETE FROM general_notes WHERE deleted_at IS NOT NULL AND expires_at <= ?", [new Date().toISOString()]);
 }
-module.exports = { ensureSchema, list, get, add, update, toggleFavorite, remove, restore, permanentlyDelete, hasExpired, purge, RETENTION_MS };
+module.exports = { ensureSchema, list, get, add, update, toggleFavorite, remove, restore, permanentlyDelete, hasExpired, purge, listHistory, getVersion, restoreVersion, RETENTION_MS, HISTORY_LIMIT };

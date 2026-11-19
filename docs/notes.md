@@ -33,7 +33,30 @@ Workspace buttons remain visible in compact windows.
 Notes are shared across this local vault's workspaces; credential group filters
 do not hide notes. Titles are limited to 120 characters, bodies to 100,000, and
 the vault to 10,000 notes including Recently Deleted. Notes have no attachments,
-rich text, edit history, cloud sync, or sharing.
+rich text, cloud sync, or sharing.
+
+## Edit history
+
+Since 1.0.79, select a note and use the **Edit history** clock icon beside Edit.
+Choose a previous version to preview its title and text. **Restore this version**
+asks for confirmation, then replaces the current title and text. The previous
+current version is kept in history; favorite status and creation date stay intact.
+Use **Back to note** to leave without changing anything.
+
+- Keep up to **10 previous saved versions**, plus the current note.
+- History is recorded only when a saved title or body changes. Unchanged saves,
+  favorite changes and unsaved typing do not create versions.
+- History begins with the next changed save after this update; it cannot recover
+  earlier edits that were never recorded.
+- Restoring counts as a new save. When the limit is reached, the oldest previous
+  version is removed. Restoring identical content makes no change.
+- Deleted notes keep their history for their 30-day recovery period. Restore the
+  note from Recently Deleted first to view its edit history. Permanent deletion
+  or expiry removes its history too; existing backups retain their own snapshots.
+- Versions stay inside the encrypted vault and full encrypted backups. Version
+  text is fetched only when selected, stays out of logs and browser storage, and copies as
+  plain text. Locking or switching notes clears the preview.
+- A newer save makes an old preview stale: refresh the note before restoring.
 
 ## Storage and backups
 
@@ -68,6 +91,9 @@ punctuation and HTML-like text), deletion, pagination, responsive
 layouts, navigation, recovery, permanent-delete confirmation and late responses
 after locking. Service checks also cover legacy schema upgrades, retention expiry,
 restore/delete races, stale revisions and deleted-note backup round trips.
+History checks cover the 10-version limit, no-op saves, note-bound version IDs,
+confirmation, preserving current text on restore, expiry/deletion cleanup,
+encrypted backups, lock cancellation, safe preview text and plain-text copying.
 It never opens an existing user vault or browser profile.
 
 1.0.58 is packaged for local testing only. See the [verified installer record](package-privacy.md#local-1058-installer).

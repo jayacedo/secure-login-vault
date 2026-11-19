@@ -485,7 +485,7 @@ function registerAuthHandlers() {
 
   // ─── Client Vault CRUD ──────────────────────────────────────────────────────
   // Notes use the trusted-main-window and unlocked-session guards.
-  for (const method of ["listNotes", "getNote", "addNote", "updateNote", "toggleNoteFavorite", "deleteNote", "listDeletedNotes", "getDeletedNote", "restoreNote", "permanentlyDeleteNote"]) {
+  for (const method of ["listNotes", "getNote", "addNote", "updateNote", "toggleNoteFavorite", "deleteNote", "listDeletedNotes", "getDeletedNote", "restoreNote", "permanentlyDeleteNote", "listNoteHistory", "getNoteVersion", "restoreNoteVersion"]) {
     handleAppRequest(`vault:notes:${method}`, async (_event, ...args) =>
       handleVaultOperation(() => vaultStore[method](...args)));
   }

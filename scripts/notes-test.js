@@ -31,6 +31,12 @@ async function main() {
     assert.equal((await store.listNotes({ favorites: true })).matched, 1);
     await assert.rejects(store.updateNote(first.id, { title: "stale", body: "stale", revision: 1 }), /changed/i);
     first = await store.updateNote(first.id, { title: first.title, body: "Updated synthetic text", revision: first.revision });
+    let firstHistory = await store.listNoteHistory(first.id);
+    assert.equal(firstHistory.items.length, 1);
+    assert.equal(Object.hasOwn(firstHistory.items[0], "body"), false, "history list returns metadata only");
+    assert.equal((await store.getNoteVersion(first.id, firstHistory.items[0].id, first.revision)).body, "Unique synthetic body 19a7\n<script>not executable</script>");
+    assert.deepEqual(await store.updateNote(first.id, first), first, "unchanged save is a no-op");
+    assert.equal((await store.listNoteHistory(first.id)).items.length, 1);
     for (const data of [null, [], {}, { title: " ", body: "" }, { title: "x", body: 1 }, { title: "x".repeat(121), body: "" }, { title: "x", body: "x".repeat(100001) }]) await assert.rejects(store.addNote(data));
     for (const id of [0, -1, "1", 1.5, null]) await assert.rejects(store.getNote(id));
     for (const options of [null, [], { offset: -1 }, { sort: "DROP TABLE" }, { query: 1 }, { favorites: "yes" }]) await assert.rejects(store.listNotes(options));
@@ -49,6 +55,9 @@ async function main() {
     await restored.restoreEncryptedBackup(backup, password);
     await restored.unlockVault({ masterPassword: password });
     assert.deepEqual(await restored.getNote(first.id), first, "encrypted full backup restores notes exactly");
+    firstHistory = await store.listNoteHistory(first.id);
+    assert.deepEqual(await restored.listNoteHistory(first.id), firstHistory, "backup retains version metadata");
+    assert.deepEqual(await restored.getNoteVersion(first.id, firstHistory.items[0].id, first.revision), await store.getNoteVersion(first.id, firstHistory.items[0].id, first.revision), "backup retains version text");
     await store.deleteNote(second.id, second.revision, true);
     await assert.rejects(store.getNote(second.id), /no longer exists/i);
     let deleted = await store.getDeletedNote(second.id);
@@ -97,6 +106,48 @@ async function main() {
     await store.unlockVault({ masterPassword: password });
     assert.equal((await store.listNotes()).total, 1);
     assert.deepEqual(await store.getNote(first.id), first);
+    let historyNote = await store.addNote({ title: "Synthetic history", body: "Version 0" });
+    assert.equal((await store.listNoteHistory(historyNote.id)).items.length, 0, "new note has no previous versions");
+    for (let i = 1; i <= 12; i++) historyNote = await store.updateNote(historyNote.id, { ...historyNote, body: `Version ${i}` });
+    let history = await store.listNoteHistory(historyNote.id);
+    assert.equal(history.items.length, 10); assert.equal(history.limit, 10);
+    assert.equal((await store.getNoteVersion(historyNote.id, history.items[0].id, historyNote.revision)).body, "Version 11");
+    const oldest = history.items.at(-1).id;
+    assert.equal((await store.getNoteVersion(historyNote.id, oldest, historyNote.revision)).body, "Version 2");
+    historyNote = await store.toggleNoteFavorite(historyNote.id, historyNote.revision);
+    assert.deepEqual((await store.listNoteHistory(historyNote.id)).items, history.items, "favorite change adds no version");
+    await assert.rejects(store.getNoteVersion(first.id, oldest, first.revision), /no longer available/i, "version IDs are bound to their note");
+    await assert.rejects(store.restoreNoteVersion(historyNote.id, oldest, historyNote.revision, false), /confirm/i);
+    await assert.rejects(store.restoreNoteVersion(historyNote.id, oldest, historyNote.revision - 1, true), /changed/i);
+    for (const bad of [0, -1, "1", null, 1.5]) await assert.rejects(store.getNoteVersion(historyNote.id, bad, historyNote.revision));
+    const preRestore = historyNote;
+    historyNote = await store.restoreNoteVersion(historyNote.id, oldest, historyNote.revision, true);
+    assert.equal(historyNote.body, "Version 2", "oldest version can be restored even when pruning it");
+    assert.equal(historyNote.favorite, 1); assert.equal(historyNote.created_at, preRestore.created_at);
+    history = await store.listNoteHistory(historyNote.id);
+    assert.equal(history.items.length, 10);
+    assert.equal((await store.getNoteVersion(historyNote.id, history.items[0].id, historyNote.revision)).body, preRestore.body, "restoring archives current text");
+    await assert.rejects(store.getNoteVersion(historyNote.id, oldest, historyNote.revision), /no longer available/i);
+    const cancelVersion = store.restoreNoteVersion(historyNote.id, history.items[0].id, historyNote.revision, true);
+    store.lockVault(); await assert.rejects(cancelVersion);
+    await assert.rejects(store.listNoteHistory(historyNote.id), /locked/i);
+    await assert.rejects(store.getNoteVersion(historyNote.id, history.items[0].id, historyNote.revision), /locked/i);
+    await assert.rejects(store.restoreNoteVersion(historyNote.id, history.items[0].id, historyNote.revision, true), /locked/i);
+    await store.unlockVault({ masterPassword: password });
+    assert.deepEqual(await store.getNote(historyNote.id), historyNote, "lock cancels version restore");
+    const versionRace = await Promise.allSettled([
+      store.restoreNoteVersion(historyNote.id, history.items[0].id, historyNote.revision, true),
+      store.updateNote(historyNote.id, { ...historyNote, body: "Concurrent edit" })
+    ]);
+    assert.equal(versionRace.filter(r => r.status === "fulfilled").length, 1);
+    historyNote = await store.getNote(historyNote.id);
+    history = await store.listNoteHistory(historyNote.id);
+    await store.deleteNote(historyNote.id, historyNote.revision, true);
+    await assert.rejects(store.listNoteHistory(historyNote.id), /no longer exists/i);
+    await assert.rejects(store.restoreNoteVersion(historyNote.id, history.items[0].id, historyNote.revision, true), /no longer exists/i);
+    const deletedHistoryNote = await store.getDeletedNote(historyNote.id);
+    historyNote = await store.restoreNote(historyNote.id, deletedHistoryNote.revision);
+    assert.deepEqual((await store.listNoteHistory(historyNote.id)).items, history.items, "trash restore retains edit history");
     // Exercise pagination and schema upgrades using a new in-memory synthetic DB.
     const SQL = await initSqlJs(), db = new SQL.Database();
     try {
@@ -106,6 +157,8 @@ async function main() {
       notes.ensureSchema(db); notes.ensureSchema(db);
       assert.equal(notes.get(db, 1).body, "Old fake content");
       assert.equal(notes.get(db, 1).deleted_at, null);
+      assert.equal(notes.listHistory(db, 1).items.length, 0, "upgrade does not invent old versions");
+      notes.update(db, 1, { title: "Legacy synthetic", body: "New fake content", revision: 1 });
       for (let i = 0; i < 54; i++) notes.add(db, { title: `Synthetic ${String(i).padStart(2, "0")}`, body: "Synthetic page test" });
       const one = notes.list(db, { sort: "title-asc" }), two = notes.list(db, { sort: "title-asc", offset: 50 });
       assert.equal(one.items.length, 50); assert(one.hasMore);
@@ -121,6 +174,12 @@ async function main() {
       assert.throws(() => notes.restore(db, 1, 2), /no longer exists/);
       assert(notes.hasExpired(db)); notes.purge(db); assert(!notes.hasExpired(db));
       assert.equal(db.exec("SELECT count(*) FROM general_notes")[0].values[0][0], 54);
+      assert.equal(db.exec("SELECT count(*) FROM general_note_history")[0].values[0][0], 0, "expiry removes note history too");
+      let permanent = notes.add(db, { title: "History cleanup", body: "Synthetic old text" });
+      permanent = notes.update(db, permanent.id, { ...permanent, body: "Synthetic new text" });
+      notes.remove(db, permanent.id, permanent.revision, true);
+      notes.permanentlyDelete(db, permanent.id, permanent.revision + 1, true);
+      assert.equal(db.exec("SELECT count(*) FROM general_note_history")[0].values[0][0], 0, "permanent deletion removes note history too");
     } finally { db.close(); }
     console.log("Notes: CRUD, validation, search, paging, stale writes, lock cancellation, encryption and backup compatibility passed (synthetic only).");
   } finally {

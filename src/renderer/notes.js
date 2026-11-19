@@ -20,6 +20,7 @@ function resetNotesWorkspace() {
   if (notesView) {
     clearTimeout(notesView.timer);
     notesView.note = null;
+    notesView.history = null;
     notesView.items = [];
     document.querySelector("#notes-workspace")?.replaceChildren();
   }
@@ -181,6 +182,7 @@ async function openNote(id) {
 function renderNoteDetail() {
   const view = notesView, detail = document.querySelector("#note-detail");
   if (!view || !detail) return;
+  view.history = null;
   const note = view.note;
   if (view.editing) {
     detail.innerHTML = `<form id="note-form" class="note-editor">
@@ -216,16 +218,65 @@ function renderNoteDetail() {
     return;
   }
   detail.innerHTML = `<header class="note-detail-header"><div><h2 id="note-heading"></h2><small>Updated ${escapeHtml(formatDateTime(note.updated_at))}</small></div>
-      <div class="note-detail-actions">${noteIconButton("note-favorite", note.favorite ? "Remove favorite" : "Add favorite", renderStarIcon(), !!note.favorite)}${noteIconButton("note-edit", "Edit note", renderEditIcon())}${noteIconButton("note-delete", "Delete note", renderTrashIcon())}</div></header>
+      <div class="note-detail-actions">${noteIconButton("note-favorite", note.favorite ? "Remove favorite" : "Add favorite", renderStarIcon(), !!note.favorite)}${noteIconButton("note-history", "Edit history", renderHistoryIcon())}${noteIconButton("note-edit", "Edit note", renderEditIcon())}${noteIconButton("note-delete", "Delete note", renderTrashIcon())}</div></header>
     <div id="note-delete-confirm" class="note-delete-confirm" hidden><p>Move this note to Recently Deleted? You can restore it for 30 days.</p><button type="button" class="danger-button" id="note-delete-now">Move to Recently Deleted</button> <button type="button" class="secondary-button" id="note-delete-cancel">Cancel</button></div>
     <div id="note-reading-body" class="note-reading-body"></div>`;
   document.querySelector("#note-heading").textContent = note.title;
   document.querySelector("#note-reading-body").textContent = note.body || "This note is empty.";
   document.querySelector("#note-favorite").onclick = () => mutateNote(() => window.secureLoginVault.notes.toggleFavorite(note.id, note.revision));
+  document.querySelector("#note-history").onclick = openNoteHistory;
   document.querySelector("#note-edit").onclick = () => { if (!view.busy) { view.editing = true; view.creating = false; renderNoteDetail(); } };
   document.querySelector("#note-delete").onclick = () => { document.querySelector("#note-delete-confirm").hidden = false; document.querySelector("#note-delete-cancel").focus(); };
   document.querySelector("#note-delete-cancel").onclick = () => { document.querySelector("#note-delete-confirm").hidden = true; document.querySelector("#note-delete").focus(); };
   document.querySelector("#note-delete-now").onclick = () => mutateNote(() => window.secureLoginVault.notes.remove(note.id, note.revision, true), true);
+}
+async function openNoteHistory() {
+  const view = notesView, note = view?.note, detail = document.querySelector("#note-detail");
+  if (!note || !detail || view.busy || view.editing || view.deleted) return;
+  const history = view.history = { previewRequest: 0 };
+  const active = () => notesView === view && view.history === history && view.note === note && !view.editing && !view.deleted;
+  notesMessage("");
+  detail.innerHTML = `<header class="note-detail-header"><div><h2>Edit history</h2><small>Up to 10 previous saved versions. Newest first.</small></div><button type="button" id="note-history-back" class="secondary-button">Back to note</button></header>
+    <div id="note-history-content"><p class="notes-placeholder" role="status">Loading history…</p></div>`;
+  document.querySelector("#note-history-back").onclick = () => { renderNoteDetail(); document.querySelector("#note-history")?.focus(); };
+  document.querySelector("#note-history-back").focus();
+  try {
+    const response = await window.secureLoginVault.notes.history(note.id);
+    if (!active()) return;
+    if (!response.ok) throw new Error(response.message);
+    if (response.result.revision !== note.revision) throw new Error("This note changed. Refresh the note before viewing history.");
+    const content = document.querySelector("#note-history-content");
+    if (!response.result.items.length) {
+      content.innerHTML = '<p class="notes-placeholder">No previous versions yet. Saving a changed title or text keeps the previous version here.</p>';
+      return;
+    }
+    content.innerHTML = `<div class="note-history-picker"><label for="note-history-select">Previous version</label><select id="note-history-select" class="settings-input"><option value="">Choose a version…</option>${response.result.items.map((version, index) => `<option value="${version.id}">${index + 1}. Saved ${escapeHtml(formatDateTime(version.saved_at))}</option>`).join("")}</select></div>
+      <div id="note-version-preview"><p class="notes-placeholder">Choose a version to preview its title and text.</p></div>`;
+    document.querySelector("#note-history-select").onchange = async event => {
+      const versionId = Number(event.target.value), request = ++history.previewRequest;
+      const preview = document.querySelector("#note-version-preview");
+      preview.textContent = versionId ? "Loading version…" : "Choose a version to preview its title and text.";
+      if (!versionId) return;
+      try {
+        const result = await window.secureLoginVault.notes.getVersion(note.id, versionId, note.revision);
+        if (!active() || history.previewRequest !== request) return;
+        if (!result.ok) throw new Error(result.message);
+        preview.innerHTML = `<div class="note-version-header"><h3 id="note-version-title"></h3><small>Replaced ${escapeHtml(formatDateTime(result.result.archived_at))}</small></div>
+          <button type="button" class="primary-button" id="note-version-restore">Restore this version</button>
+          <div id="note-version-confirm" class="note-delete-confirm" hidden><p>Replace the current title and text with this version? Your current version will be kept in edit history. The oldest version may be removed to keep the latest 10.</p><button type="button" class="primary-button" id="note-version-restore-now">Confirm restore</button> <button type="button" class="secondary-button" id="note-version-cancel">Cancel</button></div>
+          <div id="note-version-body" class="note-reading-body"></div>`;
+        document.querySelector("#note-version-title").textContent = result.result.title;
+        document.querySelector("#note-version-body").textContent = result.result.body || "This version is empty.";
+        document.querySelector("#note-version-restore").onclick = () => { document.querySelector("#note-version-confirm").hidden = false; document.querySelector("#note-version-cancel").focus(); };
+        document.querySelector("#note-version-cancel").onclick = () => { document.querySelector("#note-version-confirm").hidden = true; document.querySelector("#note-version-restore").focus(); };
+        document.querySelector("#note-version-restore-now").onclick = () => mutateNote(() => window.secureLoginVault.notes.restoreVersion(note.id, versionId, note.revision, true), false, "Note version restored. Your previous text is kept in edit history.");
+      } catch (error) {
+        if (active() && history.previewRequest === request) preview.textContent = error.message || "Could not load this note version.";
+      }
+    };
+  } catch (error) {
+    if (active()) document.querySelector("#note-history-content").textContent = error.message || "Could not load edit history.";
+  }
 }
 async function mutateNote(operation, deleting = false, message = "") {
   const view = notesView;

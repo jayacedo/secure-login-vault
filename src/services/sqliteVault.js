@@ -93,6 +93,7 @@ async function inspectEncryptedVault(filePath, key) {
     db.exec("SELECT id, website_name, website_url, username, password, email, notes, tags, qr_code FROM credentials LIMIT 0;");
     db.exec("SELECT id, name, admin_password, hosting_password, ftp_password, db_password, qr_code FROM clients LIMIT 0;");
     db.exec("SELECT id, title, body, favorite, revision, created_at, updated_at FROM general_notes LIMIT 0;");
+    db.exec("SELECT id, note_id, title, body, note_revision, saved_at, archived_at FROM general_note_history LIMIT 0;");
     const count = table => Number(queryOne(db, `SELECT COUNT(*) AS total FROM ${table}`).total);
     return { credentials: count("credentials"), clients: count("clients"), notes: Number(queryOne(db, "SELECT count(*) AS total FROM general_notes WHERE deleted_at IS NULL").total),
       deletedNotes: Number(queryOne(db, "SELECT count(*) AS total FROM general_notes WHERE deleted_at IS NOT NULL").total),
@@ -1766,6 +1767,9 @@ function createPublicError(message) {
 }
 
 module.exports = {
+  listNoteHistory: (file, key, id) => withDecryptedDatabase(file, key, db => notes.listHistory(db, id)),
+  getNoteVersion: (file, key, id, versionId, revision) => withDecryptedDatabase(file, key, db => notes.getVersion(db, id, versionId, revision)),
+  restoreNoteVersion: (file, key, id, versionId, revision, confirmed) => withDecryptedDatabaseWrite(file, key, db => notes.restoreVersion(db, id, versionId, revision, confirmed)),
   purgeDeletedNotes,
   listDeletedNotes: (file, key, options) => withDecryptedDatabase(file, key, db => notes.list(db, options, true)),
   getDeletedNote: (file, key, id) => withDecryptedDatabase(file, key, db => notes.get(db, id, true)),

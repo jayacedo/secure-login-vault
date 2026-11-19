@@ -8,6 +8,7 @@ const { currentVaultOperation, runVaultOperation, assertVaultOperationActive, be
 const {
   listNotes, getNote, addNote, updateNote, toggleNoteFavorite, deleteNote,
   listDeletedNotes, getDeletedNote, restoreNote, permanentlyDeleteNote, purgeDeletedNotes,
+  listNoteHistory, getNoteVersion, restoreNoteVersion,
   previewCredentialMove,
   moveCredentialsToGroup,
   previewCredentialCategory,
@@ -968,6 +969,9 @@ function createVaultStore(basePath, { now = Date.now } = {}) {
   }
 
   const operations = {
+    listNoteHistory: id => listNoteHistory(databaseFilePath, currentKey(), id),
+    getNoteVersion: (id, versionId, revision) => getNoteVersion(databaseFilePath, currentKey(), id, versionId, revision),
+    restoreNoteVersion: (id, versionId, revision, confirmed) => restoreNoteVersion(databaseFilePath, currentKey(), id, versionId, revision, confirmed),
     listDeletedNotes: options => listDeletedNotes(databaseFilePath, currentKey(), options),
     getDeletedNote: id => getDeletedNote(databaseFilePath, currentKey(), id),
     restoreNote: (id, revision) => restoreNote(databaseFilePath, currentKey(), id, revision),
