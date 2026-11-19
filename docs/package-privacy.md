@@ -59,6 +59,34 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.75 installer
+
+Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.75.exe` (116,969,016 bytes).
+- SHA-256: `58467f48499b90f3602d61bd6f0992ca29b3de07556676a60acc9566e4b66b13`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 130 outer payload files and 368 files inside `app.asar`.
+- The included Firefox 0.6.6 XPI matches the reviewed hash and generated extension
+  source. The extracted installer copy passed the pinned-hash check too.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Syntax and synthetic package privacy tests passed before packaging, including
+  rejection of a modified XPI, stale extension code, mismatched manifest version
+  and an unexpected add-on file.
+- Portable: `release/Secure Login Vault 1.0.75.exe` (116,734,386 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup. Use Setup for browser helper installation.
+
+This installer includes the signed Firefox XPI and clearer browser setup instructions
+in Settings, Help and the shareable guide. Firefox installation remains a manual
+Install Add-on From File step. Superseded 1.0.73 package files were removed after
+verification. Installer extraction files were cleaned automatically.
+
 ## Local 1.0.73 installer
 
 Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
