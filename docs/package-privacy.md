@@ -59,6 +59,33 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.80 installer
+
+Built on 2026-11-20 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.80.exe` (116,975,285 bytes).
+- SHA-256: `dd04fdb7e5075bc6cf81eff2e621ff333bc039a643b10d24083e3a838ada61ae`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 130 outer payload files and 370 files inside `app.asar`.
+- The bundled Firefox 0.6.6 XPI passed source comparison and pinned-hash checks,
+  including the copy extracted from the installer.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Syntax and synthetic Notes/UI layout checks passed before packaging. Coverage
+  includes equal-width pagination, fixed editor actions, compact and large-text
+  layouts, and text action spacing across Settings, Activity History and forms.
+- Portable: `release/Secure Login Vault 1.0.80.exe` (116,740,656 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup. Use Setup for browser helper installation.
+
+Includes the Notes search, recovery and edit-history features from 1.0.77?1.0.79,
+with balanced footer controls and text action spacing. Superseded 1.0.79 package
+files were removed after verification.
+
 ## Local 1.0.79 installer
 
 Built on 2026-11-20 with `npm.cmd run dist -- --publish never` for local testing only.

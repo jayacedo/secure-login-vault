@@ -101,5 +101,5 @@ It never opens an existing user vault or browser profile.
 
 1.0.58 is packaged for local testing only. See the [verified installer record](package-privacy.md#local-1058-installer).
 
-The combined 1.0.79 installer is packaged and verified for local testing only. See
-the [verification record](package-privacy.md#local-1079-installer).
+The combined 1.0.80 installer is packaged and verified for local testing only. See
+the [verification record](package-privacy.md#local-1080-installer).
