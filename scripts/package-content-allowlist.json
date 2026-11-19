@@ -41,6 +41,8 @@
     "src/renderer/index.html",
     "src/renderer/notes.css",
     "src/renderer/notes.js",
+    "src/renderer/onboarding.js",
+    "src/renderer/onboarding.css",
     "src/renderer/save-login.css",
     "src/renderer/save-login.html",
     "src/renderer/save-login.js",

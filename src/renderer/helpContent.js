@@ -1,5 +1,9 @@
 // User-facing guidance, shared by the searchable Help accordion.
 globalThis.SLVHelpSections = [
+  { title: "Getting Started", items: [
+    { q: "How do I turn the guided tour on or off?", a: "Open Settings > General > Getting started. Turn Show getting-started guide on to start the tour, or off to disable it. Skip tour and Finish tour also stop it appearing automatically on this device. Restart guide is available in both Settings and Help." },
+    { q: "When does the guide appear, and does it change my vault?", a: "It starts after creating a new vault and acknowledging the recovery key, if one was requested. Existing installations are not automatically enrolled. Next and Back only explain and highlight controls; they do not add logins, pair browsers, choose folders or turn on backups. Locking closes the guide immediately. If it was interrupted, it starts from the beginning after the next unlock." }
+  ] },
   { title: "Client Details", items: [
     { q: "Where are the optional fields in Add Client?", a: "Enter the Client / Business Name, Domain and Category at the top. Expand WordPress Admin, Hosting, FTP / SFTP, Database, Domain & SSL, Two-factor authentication or Notes as needed. Sections with saved details open automatically in Edit Client. Collapsing a section keeps its values; Save Client or Update Client saves them. Cancel discards edits. Quick Links appear when URLs are entered." }
   ] },

@@ -207,6 +207,7 @@ async function initAuth() {
 }
 
 function renderFromState(state, preparedDashboard) {
+  gettingStartedAuthState(state);
   if (state.isUnlocked && state.unlockPresentationToken && !preparedDashboard) return presentUnlockedDashboard(state);
   if (!state.isUnlocked) cancelUnlockPresentation();
   if (!state.isUnlocked) { resetNotesWorkspace(); dismissGroupManagementOnLock(); }
@@ -670,6 +671,7 @@ async function loadDashboardData() {
 
   updateDashboardData(dashResponse.result);
   await runSearch();
+  maybeStartGettingStartedGuide();
 }
 
 function updateDashboardData(data) {
@@ -990,7 +992,9 @@ async function handleCreateVault(event) {
   }
 
   const showDashboard = async () => {
-    renderFromState(await window.secureLoginVault.auth.getState());
+    queueGettingStartedForNewVault();
+    await renderFromState(await window.secureLoginVault.auth.getState());
+    maybeStartGettingStartedGuide();
   };
 
   if (wantsRecoveryKey) {
@@ -1214,6 +1218,7 @@ async function presentUnlockedDashboard(state) {
     if (request !== unlockPresentationRequest) return;
     document.body.classList.remove("unlock-presenting"); status.remove();
     document.querySelector("#credential-search")?.focus();
+    maybeStartGettingStartedGuide();
   } catch {
     if (request !== unlockPresentationRequest) return;
     await handleLockVault();
@@ -1223,6 +1228,7 @@ async function presentUnlockedDashboard(state) {
 }
 
 async function handleLockVault() {
+  lockGettingStartedGuide();
   cancelUnlockPresentation(true);
   resetNotesWorkspace();
   credentialQuickFilter = "all";
@@ -3043,6 +3049,7 @@ function reportUserActivity() {
 }
 
 function handleAutoLocked(payload) {
+  lockGettingStartedGuide();
   cancelUnlockPresentation(true);
   resetNotesWorkspace();
   credentialQuickFilter = "all";
@@ -3141,7 +3148,7 @@ function setupSettingsNavigation(overlay) {
   select(tabs.find((tab) => tab.dataset.settingsTab === activeSettingsSection) || tabs[0]);
 }
 
-async function openSettingsModal() {
+async function openSettingsModal({ isCancelled = () => false } = {}) {
   applyTextSize(getTextSize());
   brandAccentPreview = null;
   applyAccentColor(getBrandAccent());
@@ -3155,6 +3162,7 @@ async function openSettingsModal() {
   } catch { /* swallow */ }
 
   const desktopResponse = await window.secureLoginVault.settings.getDesktopIntegration();
+  if (isCancelled() || !document.body.classList.contains("is-dashboard")) return;
   const desktopPrefs = desktopResponse.ok ? desktopResponse.result : {};
 
   const currentTheme    = getPref(PREF_THEME, "light");
@@ -3186,7 +3194,8 @@ async function openSettingsModal() {
         </nav>
         <div class="modal-body settings-modal-body">
         <div class="settings-panel" role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general" tabindex="0">
-          <div class="settings-panel-heading"><h3>General</h3><p>Branding and appearance.</p></div>
+          <div class="settings-panel-heading"><h3>General</h3><p>Getting started, branding and appearance.</p></div>
+          ${renderGettingStartedSettings()}
         <section class="settings-section">
           <h3 class="settings-section-title">Branding</h3>
           <p class="settings-section-hint">
@@ -3850,6 +3859,7 @@ async function openSettingsModal() {
 
   // ── Theme segmented control ──────────────────────────────────────────────────
   setupUnlockLayoutSettings(overlay);
+  setupGettingStartedSettings(overlay);
   const textSizeSelect = overlay.querySelector("#text-size-select");
   textSizeSelect.addEventListener("change", () => {
     applyTextSize(textSizeSelect.value);
@@ -6134,6 +6144,7 @@ function openHelpModal() {
         </p>
       </div>
       <div class="modal-footer">
+        <button class="secondary-button" type="button" id="help-restart-guide">Restart guide</button>
         <button class="secondary-button" type="button" id="help-done-btn">Close</button>
       </div>
     </div>
@@ -6143,6 +6154,7 @@ function openHelpModal() {
 
   overlay.querySelector("#help-close-btn").addEventListener("click", closeHelpModal);
   overlay.querySelector("#help-done-btn").addEventListener("click", closeHelpModal);
+  overlay.querySelector("#help-restart-guide").addEventListener("click", () => startGettingStartedGuide(true));
   overlay.onkeydown = event => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeHelpModal(); }
     if (event.key === "Tab") {
