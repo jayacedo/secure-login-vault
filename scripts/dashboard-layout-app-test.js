@@ -1,9 +1,11 @@
 const assert=require("assert/strict"),fs=require("fs"),path=require("path");
-const {app,BrowserWindow,clipboard,dialog}=require("electron");
+const {app,BrowserWindow,clipboard,dialog,powerMonitor}=require("electron");
 const {testTempRoot}=require("./testTemp");
 const root=fs.mkdtempSync(path.join(testTempRoot(),"dashboard-layout-app-"));
+console.log(`Synthetic layout profile: ${root}`);
 for(const name of ['userData','sessionData','temp','logs']){const dir=path.join(root,name);fs.mkdirSync(dir);app.setPath(name,dir);}
 app.setPath('appData',root);process.env.APPDATA=root;process.env.LOCALAPPDATA=root;
+process.env.TEMP=root;process.env.TMP=root;powerMonitor.getSystemIdleState=()=> 'active';
 process.env.SLV_PIPE_USER=`layout-${process.pid}`;
 clipboard.readText=clipboard.writeText=clipboard.clear=()=>{throw Error('Real clipboard forbidden');};
 dialog.showOpenDialog=dialog.showSaveDialog=async()=>({canceled:true});
@@ -82,6 +84,11 @@ async function main(){
         const overlay=document.querySelector('.modal-overlay.is-open');
         const scope=overlay||document.querySelector('.dashboard-main');
         if(!scope)return ['screen unavailable during resize'];
+        for(const el of scope.querySelectorAll('.primary-button,.secondary-button,.danger-button')){
+          if(!el.getClientRects().length || el.classList.contains('dashboard-icon-button'))continue;
+          const css=getComputedStyle(el);
+          if(parseFloat(css.paddingLeft)<8 || parseFloat(css.paddingRight)<8)issues.push((el.id||el.textContent.trim())+' cramped text padding');
+        }
         for(const el of scope.querySelectorAll('select')){
           if(!el.getClientRects().length)continue;
           const r=el.getBoundingClientRect();

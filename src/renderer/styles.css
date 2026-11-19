@@ -323,6 +323,14 @@ textarea:focus-visible {
   background: var(--accent);
 }
 
+/* Text actions need a comfortable default even outside modal footers.
+   Component-specific sizing (including icon-only controls) overrides this. */
+.primary-button,
+.secondary-button,
+.danger-button {
+  padding: 10px 16px;
+}
+
 .primary-button:hover:not(:disabled) {
   background: var(--accent-strong);
 }

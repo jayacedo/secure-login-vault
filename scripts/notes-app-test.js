@@ -174,6 +174,22 @@ async function main() {
   assert.equal(await run("document.documentElement.scrollWidth<=innerWidth+1 && document.documentElement.scrollHeight<=innerHeight+1"), true, "Large-text editor fits minimum window");
   await run("document.querySelector('#note-save').scrollIntoView({block:'nearest'})");
   assert.equal(await run("document.querySelector('#note-save').getBoundingClientRect().bottom<=innerHeight"), true, "Save remains reachable in editor");
+  const editorLayout = () => run(`(() => {
+    const rect = id => document.querySelector(id).getBoundingClientRect();
+    const prev=rect('#notes-previous'),next=rect('#notes-next'),save=rect('#note-save'),cancel=rect('#note-cancel');
+    return {pageOverflow:document.documentElement.scrollWidth>innerWidth+1, sameWidth:Math.abs(prev.width-next.width)<1,
+      sameHeight:Math.abs(prev.height-save.height)<1 && Math.abs(save.height-cancel.height)<1,
+      aligned:Math.abs(prev.bottom-save.bottom)<2, visible:save.bottom<=innerHeight && save.top>=0,
+      padding:parseFloat(getComputedStyle(document.querySelector('#note-save')).paddingLeft)};
+  })()`);
+  for (const [width,height,palette] of [[1170,760,''],[1400,900,'forest'],[980,640,'coffee']]) {
+    win.setSize(width,height);
+    await run(`document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-palette',${JSON.stringify(palette)});document.querySelector('.note-editor-fields').scrollTop=9999`);
+    await sleep(100);
+    const layout=await editorLayout();
+    assert.equal(layout.pageOverflow,false); assert(layout.sameWidth); assert(layout.sameHeight); assert(layout.aligned); assert(layout.visible); assert(layout.padding>=16);
+    fs.writeFileSync(path.join(root,`notes-footer-${width}.png`),(await win.webContents.capturePage()).toPNG());
+  }
   fs.writeFileSync(path.join(root, "notes-editor-minimum.png"), (await win.webContents.capturePage()).toPNG());
   await input("#note-body", "Synthetic saved edit\nA second paragraph.");
   await click("#note-save"); await until(() => run("!notesView.busy && !!document.querySelector('#note-reading-body')"));

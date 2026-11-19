@@ -3,6 +3,9 @@
 Desktop 1.0.57 adds **Notes** under **Workspaces**, separate from the notes field
 on individual credentials. The workspace is available while the vault is unlocked.
 Workspace buttons remain visible in compact windows.
+Since 1.0.80, pagination buttons share equal widths and align with the editor
+footer. Cancel and Save stay visible while the form fields scroll; the editor
+uses the app font and comfortable button padding.
 
 - Use **Add note** (+) to enter a title and plain text, then **Save note**.
 - Select a note to read it. **Edit note** opens its editor; **Cancel** discards

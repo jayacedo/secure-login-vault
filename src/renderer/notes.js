@@ -183,13 +183,16 @@ function renderNoteDetail() {
   const view = notesView, detail = document.querySelector("#note-detail");
   if (!view || !detail) return;
   view.history = null;
+  detail.classList.toggle("is-editing", view.editing);
   const note = view.note;
   if (view.editing) {
     detail.innerHTML = `<form id="note-form" class="note-editor">
+      <div class="note-editor-fields">
       <h2>${view.creating ? "New note" : "Edit note"}</h2>
       <label for="note-title">Title</label><input id="note-title" class="settings-input" required maxlength="120" autocomplete="off">
       <label for="note-body">Note</label><textarea id="note-body" class="settings-input" maxlength="100000" spellcheck="false" placeholder="Write your note…"></textarea>
       <small>Save to keep changes. Locking the vault discards unsaved edits.</small>
+      </div>
       <div class="note-editor-actions"><button type="button" class="secondary-button" id="note-cancel">Cancel</button><button type="submit" class="primary-button" id="note-save">Save note</button></div>
     </form>`;
     document.querySelector("#note-title").value = view.creating ? "" : note.title;
