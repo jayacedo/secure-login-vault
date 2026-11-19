@@ -5,6 +5,8 @@ images, exports, backup codes or backups. Tests use synthetic fixtures only.
 
 ## Build gates
 
+- Since source 1.0.75, the only allowed file under `browser-addons/` is the reviewed Firefox XPI. Before packaging, its SHA-256, archive inventory, parsed manifest and payload files must match the pinned artifact and generated Firefox source. Packaged-app and final Setup checks also verify the XPI hash. Firefox performs cryptographic signature validation when the user installs the add-on; the build does not claim to validate Mozilla's certificate chain.
+
 - `scripts/package-content-allowlist.json` contains explicitly reviewed file paths
   for application source/assets, Chromium/Firefox extensions, native helper,
   production dependency files and the Windows Electron runtime. It is not generated

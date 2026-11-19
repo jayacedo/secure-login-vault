@@ -3529,12 +3529,18 @@ async function openSettingsModal() {
               <input class="extension-folder-path" id="extension-folder-path" readonly aria-label="Extension folder path" />
               </details>
               <details class="extension-browser-guide"><summary>Firefox</summary>
-              <p class="settings-row-hint"><strong>Firefox 140 or later:</strong> open <strong>about:debugging#/runtime/this-firefox</strong>, choose <strong>Load Temporary Add-on</strong>, then select <strong>manifest.json</strong> in the Firefox folder below. Pair using a new code. Temporary add-ons must be loaded again after Firefox restarts. Permanent installation requires a Mozilla-signed add-on.</p>
+              <ol>
+                <li>Click <strong>Open Firefox Folder</strong>. The signed <strong>secure-login-vault-firefox.xpi</strong> is included.</li>
+                <li>In Firefox 140 or later, open <strong>about:addons</strong>, select <strong>Extensions</strong>, then the gear menu &gt; <strong>Install Add-on From File</strong>.</li>
+                <li>Select that <strong>.xpi</strong> and confirm Firefox's installation prompts. It stays installed after restarting Firefox.</li>
+                <li>Use <strong>Add browser</strong> above, then paste the new code into the Firefox extension.</li>
+              </ol>
+              <p class="settings-row-hint">For temporary developer testing only: use <strong>about:debugging#/runtime/this-firefox</strong> &gt; <strong>Load Temporary Add-on</strong> and select <strong>manifest.json</strong>. That temporary installation disappears after restart.</p>
               <label for="extension-firefox-folder-path">Firefox extension folder</label>
               <input class="extension-folder-path" id="extension-firefox-folder-path" readonly aria-label="Firefox extension folder path" />
               </details>
               <p class="settings-row-hint">Chrome, Edge and Firefox can stay paired together. Add each browser using a separate code; they share your saved logins.</p>
-              <p class="settings-row-hint">After an SLV update, reload the extension on your browser's extensions page. If you move or reinstall SLV elsewhere, run setup again.</p>
+              <p class="settings-row-hint">After an extension update: Chrome/Edge/Brave use Reload on the extensions page; Firefox uses Install Add-on From File with the updated bundled XPI. Installing SLV does not automatically update Firefox. If you move or reinstall SLV elsewhere, run setup again.</p>
             </div>
           </div>
 

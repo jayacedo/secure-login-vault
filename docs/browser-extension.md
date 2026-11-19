@@ -86,9 +86,9 @@ use synthetic credentials only, without inspecting or modifying real accounts.
 
 ## Firefox
 
-SLV 1.0.13 bundles a generated Firefox add-on. Use **Open Firefox Folder** in Settings
-and follow the [Firefox setup and signing guide](firefox.md). Local testing uses a
-temporary add-on; permanent installation requires Mozilla signing. Chrome, Edge and Firefox
+SLV builds from 1.0.75 include the signed Firefox 0.6.6 XPI. Use **Open Firefox Folder** in Settings
+and select `secure-login-vault-firefox.xpi` through Firefox's **about:addons > gear menu > Install Add-on From File**.
+Follow the [Firefox setup and signing guide](firefox.md). The generated `manifest.json` remains available for temporary developer testing. Chrome, Edge and Firefox
 can stay paired together and share the existing vault. Settings supports individual removal.
 
 ## Development setup

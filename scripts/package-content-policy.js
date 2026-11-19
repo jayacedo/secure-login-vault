@@ -71,6 +71,7 @@ function assertSources(root) {
   }
   assertExtensionSource(root);
   assertTree(path.join(root, 'dist/firefox'), policy.extension);
+  assertTree(path.join(root, 'browser-addons'), ['secure-login-vault-firefox.xpi']);
   for (const file of ['package.json', 'LICENSE.md']) assertNoLinkedParents(path.join(root, file));
 }
 
@@ -97,6 +98,7 @@ function assertArchiveHeader(header) {
 
 function packagedFiles() {
   return [...policy.windowsRuntime, 'resources/app.asar', 'resources/app-update.yml', 'resources/elevate.exe',
+    'resources/extension-firefox/secure-login-vault-firefox.xpi',
     ...policy.extension.map(p => 'resources/extension/' + p),
     ...policy.extension.map(p => 'resources/extension-firefox/' + p),
     ...policy.nativeHost.map(p => 'resources/native-host/' + p)];

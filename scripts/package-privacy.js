@@ -9,6 +9,7 @@ function checkPackagedApp(appOutDir) {
   const outer = assertTree(appOutDir, packagedFiles());
   const archive = path.join(appOutDir, 'resources/app.asar');
   const inner = assertArchiveHeader(asar.getRawHeader(archive).header);
+  require('./verify-firefox-xpi').assertPinnedXpi(path.join(appOutDir, 'resources/extension-firefox/secure-login-vault-firefox.xpi'));
   // Also reject unpacked ASAR files: this app currently has no native modules.
   // An intentional new native dependency requires a reviewed policy update.
   return { outerFiles: outer.length, archiveFiles: inner.length };

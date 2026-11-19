@@ -1,6 +1,6 @@
 {
   "name": "secure-login-vault",
-  "version": "1.0.74",
+  "version": "1.0.75",
   "description": "Offline-first Windows desktop credential vault built with Electron.",
   "main": "src/main.js",
   "author": "Secure Login Vault",
@@ -156,6 +156,10 @@
       "!**/*.sqlite"
     ],
     "extraResources": [
+      {
+        "from": "browser-addons/secure-login-vault-firefox.xpi",
+        "to": "extension-firefox/secure-login-vault-firefox.xpi"
+      },
       {
         "from": "extension",
         "to": "extension",
