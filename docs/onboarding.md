@@ -35,5 +35,5 @@ opt-in, lock during asynchronous navigation, themes and window resizing. The gui
 must leave the synthetic vault empty and never invoke browser setup. Screenshots
 show synthetic content only.
 
-Built unpacked for review. The latest local Setup installer remains 1.0.75 until
-1.0.76 is explicitly packaged.
+The 1.0.76 Setup installer is packaged and verified for local testing only. See the
+[verification record](package-privacy.md#local-1076-installer).

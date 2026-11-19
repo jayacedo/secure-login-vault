@@ -59,6 +59,35 @@ approved files as well as allowlist additions. Do not put secrets in source code
 The checks do not inspect the real vault to compare account values. They do not
 scan Git history, validate licensing or prove the application is free of bugs.
 
+## Local 1.0.76 installer
+
+Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
+The installer was not executed, installed or published. No real vault, notes,
+backup, account data, personal browser profile or OS clipboard was accessed,
+read or copied.
+
+- Setup: `release/Secure Login Vault Setup 1.0.76.exe` (116,972,350 bytes).
+- SHA-256: `a4b280c37c91b048c537b5c6072725fcbb1dee1b7fd40e10e4fa7a9e0f01ab3e`.
+- Source/resource allowlist and packaged app checks passed. Final Setup extraction
+  passed with 130 outer payload files and 370 files inside `app.asar`.
+- The bundled Firefox 0.6.6 XPI passed source comparison and pinned-hash checks,
+  including the copy extracted from the installer.
+- Extracted executable fuse checks passed: Node options and Node inspector CLI
+  flags disabled, ASAR integrity and ASAR-only app loading enabled. RunAsNode
+  remains enabled for native helper compatibility; see the [limits](electron-fuses.md).
+- Syntax, synthetic package privacy and isolated onboarding checks passed before
+  packaging. Onboarding coverage includes recovery-screen ordering, steps, focus,
+  skip/finish/restart, preference persistence, existing-user opt-in, lock races,
+  Ctrl+L, strict style CSP, themes and window resizing.
+- Portable: `release/Secure Login Vault 1.0.76.exe` (116,737,723 bytes).
+  It shares the approved packaged app; final EXE extraction verification applies
+  specifically to Setup. Use Setup for browser helper installation.
+
+This installer adds the optional getting-started guide. Existing installations can
+start it from Settings > General or Help > Restart guide. Superseded 1.0.75 package
+files were removed after verification. Installer extraction files were cleaned
+automatically.
+
 ## Local 1.0.75 installer
 
 Built on 2026-11-19 with `npm.cmd run dist -- --publish never` for local testing only.
