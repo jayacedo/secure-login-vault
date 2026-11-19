@@ -6098,6 +6098,8 @@ function openHelpModal() {
             </button>
             <div class="faq-answer">
               <p>${escapeHtml(item.a.replaceAll(DEFAULT_BRAND_NAME, getBrandName()))}</p>
+              ${item.steps?.length ? `<ol>${item.steps.map(step => `<li>${escapeHtml(step.replaceAll(DEFAULT_BRAND_NAME, getBrandName()))}</li>`).join("")}</ol>` : ""}
+              ${item.note ? `<p>${escapeHtml(item.note.replaceAll(DEFAULT_BRAND_NAME, getBrandName()))}</p>` : ""}
             </div>
           </div>
         `).join("")}

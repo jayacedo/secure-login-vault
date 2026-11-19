@@ -2140,12 +2140,17 @@ mark.search-highlight {
   display: block;
 }
 
-.faq-answer p {
+.faq-answer p,
+.faq-answer ol {
   margin: 0;
   color: var(--muted);
   font-size: 0.84rem;
   line-height: 1.6;
 }
+
+.faq-answer ol { margin: 10px 0; padding-left: 24px; }
+.faq-answer li + li { margin-top: 8px; }
+.faq-answer { overflow-wrap: anywhere; }
 
 .faq-empty-state {
   margin: 0;
