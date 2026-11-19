@@ -1,11 +1,14 @@
 const assert = require("assert/strict"), fs = require("fs"), path = require("path");
-const { app, BrowserWindow, clipboard, dialog } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, powerMonitor } = require("electron");
 const { testTempRoot } = require("./testTemp");
 const root = fs.mkdtempSync(path.join(testTempRoot(), "notes-app-"));
+console.log(`Synthetic Notes profile: ${root}`);
 for (const name of ["userData", "sessionData", "temp", "logs"]) {
   const dir = path.join(root, name); fs.mkdirSync(dir); app.setPath(name, dir);
 }
 app.setPath("appData", root); process.env.APPDATA = root; process.env.LOCALAPPDATA = root;
+process.env.TEMP = root; process.env.TMP = root;
+powerMonitor.getSystemIdleState = () => "active";
 process.env.SLV_PIPE_USER = `notes-${process.pid}`;
 // In-memory clipboard only: never call the original operating-system methods.
 let copiedText = "", copiedHtml = "", copyCount = 0;
@@ -85,6 +88,23 @@ async function main() {
   await click(`[data-note-id="${added.result.id}"]`); await until(() => run(`notesView.note?.id===${added.result.id}`));
   assert.equal(await run("document.querySelector('#note-heading').textContent"), malicious);
   assert.equal(await run("!!document.querySelector('#notes-workspace img') || !!window.noteInjection"), false);
+  await input("#notes-search", "<img");
+  await until(() => run("document.querySelectorAll('#notes-list mark.search-highlight').length===2"));
+  assert.equal(await run("!!document.querySelector('#notes-workspace img') || !!window.noteInjection"), false, "highlighted markup remains text");
+  assert.deepEqual(await run("Array.from(document.querySelectorAll('#notes-list mark'), el=>el.textContent)"), ["<img", "<img"]);
+  // Shared Vault/Notes highlighting treats punctuation literally and never
+  // searches the HTML entities introduced by escaping.
+  assert.deepEqual(await run(`(() => {
+    const render = (text, query) => { const el=document.createElement('div'); el.innerHTML=highlightMatch(text,query); return {text:el.textContent, matches:Array.from(el.querySelectorAll('mark'),m=>m.textContent)}; };
+    return [render('A & sample', 'amp'), render('a.b [x] aXb', 'a.b'), render('<tag> & "quoted"', '&'), render('Repeat REPEAT', ' repeat ')];
+  })()`), [
+    { text: "A & sample", matches: ["amp"] },
+    { text: "a.b [x] aXb", matches: ["a.b"] },
+    { text: '<tag> & "quoted"', matches: ["&"] },
+    { text: "Repeat REPEAT", matches: ["Repeat", "REPEAT"] }
+  ]);
+  await input("#notes-search", "");
+  await until(() => run("document.querySelectorAll('[data-note-id]').length===2 && !document.querySelector('#notes-list mark')"));
   await click("#note-delete"); assert.equal(await run("document.querySelector('#note-delete-confirm').hidden"), false);
   await click("#note-delete-cancel");
   assert.equal((await api(`notes.getOne(${added.result.id})`)).ok, true);
@@ -96,8 +116,17 @@ async function main() {
   assert.equal(await run("document.querySelector('#notes-next').disabled"), true);
   assert.equal(await run("getComputedStyle(document.querySelector('#notes-next')).cursor"), "default");
   await input("#notes-search", "project checklist"); await until(() => run("document.querySelectorAll('[data-note-id]').length===1"));
+  assert.equal(await run("document.querySelector('#notes-list strong mark')?.textContent"), "project checklist", "phrase highlighted in title");
+  await input("#notes-search", "SYNTH");
+  await until(() => run("document.querySelectorAll('#notes-list strong mark').length===50"));
+  assert.equal(await run("Array.from(document.querySelectorAll('#notes-list mark')).every(el=>el.textContent.toLowerCase()==='synth')"), true, "partial matches preserve original case");
+  await input("#notes-search", "check");
+  await until(() => run("document.querySelectorAll('[data-note-id]').length===1 && document.querySelectorAll('#notes-list .note-snippet mark').length===2"));
+  assert.deepEqual(await run("Array.from(document.querySelectorAll('#notes-list .note-snippet mark'),el=>el.textContent)"), ["Check", "check"]);
   await click("[data-note-id]"); await until(() => run("notesView.note?.title==='Synthetic project checklist'"));
+  assert.equal(await run("!!document.querySelector('#note-detail mark')"), false, "reading pane remains plain text");
   await input("#notes-search", ""); await until(() => run("document.querySelectorAll('[data-note-id]').length===50"));
+  assert.equal(await run("!!document.querySelector('#notes-list mark')"), false, "clearing search removes highlights");
   for (const [width, palette, theme] of [[1400, "forest", "dark"], [980, "coffee", "dark"], [1100, "", "light"]]) {
     win.setSize(width, 800);
     await run(`document.documentElement.setAttribute('data-theme',${JSON.stringify(theme)});document.documentElement.setAttribute('data-palette',${JSON.stringify(palette)});document.querySelector('#notes-sort').value='title-asc';document.querySelector('#notes-sort').dispatchEvent(new Event('change'))`);

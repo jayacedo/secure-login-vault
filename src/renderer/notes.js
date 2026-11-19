@@ -110,11 +110,12 @@ function renderNotesWorkspace(state) {
 async function loadNotesList(view = notesView) {
   if (!view || view !== notesView) return;
   const request = ++view.listRequest;
+  const query = view.query;
   document.querySelector("#notes-previous").disabled = true;
   document.querySelector("#notes-next").disabled = true;
   try {
-    const response = await window.secureLoginVault.notes.list({ query: view.query, favorites: view.favorites, sort: view.sort, offset: view.offset });
-    if (view !== notesView || request !== view.listRequest) return;
+    const response = await window.secureLoginVault.notes.list({ query, favorites: view.favorites, sort: view.sort, offset: view.offset });
+    if (view !== notesView || request !== view.listRequest || query !== view.query) return;
     if (!response.ok) throw new Error(response.message);
     const data = response.result;
     if (data.matched && view.offset >= data.matched) { view.offset = Math.floor((data.matched - 1) / data.pageSize) * data.pageSize; return loadNotesList(view); }
@@ -124,8 +125,8 @@ async function loadNotesList(view = notesView) {
     document.querySelector("#notes-count").textContent = data.matched ? `${data.offset + 1}–${data.offset + data.items.length} of ${data.matched} notes` : "No matching notes";
     document.querySelector("#notes-list").innerHTML = data.items.length ? data.items.map(note => `
       <button type="button" class="note-list-item" data-note-id="${note.id}" aria-pressed="${view.note?.id === note.id}">
-        <strong>${note.favorite ? '<span aria-label="Favorite">★ </span>' : ""}${escapeHtml(note.title)}</strong>
-        <span class="note-snippet">${escapeHtml(note.snippet) || "Empty note"}</span><small>${escapeHtml(formatDateTime(note.updated_at))}</small>
+        <strong>${note.favorite ? '<span aria-label="Favorite">★ </span>' : ""}${highlightMatch(note.title, query)}</strong>
+        <span class="note-snippet">${highlightMatch(note.snippet, query) || "Empty note"}</span><small>${escapeHtml(formatDateTime(note.updated_at))}</small>
       </button>`).join("") : '<p class="notes-placeholder">No notes here yet. Add a note or change your filters.</p>';
     document.querySelectorAll("[data-note-id]").forEach(button => { button.onclick = () => openNote(Number(button.dataset.noteId)); });
     document.querySelector("#notes-previous").disabled = view.busy || view.offset === 0;

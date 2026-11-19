@@ -5838,11 +5838,14 @@ function escapeHtml(value) {
 }
 
 function highlightMatch(text, query) {
-  const safe = escapeHtml(String(text || ""));
-  if (!query || !query.trim()) return safe;
-  const escaped = escapeHtml(query.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`(${escaped})`, "gi");
-  return safe.replace(re, `<mark class="search-highlight">$1</mark>`);
+  const value = String(text || "");
+  if (!query || !query.trim()) return escapeHtml(value);
+  const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Match original text, then escape each segment. Searching for "amp" must
+  // not highlight or split the HTML entity used to display an ampersand.
+  return value.split(new RegExp(`(${escaped})`, "gi")).map((part, index) =>
+    index % 2 ? `<mark class="search-highlight">${escapeHtml(part)}</mark>` : escapeHtml(part)
+  ).join("");
 }
 
 function updateStatus(_state) { /* status grid removed in Phase 11 polish */ }

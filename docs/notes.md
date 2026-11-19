@@ -14,6 +14,10 @@ Workspace buttons remain visible in compact windows.
   configured clipboard timeout and are cleared on lock if still unchanged.
 - Search titles and text, filter Favorites, or sort by update time or title.
   Results use pages of 50 notes. Search and filters preserve an open draft.
+  Since 1.0.77, matching letters, words and phrases are highlighted in result
+  titles and visible previews, using the same theme-aware style as Vault search.
+  Matching ignores case. Clearing search removes highlights; the reading pane
+  and editor retain plain text.
 - **Delete note** asks for confirmation and permanently removes that note.
   General notes do not use credential Recently Deleted or password history.
 - Locking clears the Notes view and discards unsaved edits without delaying the
@@ -48,7 +52,8 @@ old/new encrypted backup compatibility.
 `npm run test:notes-app` uses a fresh isolated Electron profile with real
 clipboard mocked in memory and browser registration replaced. It checks plain-text
 selection copying, partial selections, preserved line breaks, lock cleanup, editing,
-discard confirmation, safe text rendering, deletion, pagination, responsive
+discard confirmation, safe text rendering, search highlighting (including literal
+punctuation and HTML-like text), deletion, pagination, responsive
 layouts, navigation and late responses after locking. It never opens an existing
 user vault or browser profile.
 
