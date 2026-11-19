@@ -57,6 +57,8 @@ async function main(){
     assert.equal(await run("document.querySelector('#back-to-top').hidden"),false);
     await click("#back-to-top");await until(()=>run("document.querySelector('.credential-table').scrollTop<1"));assert.equal(await run("document.activeElement.id"),"credential-search");
     await click("#bulk-select-toggle");await click("#bulk-select-all");await click("#bulk-actions-toggle");await sleep(100);
+    const bulkHeights = await run("['#bulk-actions-toggle','#bulk-show-selected','#bulk-selection-search','#bulk-selection-cancel'].map(s=>document.querySelector(s).getBoundingClientRect().height)");
+    assert(Math.max(...bulkHeights)-Math.min(...bulkHeights)<2,`Bulk controls share a height: ${bulkHeights}`);
     const selected=await metrics();assert(selected.height>=80,JSON.stringify({width,height,textSize,...selected}));assert(selected.page<=selected.viewport+1,JSON.stringify(selected));
     assert.equal(await run("(()=>{const b=document.querySelector('#bulk-favorite-add'),r=b.getBoundingClientRect();return b.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2))})()"),true,"Actions menu is above the scrolling list");
     fs.writeFileSync(path.join(root,`layout-${width}.png`),(await win.webContents.capturePage()).toPNG());
@@ -113,8 +115,28 @@ async function main(){
   await run("openSettingsModal()");
   for(const [tab,selectors] of [['general',['#text-size-select']],['security',['#auto-lock-select','#clipboard-clear-select']],['browsers',[]],['organization',['#settings-active-group-select']],['data',['#auto-backup-keep']],['about',[]]]){
     await click(`[data-settings-tab="${tab}"]`);await sweep(`settings-${tab}`,selectors);
+    if(tab==='general'||tab==='organization'){
+      const selector=tab==='general'?'#getting-started-restart':'#settings-manage-groups-btn';
+      const spacing=await run(`(()=>{const b=document.querySelector('${selector}'),row=b.parentElement,previous=row.previousElementSibling;return {above:row.getBoundingClientRect().top-previous.getBoundingClientRect().bottom,height:b.getBoundingClientRect().height,below:row.nextElementSibling?row.nextElementSibling.getBoundingClientRect().top-b.getBoundingClientRect().bottom:null}})()`);
+      assert(spacing.above>=15,`${tab}: space above action row ${JSON.stringify(spacing)}`);
+      assert(spacing.height>=40 && spacing.height<44,'Action stays comfortable at the selected text size');
+      if(tab==='general')assert(spacing.below>=11,'Restart helper text has breathing room');
+      await run(`document.querySelector('${selector}').scrollIntoView({block:'center'})`);await sleep(80);
+      fs.writeFileSync(path.join(root,`spacing-${tab}.png`),(await win.webContents.capturePage()).toPNG());
+    }
   }
   await run("closeSettingsModal()");
+  await run("openVaultHealth()");await until(()=>run("document.querySelectorAll('.health-entry').length>0"));
+  await sweep('vault-health');
+  assert(Math.abs((await rect('.health-entry > button')).height-(await rect('#health-done')).height)<2,'Health row and footer actions match');
+  await run("closeVaultHealth()");
+  const deleted=(await api(`credentials.add(${JSON.stringify({websiteName:'Synthetic deleted layout',websiteUrl:'https://example.test',username:'dummy',password:'Dummy-only',groupName:'Synthetic group'})})`)).result.id;
+  assert.equal((await api(`credentials.remove(${deleted})`)).ok,true);
+  await run("openCredentialTrash()");await until(()=>run("document.querySelectorAll('.trash-entry').length===1"));
+  await sweep('recently-deleted');
+  const trashHeights=await run("Array.from(document.querySelectorAll('.trash-entry-actions button,#trash-refresh,#trash-done'),b=>b.getBoundingClientRect().height)");
+  assert(Math.max(...trashHeights)-Math.min(...trashHeights)<2,'Trash row and footer actions match');
+  await run("closeCredentialTrash()");
   await run("renderClientVault(_lastAuthState)");assert.equal(await run("document.body.classList.contains('has-credential-list')"),false);
   await sweep('client-vault');await run("openClientModal(null)");await sweep('add-client');await run("closeClientModal()");
   await run("renderDashboard(_lastAuthState)");await until(()=>run("document.querySelectorAll('.credential-row-item').length===60"));

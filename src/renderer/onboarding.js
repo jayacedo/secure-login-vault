@@ -28,7 +28,7 @@ function renderGettingStartedSettings() {
       <span class="settings-row-hint">A short tour of logins, browser setup and backups. Finishing or skipping turns it off on this device.</span></span>
       <input type="checkbox" id="getting-started-enabled" ${gettingStartedPending() ? 'checked' : ''} />
     </label>
-    <button type="button" class="secondary-button" id="getting-started-restart">Restart guide</button>
+    <div class="settings-action-row"><button type="button" class="secondary-button settings-action-btn" id="getting-started-restart">Restart guide</button></div>
     <p class="settings-row-hint">Turning this on starts the tour. You can also restart it from Help.</p>
   </section>`;
 }

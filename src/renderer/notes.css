@@ -1,5 +1,6 @@
 .notes-intro { color: var(--muted); margin: -8px 0 0; font-size: .9rem; }
 .notes-toolbar { flex-wrap: wrap; }
+.notes-toolbar > button { min-height: 46px; align-self: stretch; }
 .notes-toolbar .search-box { flex: 1 1 250px; }
 .notes-toolbar select { width: 190px; max-width: 100%; flex: 0 0 190px; min-height: 46px; align-self: stretch; font-family: inherit; }
 .notes-toolbar button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
@@ -30,9 +31,9 @@
 .note-editor-fields > :not(textarea) { flex-shrink: 0; }
 .note-editor input, .note-editor textarea { width: 100%; max-width: 100%; }
 .note-editor textarea { flex: 1 0 180px; min-height: 180px; resize: vertical; font: inherit; line-height: 1.6; }
-.note-editor-actions { justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--panel); flex-shrink: 0; }
+.note-editor-actions { justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--panel); flex-shrink: 0; }
 .note-editor-actions button { min-height: 40px; min-width: 104px; padding: 8px 18px; font-size: .88rem; }
-.notes-pagination { border-top: 1px solid var(--line); gap: 10px; }
+.notes-pagination { border-top: 1px solid var(--line); gap: 12px; }
 .notes-pagination button { flex: 1; min-width: 0; min-height: 40px; padding: 8px 12px; }
 .notes-placeholder { padding: 22px; color: var(--muted); line-height: 1.6; }
 .note-delete-confirm { padding: 16px; margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-muted); }

@@ -310,6 +310,7 @@ textarea:focus-visible {
 
 .primary-button,
 .secondary-button,
+.danger-button,
 .icon-text-button {
   display: inline-flex;
   gap: 8px;
@@ -323,13 +324,18 @@ textarea:focus-visible {
   background: var(--accent);
 }
 
-/* Text actions need a comfortable default even outside modal footers.
-   Component-specific sizing (including icon-only controls) overrides this. */
+/* Shared text-action sizing. Icon, input and navigation controls retain
+   their purpose-specific sizes below. */
 .primary-button,
 .secondary-button,
 .danger-button {
-  padding: 10px 16px;
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: .88rem;
+  line-height: 1.4;
 }
+
+.auth-card :is(.primary-button, .secondary-button) { min-height: 46px; }
 
 .primary-button:hover:not(:disabled) {
   background: var(--accent-strong);
@@ -1044,7 +1050,7 @@ kbd {
 .detail-field-line, .detail-password-controls { display: flex; gap: 10px; align-items: flex-start; }
 .detail-value { flex: 1; min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .detail-field-line button, .detail-password-controls button { flex-shrink: 0; }
-.detail-field-line .secondary-button, .detail-password-controls .secondary-button { min-height: 34px; padding: 6px 10px; }
+.detail-field-line .secondary-button, .detail-password-controls .secondary-button { min-height: 40px; padding: 8px 16px; }
 #detail-organization { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 #detail-organization .detail-field:nth-child(n+3) { grid-column: 1 / -1; }
 #detail-password { padding-top: 10px; }
@@ -1071,6 +1077,8 @@ kbd {
 .bulk-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel-muted); }
 .bulk-selection-bar[hidden] { display: none; }
 .bulk-selection-bar .bulk-selection-search { flex: 1 1 260px; min-width: 180px; width: auto; }
+.bulk-selection-bar .bulk-selection-search { min-height: 40px; padding: 8px 12px; line-height: 1.4; }
+.bulk-selection-bar > button, .bulk-actions > button { min-width: 88px; flex-shrink: 0; }
 .bulk-selection-results { color: var(--muted); font-size: 12px; }
 .bulk-actions { position: relative; }
 .bulk-actions-menu { position: absolute; z-index: 5; top: calc(100% + 6px); left: 0; min-width: 220px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px #0004; }
@@ -1837,17 +1845,21 @@ mark.search-highlight {
 
 .modal-footer {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 24px;
+  gap: 12px;
+  padding: 16px 24px;
   border-top: 1px solid var(--line);
   flex-shrink: 0;
 }
 
 .modal-footer .primary-button,
-.modal-footer .secondary-button {
+.modal-footer .secondary-button,
+.modal-footer .danger-button {
   min-height: 40px;
-  padding: 0 18px;
+  min-width: 88px;
+  padding: 8px 16px;
   font-size: 0.88rem;
 }
 
@@ -1887,16 +1899,19 @@ mark.search-highlight {
 .settings-action-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
 }
+
+.settings-row + .settings-action-row { margin-top: 16px; }
+.settings-action-row + .settings-row-hint { margin-top: 12px; }
 
 .settings-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 38px;
-  padding: 0 14px;
-  font-size: 0.83rem;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: .88rem;
   white-space: nowrap;
 }
 
@@ -2179,7 +2194,7 @@ mark.search-highlight {
 
 .category-add-row {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
@@ -2707,14 +2722,14 @@ mark.search-highlight {
 .settings-action-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
 }
 
 .settings-action-btn {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 0.83rem;
+  gap: 8px;
+  font-size: .88rem;
 }
 
 /* Change master password form */
@@ -2835,7 +2850,8 @@ mark.search-highlight {
 
 .settings-backup-folder-btns {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .password-history {
@@ -2869,7 +2885,8 @@ mark.search-highlight {
 .trash-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
 .trash-entry-info { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 .trash-entry-info .modal-hint { margin: 5px 0 0; }
-.trash-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+.trash-entry-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; max-width: 100%; }
+.trash-entry-actions button { min-width: 88px; }
 .trash-entry-actions p { flex-basis: 100%; overflow-wrap: anywhere; }
 .trash-delete { color: var(--danger, #d94c57); }
 #trash-status { overflow-wrap: anywhere; }
@@ -2883,6 +2900,7 @@ mark.search-highlight {
 .health-filters [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 #health-list-status { color: var(--muted); font-size: .85rem; }
 .health-entry { display: flex; align-items: center; gap: 16px; padding: 15px 0; border-top: 1px solid var(--line); }
+.health-entry > button { min-width: 88px; flex-shrink: 0; }
 .health-entry-info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .health-entry-info > strong, .health-entry-info > span { display: block; }
 .health-entry-info ul { margin: 6px 0 0; padding-left: 18px; font-size: .85rem; color: var(--muted); }
@@ -3678,7 +3696,7 @@ small.group-badge {
 }
 
 .extension-setup-row { flex-direction: column; align-items: stretch; gap: 12px; }
-.extension-setup-buttons { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+.extension-setup-buttons { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 12px; }
 .extension-setup-guide { min-width: 0; line-height: 1.6; }
 .extension-setup-guide ol { margin: 8px 0 14px; padding-left: 24px; }
 .extension-paired-list { flex-basis: 100%; width: 100%; list-style: none; margin: 8px 0 0; padding: 0; }
@@ -3995,7 +4013,7 @@ body.has-credential-list .active-group-banner { margin: 0; }
   body.has-credential-list .dashboard-header .eyebrow { margin-bottom: 4px; }
   body.has-credential-list .dashboard-toolbar { padding: 8px 10px; }
   body.has-credential-list .credential-panel > .panel-header { padding: 8px 12px; }
-  body.has-credential-list .bulk-selection-bar { padding: 8px 12px; gap: 8px; }
+  body.has-credential-list .bulk-selection-bar { padding: 12px; gap: 12px; }
 }
 @media (max-width: 760px) {
   body.has-credential-list .dashboard-toolbar { flex-direction: row; }
